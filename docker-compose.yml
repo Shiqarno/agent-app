@@ -30,6 +30,8 @@ services:
 
   frontend:
     build: ./frontend
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
     ports:
       - "5173:5173"
     volumes:
