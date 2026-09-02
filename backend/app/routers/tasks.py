@@ -1,13 +1,18 @@
 import uuid
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.errors import ChildNotFoundError, ForbiddenError, InvalidTransitionError, TaskNotFoundError
-from app.identity import get_current_user, require_adult, require_child
-from app.models import Task, TaskStatus, User, UserRole, utcnow
+from app.errors import (
+    AssigneeNotFoundError,
+    ForbiddenError,
+    InvalidTransitionError,
+    TaskNotFoundError,
+)
+from app.identity import get_current_user, require_adult
+from app.models import Task, TaskStatus, User, utcnow
 from app.schemas import TaskCreate, TaskResponse
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -17,10 +22,11 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 def list_tasks(
     user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> list[Task]:
-    if user.role == UserRole.ADULT:
-        stmt = select(Task).where(Task.adult_id == user.id).order_by(Task.created_at.asc())
-    else:
-        stmt = select(Task).where(Task.child_id == user.id).order_by(Task.created_at.asc())
+    stmt = (
+        select(Task)
+        .where(or_(Task.created_by == user.id, Task.assigned_to == user.id))
+        .order_by(Task.created_at.asc())
+    )
     return list(db.scalars(stmt))
 
 
@@ -28,16 +34,16 @@ def list_tasks(
 def create_task(
     payload: TaskCreate, user: User = Depends(require_adult), db: Session = Depends(get_db)
 ) -> Task:
-    child = db.get(User, payload.child_id)
-    if child is None or child.role != UserRole.CHILD:
-        raise ChildNotFoundError()
+    assignee = db.get(User, payload.assigned_to)
+    if assignee is None:
+        raise AssigneeNotFoundError()
 
     task = Task(
         title=payload.title,
         description=payload.description,
         reward_points=payload.reward_points,
-        child_id=payload.child_id,
-        adult_id=user.id,
+        assigned_to=payload.assigned_to,
+        created_by=user.id,
         status=TaskStatus.ASSIGNED,
     )
     db.add(task)
@@ -48,12 +54,12 @@ def create_task(
 
 @router.post("/{task_id}/start", response_model=TaskResponse)
 def start_task(
-    task_id: uuid.UUID, user: User = Depends(require_child), db: Session = Depends(get_db)
+    task_id: uuid.UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> Task:
     task = db.get(Task, task_id)
     if task is None:
         raise TaskNotFoundError()
-    if task.child_id != user.id:
+    if task.assigned_to != user.id:
         raise ForbiddenError("This task is not assigned to you")
     if task.status != TaskStatus.ASSIGNED:
         raise InvalidTransitionError(f"Cannot start a task in status {task.status.value}")
@@ -67,12 +73,12 @@ def start_task(
 
 @router.post("/{task_id}/ready", response_model=TaskResponse)
 def mark_task_ready(
-    task_id: uuid.UUID, user: User = Depends(require_child), db: Session = Depends(get_db)
+    task_id: uuid.UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> Task:
     task = db.get(Task, task_id)
     if task is None:
         raise TaskNotFoundError()
-    if task.child_id != user.id:
+    if task.assigned_to != user.id:
         raise ForbiddenError("This task is not assigned to you")
     if task.status != TaskStatus.IN_PROGRESS:
         raise InvalidTransitionError(f"Cannot mark a task in status {task.status.value} as ready")
@@ -86,12 +92,12 @@ def mark_task_ready(
 
 @router.post("/{task_id}/confirm", response_model=TaskResponse)
 def confirm_task(
-    task_id: uuid.UUID, user: User = Depends(require_adult), db: Session = Depends(get_db)
+    task_id: uuid.UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> Task:
     task = db.get(Task, task_id)
     if task is None:
         raise TaskNotFoundError()
-    if task.adult_id != user.id:
+    if task.created_by != user.id:
         raise ForbiddenError("You do not own this task")
     if task.status != TaskStatus.AWAITING_CONFIRMATION:
         raise InvalidTransitionError(f"Cannot confirm a task in status {task.status.value}")

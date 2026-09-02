@@ -40,7 +40,7 @@ class ProjectResponse(BaseModel):
 class TaskCreate(BaseModel):
     title: str
     description: str | None = None
-    child_id: uuid.UUID
+    assigned_to: uuid.UUID
     reward_points: int = Field(gt=0)
 
     @field_validator("title")
@@ -58,8 +58,8 @@ class TaskResponse(BaseModel):
     id: uuid.UUID
     title: str
     description: str | None
-    child_id: uuid.UUID
-    adult_id: uuid.UUID
+    assigned_to: uuid.UUID
+    created_by: uuid.UUID
     reward_points: int
     status: TaskStatus
     created_at: datetime

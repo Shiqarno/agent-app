@@ -27,9 +27,9 @@ class TaskNotFoundError(AppError):
         super().__init__(status_code=404, code="TASK_NOT_FOUND", message="Task not found")
 
 
-class ChildNotFoundError(AppError):
+class AssigneeNotFoundError(AppError):
     def __init__(self) -> None:
-        super().__init__(status_code=422, code="CHILD_NOT_FOUND", message="Child not found")
+        super().__init__(status_code=422, code="ASSIGNEE_NOT_FOUND", message="Assignee not found")
 
 
 class InvalidTransitionError(AppError):

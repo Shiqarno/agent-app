@@ -67,10 +67,10 @@ class Task(Base):
         nullable=False,
         default=TaskStatus.ASSIGNED,
     )
-    child_id: Mapped[uuid.UUID] = mapped_column(
+    assigned_to: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
-    adult_id: Mapped[uuid.UUID] = mapped_column(
+    created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

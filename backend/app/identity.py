@@ -24,9 +24,3 @@ def require_adult(user: User = Depends(get_current_user)) -> User:
     if user.role != UserRole.ADULT:
         raise ForbiddenError("Only adults can perform this action")
     return user
-
-
-def require_child(user: User = Depends(get_current_user)) -> User:
-    if user.role != UserRole.CHILD:
-        raise ForbiddenError("Only children can perform this action")
-    return user
