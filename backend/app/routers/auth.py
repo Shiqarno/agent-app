@@ -3,19 +3,23 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.csrf import CSRF_COOKIE_NAME
 from app.db import get_db
 from app.errors import (
+    EmailAlreadyInUseError,
+    InvalidActivationTokenError,
     InvalidCredentialsError,
     InvalidSetupTokenError,
     SetupAlreadyCompletedError,
+    UserAlreadyActivatedError,
 )
 from app.identity import SESSION_COOKIE_NAME, get_current_user
-from app.models import User, UserCredential, UserRole, UserSession, utcnow
-from app.schemas import LoginRequest, SetupRequest, UserResponse
+from app.models import User, UserActivation, UserCredential, UserRole, UserSession, utcnow
+from app.schemas import ActivateRequest, LoginRequest, SetupRequest, UserResponse
 from app.security import (
     generate_csrf_token,
     generate_session_token,
@@ -136,6 +140,53 @@ def setup(
     )
     raw_token, csrf_token = _issue_session(db, user_id)
     db.commit()
+    db.refresh(user)
+    _set_session_cookies(response, raw_token, csrf_token)
+    return user
+
+
+@router.post("/activate", response_model=UserResponse)
+def activate(payload: ActivateRequest, response: Response, db: Session = Depends(get_db)) -> User:
+    activation = db.scalar(
+        select(UserActivation).where(UserActivation.token_hash == hash_token(payload.token))
+    )
+    if activation is None or activation.used_at is not None or activation.expires_at < utcnow():
+        raise InvalidActivationTokenError()
+
+    user = db.get(User, activation.user_id)
+    if user is None:
+        raise InvalidActivationTokenError()
+
+    existing_credential = db.scalar(select(UserCredential).where(UserCredential.user_id == user.id))
+    if existing_credential is not None:
+        raise UserAlreadyActivatedError()
+
+    email = normalize_email(payload.email)
+    email_taken = db.scalar(select(UserCredential).where(UserCredential.email == email))
+    if email_taken is not None:
+        raise EmailAlreadyInUseError()
+
+    db.add(
+        UserCredential(
+            user_id=user.id,
+            email=email,
+            password_hash=hash_password(payload.password),
+        )
+    )
+    activation.used_at = utcnow()
+
+    raw_token, csrf_token = _issue_session(db, user.id)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        detail = str(exc.orig)
+        if "user_credentials_user_id_key" in detail:
+            raise UserAlreadyActivatedError() from exc
+        if "user_credentials_email_key" in detail:
+            raise EmailAlreadyInUseError() from exc
+        raise InvalidActivationTokenError() from exc
+
     db.refresh(user)
     _set_session_cookies(response, raw_token, csrf_token)
     return user

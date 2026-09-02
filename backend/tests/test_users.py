@@ -1,11 +1,15 @@
 import uuid
 from collections.abc import Callable
+from datetime import timedelta
 
+import pytest
 from conftest import auth
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import User, UserRole
+from app.models import User, UserActivation, UserRole, utcnow
+from app.security import hash_token
 
 ADULT = UserRole.ADULT
 CHILD = UserRole.CHILD
@@ -404,10 +408,11 @@ def test_new_user_integrates_with_discovery_and_task_assignment(
         "/api/users", json={"name": "Fresh Child", "role": "child"}, headers=auth(adult)
     ).json()
     child_id = created["id"]
-    # POST /api/users creates a domain User only -- no credentials, no session
-    # (Issue #10 territory). Fetch the row so `auth()` can issue this new
-    # User a real session for the rest of the flow, exactly as their own
-    # future login would.
+    # POST /api/users creates a domain User plus an activation token (Issue
+    # #10) -- but no credentials or session until that token is actually used
+    # via POST /api/auth/activate. Fetch the row so `auth()` can issue this
+    # new User a real session for the rest of the flow, exactly as their own
+    # future activation+login would.
     child = db_session.get(User, uuid.UUID(child_id))
     assert child is not None
 
@@ -429,3 +434,42 @@ def test_new_user_integrates_with_discovery_and_task_assignment(
     balance = client.get("/api/points/balance", headers=auth(child))
     assert balance.status_code == 200
     assert balance.json() == {"balance": 0}
+
+
+# --- User creation -> activation atomicity (Issue #10) -------------------------------------
+
+
+def test_user_and_activation_creation_is_transactional(db_session: Session) -> None:
+    """Mirrors test_setup_is_transactional (test_auth.py): forces a real DB
+    constraint violation partway through the same sequence create_user()
+    performs (User insert, flush, UserActivation insert, one commit), and
+    asserts neither the User nor the activation survives.
+    """
+    existing = User(name="Existing", role=CHILD)
+    db_session.add(existing)
+    db_session.commit()
+    db_session.add(
+        UserActivation(
+            user_id=existing.id,
+            token_hash=hash_token("existing-token"),
+            expires_at=utcnow() + timedelta(hours=72),
+        )
+    )
+    db_session.commit()
+
+    new_user_id = uuid.uuid4()
+    db_session.add(User(id=new_user_id, name="New Child", role=CHILD))
+    db_session.flush()
+    db_session.add(
+        UserActivation(
+            user_id=existing.id,  # duplicate -> unique constraint violation on user_id
+            token_hash=hash_token("new-token"),
+            expires_at=utcnow() + timedelta(hours=72),
+        )
+    )
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
+
+    assert db_session.get(User, new_user_id) is None

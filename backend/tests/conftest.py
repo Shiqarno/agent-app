@@ -12,7 +12,7 @@ from app.csrf import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
 from app.db import engine, get_db
 from app.identity import SESSION_COOKIE_NAME
 from app.main import app
-from app.models import User, UserRole, UserSession, utcnow
+from app.models import User, UserActivation, UserRole, UserSession, utcnow
 
 
 @pytest.fixture
@@ -99,3 +99,31 @@ def auth(user: User) -> dict[str, str]:
         "Cookie": f"{SESSION_COOKIE_NAME}={raw_token}; {CSRF_COOKIE_NAME}={csrf_value}",
         CSRF_HEADER_NAME: csrf_value,
     }
+
+
+# --- Activation test helper -----------------------------------------------------------
+#
+# Production never returns a raw activation token (it's hashed before storage,
+# same as sessions). Tests get access to it the same way `auth()` bypasses the
+# HTTP login flow: by creating the real UserActivation row directly and
+# returning the raw token before it's discarded, instead of adding any
+# dev-only token-retrieval endpoint.
+
+
+def create_activation(user: User, *, expires_in: timedelta = timedelta(hours=72)) -> str:
+    db_session = _active_db_session.get()
+    if db_session is None:
+        raise RuntimeError(
+            "create_activation() requires a test using the client/db_session fixtures"
+        )
+
+    raw_token = secrets.token_urlsafe(32)
+    db_session.add(
+        UserActivation(
+            user_id=user.id,
+            token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+            expires_at=utcnow() + expires_in,
+        )
+    )
+    db_session.commit()
+    return raw_token

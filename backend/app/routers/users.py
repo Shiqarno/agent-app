@@ -1,7 +1,10 @@
+import uuid
+
 from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.activation import create_activation
 from app.db import get_db
 from app.identity import require_adult
 from app.models import User
@@ -20,8 +23,11 @@ def list_users(user: User = Depends(require_adult), db: Session = Depends(get_db
 def create_user(
     payload: UserCreate, user: User = Depends(require_adult), db: Session = Depends(get_db)
 ) -> User:
-    new_user = User(name=payload.name, role=payload.role)
+    new_user_id = uuid.uuid4()
+    new_user = User(id=new_user_id, name=payload.name, role=payload.role)
     db.add(new_user)
+    db.flush()
+    create_activation(db, new_user_id)
     db.commit()
     db.refresh(new_user)
     return new_user

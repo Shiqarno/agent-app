@@ -181,3 +181,9 @@ class SetupRequest(BaseModel):
         if not stripped:
             raise ValueError("name must not be empty or whitespace-only")
         return stripped
+
+
+class ActivateRequest(BaseModel):
+    token: str
+    email: str
+    password: str = Field(min_length=12)

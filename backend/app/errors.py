@@ -82,6 +82,31 @@ class SetupAlreadyCompletedError(AppError):
         )
 
 
+class InvalidActivationTokenError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=400,
+            code="INVALID_ACTIVATION_TOKEN",
+            message="Invalid activation token",
+        )
+
+
+class EmailAlreadyInUseError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=409, code="EMAIL_ALREADY_IN_USE", message="Email already in use"
+        )
+
+
+class UserAlreadyActivatedError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=409,
+            code="USER_ALREADY_ACTIVATED",
+            message="User already activated",
+        )
+
+
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:

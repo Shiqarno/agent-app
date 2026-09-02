@@ -122,6 +122,52 @@ describe('App', () => {
     expect(screen.queryByRole('heading', { name: /sign in/i })).not.toBeInTheDocument()
   })
 
+  it('shows the activation form when an activation token is present in the URL', async () => {
+    const originalLocation = window.location.href
+    window.history.pushState({}, '', '/?activation_token=a-real-token')
+
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'nope' } })
+      }
+      if (url.endsWith('/api/auth/activate')) {
+        return jsonResponse(200, CURRENT_USER)
+      }
+      if (url.endsWith('/api/projects')) {
+        return jsonResponse(200, [])
+      }
+      throw new Error(`Unexpected request: ${url} ${String(init?.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      render(<App />)
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /activate your account/i })).toBeInTheDocument()
+      })
+
+      fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'kid@example.com' } })
+      fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'a-password-1' } })
+      fireEvent.click(screen.getByRole('button', { name: /activate/i }))
+
+      await waitFor(() => {
+        expect(screen.getByText(/signed in as alice/i)).toBeInTheDocument()
+      })
+
+      const [, activateInit] = fetchMock.mock.calls.find(([url]) =>
+        String(url).endsWith('/api/auth/activate'),
+      ) as [string, RequestInit]
+      expect(JSON.parse(activateInit.body as string)).toEqual({
+        token: 'a-real-token',
+        email: 'kid@example.com',
+        password: 'a-password-1',
+      })
+    } finally {
+      window.history.pushState({}, '', originalLocation)
+    }
+  })
+
   it('logs out and returns to the login form', async () => {
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
       if (url.endsWith('/api/auth/me')) {
