@@ -32,6 +32,11 @@ class AssigneeNotFoundError(AppError):
         super().__init__(status_code=422, code="ASSIGNEE_NOT_FOUND", message="Assignee not found")
 
 
+class RewardNotFoundError(AppError):
+    def __init__(self) -> None:
+        super().__init__(status_code=404, code="REWARD_NOT_FOUND", message="Reward not found")
+
+
 class InvalidTransitionError(AppError):
     def __init__(self, message: str = "Invalid task state transition") -> None:
         super().__init__(status_code=409, code="INVALID_TRANSITION", message=message)

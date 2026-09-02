@@ -72,3 +72,45 @@ class UserResponse(BaseModel):
     id: uuid.UUID
     name: str
     role: UserRole
+
+
+class RewardCreate(BaseModel):
+    name: str
+    description: str | None = None
+    cost_points: int = Field(gt=0)
+
+    @field_validator("name")
+    @classmethod
+    def name_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("name must not be empty or whitespace-only")
+        return stripped
+
+
+class RewardUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    cost_points: int | None = Field(default=None, gt=0)
+
+    @field_validator("name")
+    @classmethod
+    def name_must_not_be_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("name must not be empty or whitespace-only")
+        return stripped
+
+
+class RewardResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    description: str | None
+    cost_points: int
+    created_by: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
