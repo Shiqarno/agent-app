@@ -79,6 +79,7 @@ class Task(Base):
 
 class PointTransactionReason(StrEnum):
     TASK_COMPLETED = "TASK_COMPLETED"
+    REWARD_REDEEMED = "REWARD_REDEEMED"
 
 
 class PointTransaction(Base):
@@ -91,8 +92,11 @@ class PointTransaction(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
-    task_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tasks.id"), nullable=False
+    task_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tasks.id"), nullable=True
+    )
+    redemption_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("reward_redemptions.id"), nullable=True
     )
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
     reason: Mapped[PointTransactionReason] = mapped_column(
@@ -114,3 +118,17 @@ class Reward(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class RewardRedemption(Base):
+    __tablename__ = "reward_redemptions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    reward_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("rewards.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    cost_points: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

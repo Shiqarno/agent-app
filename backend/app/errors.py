@@ -37,6 +37,15 @@ class RewardNotFoundError(AppError):
         super().__init__(status_code=404, code="REWARD_NOT_FOUND", message="Reward not found")
 
 
+class InsufficientPointsError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=409,
+            code="INSUFFICIENT_POINTS",
+            message="Insufficient points to redeem this reward",
+        )
+
+
 class InvalidTransitionError(AppError):
     def __init__(self, message: str = "Invalid task state transition") -> None:
         super().__init__(status_code=409, code="INVALID_TRANSITION", message=message)

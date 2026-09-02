@@ -114,3 +114,13 @@ class RewardResponse(BaseModel):
     created_by: uuid.UUID
     created_at: datetime
     updated_at: datetime
+
+
+class RewardRedemptionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    reward_id: uuid.UUID
+    user_id: uuid.UUID
+    cost_points: int
+    created_at: datetime
