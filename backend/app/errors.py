@@ -52,13 +52,34 @@ class InvalidTransitionError(AppError):
 
 
 class UnauthenticatedError(AppError):
-    def __init__(self, message: str = "Missing or invalid X-User-Id header") -> None:
+    def __init__(self, message: str = "Authentication required") -> None:
         super().__init__(status_code=401, code="UNAUTHENTICATED", message=message)
 
 
 class ForbiddenError(AppError):
     def __init__(self, message: str = "Forbidden") -> None:
         super().__init__(status_code=403, code="FORBIDDEN", message=message)
+
+
+class InvalidCredentialsError(AppError):
+    def __init__(self) -> None:
+        super().__init__(status_code=401, code="INVALID_CREDENTIALS", message="Invalid credentials")
+
+
+class InvalidSetupTokenError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=401, code="INVALID_SETUP_TOKEN", message="Invalid setup token"
+        )
+
+
+class SetupAlreadyCompletedError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=409,
+            code="SETUP_ALREADY_COMPLETED",
+            message="Setup has already been completed",
+        )
 
 
 def register_error_handlers(app: FastAPI) -> None:

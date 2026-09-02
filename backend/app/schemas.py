@@ -162,3 +162,22 @@ class PointTransactionResponse(BaseModel):
     task_id: uuid.UUID | None
     redemption_id: uuid.UUID | None
     created_at: datetime
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class SetupRequest(BaseModel):
+    name: str
+    email: str
+    password: str = Field(min_length=12)
+
+    @field_validator("name")
+    @classmethod
+    def name_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("name must not be empty or whitespace-only")
+        return stripped

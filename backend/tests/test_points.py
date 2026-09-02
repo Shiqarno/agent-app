@@ -2,6 +2,7 @@ import uuid
 from collections.abc import Callable
 
 import pytest
+from conftest import auth
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -11,10 +12,6 @@ from app.models import PointTransaction, PointTransactionReason, User, UserRole
 
 ADULT = UserRole.ADULT
 CHILD = UserRole.CHILD
-
-
-def auth(user: User) -> dict[str, str]:
-    return {"X-User-Id": str(user.id)}
 
 
 def create_task(

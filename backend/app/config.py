@@ -9,6 +9,8 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://app:app@localhost:5432/app"
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
+    environment: str = "development"
+    initial_setup_token: str | None = None
 
     @field_validator("cors_origins", mode="before")
     @classmethod

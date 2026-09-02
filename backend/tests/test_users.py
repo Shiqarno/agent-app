@@ -1,6 +1,7 @@
 import uuid
 from collections.abc import Callable
 
+from conftest import auth
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -8,10 +9,6 @@ from app.models import User, UserRole
 
 ADULT = UserRole.ADULT
 CHILD = UserRole.CHILD
-
-
-def auth(user: User) -> dict[str, str]:
-    return {"X-User-Id": str(user.id)}
 
 
 # --- Adult can discover users -----------------------------------------------------------
@@ -116,11 +113,11 @@ def test_users_with_equal_names_are_ordered_by_id(
 # --- Empty collection ----------------------------------------------------------------------
 
 # Not testable under the current identity model: GET /api/users requires a valid
-# X-User-Id resolving to an existing Adult (via get_current_user + require_adult),
-# so a successful request is only possible once at least one User (the requesting
-# Adult) already exists. A genuinely empty result set therefore cannot occur for
-# any request that passes authentication -- there is no artificial-behavior path
-# to test here.
+# session, which in turn requires an existing, authenticated Adult (via
+# get_current_user + require_adult), so a successful request is only possible
+# once at least one User (the requesting Adult) already exists. A genuinely
+# empty result set therefore cannot occur for any request that passes
+# authentication -- there is no artificial-behavior path to test here.
 
 
 # --- Error contract (existing identity behavior, reused as-is) -----------------------------
@@ -133,8 +130,12 @@ def test_missing_identity_header_rejected(client: TestClient) -> None:
     assert response.json()["error"]["code"] == "UNAUTHENTICATED"
 
 
-def test_unknown_user_id_rejected(client: TestClient) -> None:
-    response = client.get("/api/users", headers={"X-User-Id": str(uuid.uuid4())})
+def test_x_user_id_header_alone_does_not_authenticate(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+
+    response = client.get("/api/users", headers={"X-User-Id": str(adult.id)})
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "UNAUTHENTICATED"
@@ -198,11 +199,15 @@ def test_create_missing_identity_header_rejected(client: TestClient) -> None:
     assert response.json()["error"]["code"] == "UNAUTHENTICATED"
 
 
-def test_create_unknown_user_id_rejected(client: TestClient) -> None:
+def test_create_x_user_id_header_alone_does_not_authenticate(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+
     response = client.post(
         "/api/users",
         json={"name": "New User", "role": "child"},
-        headers={"X-User-Id": str(uuid.uuid4())},
+        headers={"X-User-Id": str(adult.id)},
     )
 
     assert response.status_code == 401
@@ -391,7 +396,7 @@ def test_created_by_field_does_not_exist(
 
 
 def test_new_user_integrates_with_discovery_and_task_assignment(
-    client: TestClient, make_user: Callable[..., User]
+    client: TestClient, make_user: Callable[..., User], db_session: Session
 ) -> None:
     adult = make_user(ADULT)
 
@@ -399,6 +404,12 @@ def test_new_user_integrates_with_discovery_and_task_assignment(
         "/api/users", json={"name": "Fresh Child", "role": "child"}, headers=auth(adult)
     ).json()
     child_id = created["id"]
+    # POST /api/users creates a domain User only -- no credentials, no session
+    # (Issue #10 territory). Fetch the row so `auth()` can issue this new
+    # User a real session for the rest of the flow, exactly as their own
+    # future login would.
+    child = db_session.get(User, uuid.UUID(child_id))
+    assert child is not None
 
     discovered = client.get("/api/users", headers=auth(adult)).json()
     assert child_id in [entry["id"] for entry in discovered]
@@ -411,12 +422,10 @@ def test_new_user_integrates_with_discovery_and_task_assignment(
     assert task["assigned_to"] == child_id
     assert task["status"] == "ASSIGNED"
 
-    start = client.post(
-        f"/api/tasks/{task['id']}/start", headers={"X-User-Id": child_id}
-    )
+    start = client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
     assert start.status_code == 200
     assert start.json()["status"] == "IN_PROGRESS"
 
-    balance = client.get("/api/points/balance", headers={"X-User-Id": child_id})
+    balance = client.get("/api/points/balance", headers=auth(child))
     assert balance.status_code == 200
     assert balance.json() == {"balance": 0}

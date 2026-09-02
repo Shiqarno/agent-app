@@ -16,12 +16,29 @@ No other local installation is required — all tooling runs inside containers.
 
 ```
 cp .env.example .env
+```
+
+Set `INITIAL_SETUP_TOKEN` in `.env` to any local secret value, then:
+
+```
 make up
+make upgrade
+```
+
+Create the first Adult (one-time; fails once any User exists):
+
+```
+curl -X POST http://localhost:8000/api/auth/setup \
+  -H "Content-Type: application/json" \
+  -H "X-Setup-Token: <value of INITIAL_SETUP_TOKEN>" \
+  -d '{"name": "Your Name", "email": "you@example.com", "password": "at least 12 characters"}'
 ```
 
 - Frontend: http://localhost:5173
 - Backend: http://localhost:8000 (health check at `/health`)
 - Database: localhost:5432
+
+Authentication is session-cookie based; see [docs/architecture.md](docs/architecture.md#authentication) for how identity, sessions, and CSRF protection work, and how additional Users (created via `POST /api/users`) receive credentials.
 
 ## Common tasks
 

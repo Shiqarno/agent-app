@@ -2,8 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.csrf import CSRFMiddleware
 from app.db import database_is_available
 from app.errors import DatabaseUnavailableError, register_error_handlers
+from app.routers.auth import router as auth_router
 from app.routers.points import router as points_router
 from app.routers.projects import router as projects_router
 from app.routers.rewards import router as rewards_router
@@ -12,15 +14,21 @@ from app.routers.users import router as users_router
 
 app = FastAPI(title="Backend")
 
+# Added in this order so CORS ends up outermost: it must wrap CSRF's responses
+# too (including its 403s), or the browser reports a CORS failure that masks
+# the real error.
+app.add_middleware(CSRFMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
 
 register_error_handlers(app)
 
+app.include_router(auth_router)
 app.include_router(points_router)
 app.include_router(projects_router)
 app.include_router(rewards_router)

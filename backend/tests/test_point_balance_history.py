@@ -2,6 +2,7 @@ import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+from conftest import auth
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -18,10 +19,6 @@ from app.models import (
 
 ADULT = UserRole.ADULT
 CHILD = UserRole.CHILD
-
-
-def auth(user: User) -> dict[str, str]:
-    return {"X-User-Id": str(user.id)}
 
 
 def make_task_completed_transaction(
@@ -166,8 +163,12 @@ def test_balance_missing_identity_header_returns_401(client: TestClient) -> None
     assert response.json()["error"]["code"] == "UNAUTHENTICATED"
 
 
-def test_balance_unknown_user_id_returns_401(client: TestClient) -> None:
-    response = client.get("/api/points/balance", headers={"X-User-Id": str(uuid.uuid4())})
+def test_balance_x_user_id_header_alone_does_not_authenticate(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+
+    response = client.get("/api/points/balance", headers={"X-User-Id": str(adult.id)})
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "UNAUTHENTICATED"
@@ -313,8 +314,12 @@ def test_history_missing_identity_header_returns_401(client: TestClient) -> None
     assert response.json()["error"]["code"] == "UNAUTHENTICATED"
 
 
-def test_history_unknown_user_id_returns_401(client: TestClient) -> None:
-    response = client.get("/api/points/history", headers={"X-User-Id": str(uuid.uuid4())})
+def test_history_x_user_id_header_alone_does_not_authenticate(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+
+    response = client.get("/api/points/history", headers={"X-User-Id": str(adult.id)})
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "UNAUTHENTICATED"

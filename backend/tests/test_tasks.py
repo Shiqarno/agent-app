@@ -1,16 +1,13 @@
 import uuid
 from collections.abc import Callable
 
+from conftest import auth
 from fastapi.testclient import TestClient
 
 from app.models import User, UserRole
 
 ADULT = UserRole.ADULT
 CHILD = UserRole.CHILD
-
-
-def auth(user: User) -> dict[str, str]:
-    return {"X-User-Id": str(user.id)}
 
 
 def create_task(
@@ -490,8 +487,12 @@ def test_missing_identity_header_rejected(client: TestClient) -> None:
     assert response.json()["error"]["code"] == "UNAUTHENTICATED"
 
 
-def test_unknown_user_id_rejected(client: TestClient) -> None:
-    response = client.get("/api/tasks", headers={"X-User-Id": str(uuid.uuid4())})
+def test_x_user_id_header_alone_does_not_authenticate(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+
+    response = client.get("/api/tasks", headers={"X-User-Id": str(adult.id)})
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "UNAUTHENTICATED"

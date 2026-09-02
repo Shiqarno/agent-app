@@ -1,14 +1,20 @@
+import hashlib
+import secrets
 import threading
 import uuid
 from collections.abc import Callable
+from datetime import timedelta
 
 import pytest
+from conftest import auth
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.csrf import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
 from app.db import SessionLocal
+from app.identity import SESSION_COOKIE_NAME
 from app.main import app
 from app.models import (
     PointTransaction,
@@ -19,14 +25,34 @@ from app.models import (
     TaskStatus,
     User,
     UserRole,
+    UserSession,
+    utcnow,
 )
+
+
+def real_session_headers(session: Session, user_id: uuid.UUID) -> dict[str, str]:
+    """Like conftest.auth(), but against an explicitly supplied, real,
+    independently-committing session -- for tests (e.g. the concurrency test
+    below) that intentionally bypass the shared savepoint-isolated
+    db_session fixture.
+    """
+    raw_token = secrets.token_urlsafe(32)
+    csrf_value = secrets.token_urlsafe(16)
+    session.add(
+        UserSession(
+            user_id=user_id,
+            token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+            expires_at=utcnow() + timedelta(days=7),
+        )
+    )
+    session.commit()
+    return {
+        "Cookie": f"{SESSION_COOKIE_NAME}={raw_token}; {CSRF_COOKIE_NAME}={csrf_value}",
+        CSRF_HEADER_NAME: csrf_value,
+    }
 
 ADULT = UserRole.ADULT
 CHILD = UserRole.CHILD
-
-
-def auth(user: User) -> dict[str, str]:
-    return {"X-User-Id": str(user.id)}
 
 
 def create_reward(client: TestClient, adult: User, **overrides: object) -> dict[str, object]:
@@ -477,6 +503,8 @@ def test_concurrent_redemptions_cannot_overspend_the_balance() -> None:
     )
     setup_session.commit()
 
+    auth_headers = real_session_headers(setup_session, adult.id)
+
     try:
         results: list[int] = []
         barrier = threading.Barrier(2)
@@ -486,7 +514,7 @@ def test_concurrent_redemptions_cannot_overspend_the_balance() -> None:
             with TestClient(app) as thread_client:
                 response = thread_client.post(
                     f"/api/rewards/{reward.id}/redeem",
-                    headers={"X-User-Id": str(adult.id)},
+                    headers=auth_headers,
                 )
             results.append(response.status_code)
 
@@ -513,6 +541,7 @@ def test_concurrent_redemptions_cannot_overspend_the_balance() -> None:
         assert redemption_count == 1
     finally:
         setup_session.rollback()
+        setup_session.query(UserSession).filter_by(user_id=adult.id).delete()
         setup_session.query(PointTransaction).filter_by(user_id=adult.id).delete()
         setup_session.query(RewardRedemption).filter_by(user_id=adult.id).delete()
         setup_session.query(Task).filter_by(id=task.id).delete()
@@ -537,12 +566,16 @@ def test_missing_identity_header_rejected(
     assert response.json()["error"]["code"] == "UNAUTHENTICATED"
 
 
-def test_unknown_user_id_rejected(client: TestClient, make_user: Callable[..., User]) -> None:
+def test_x_user_id_header_alone_does_not_authenticate(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
     adult = make_user(ADULT)
     reward = create_reward(client, adult)
 
+    # Even a real, existing user's id in X-User-Id (with no session cookie)
+    # must not authenticate -- it is no longer a production auth mechanism.
     response = client.post(
-        f"/api/rewards/{reward['id']}/redeem", headers={"X-User-Id": str(uuid.uuid4())}
+        f"/api/rewards/{reward['id']}/redeem", headers={"X-User-Id": str(adult.id)}
     )
 
     assert response.status_code == 401

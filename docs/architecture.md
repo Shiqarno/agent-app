@@ -40,6 +40,22 @@ Three services — `db`, `backend`, `frontend` — and nothing else. Explicitly 
 
 A single `docker-compose.yml` is used, without a separate `docker-compose.override.yml`. It currently runs the frontend via the Vite dev server (bind-mounted source, hot reload) and the backend via `uvicorn --reload`, which is what local development actually needs right now. A production-oriented build (e.g. a static frontend build served by a minimal web server) can be introduced later, as a deliberate step, once deployment is being set up — see "Deploying later" below.
 
+## Authentication
+
+Authentication and authorization are separate concerns:
+
+```
+session cookie → get_current_user() → User → require_adult() → domain logic
+```
+
+- **Credentials** (`UserCredential`) are a separate 1:1 table from `User` (`user_id`, `email`, `password_hash`), not columns on `User` itself. `User` stays focused on domain identity (`id`, `name`, `role`); not every `User` has credentials (see below).
+- **Passwords** are hashed with Argon2id (`argon2-cffi`), never stored or logged in plaintext, never returned by any API response.
+- **Sessions** (`UserSession`) are server-side, stored in Postgres — no JWT, no Redis. The client holds only an opaque, high-entropy random token (`secrets.token_urlsafe`); the database stores only its SHA-256 hash, so a leaked database row can't be replayed as a session. Sessions have a fixed 7-day absolute expiration (`expires_at`); expired sessions are rejected and opportunistically deleted on next use, rather than refreshed or rotated.
+- **Identity** is carried by an `HttpOnly`, `SameSite=Lax` cookie (`session_token`), never exposed to frontend JavaScript and never present in a JSON response. `get_current_user()` is the single place that resolves a request's identity from that cookie; every existing authorization dependency (`require_adult`, etc.) is unchanged and keeps building on top of it.
+- **CSRF protection** is centralized in one middleware (`app/csrf.py`), not scattered per-router. It's a double-submit-cookie check: a second, JS-readable `csrf_token` cookie must match an `X-CSRF-Token` header on every state-changing request (`POST`/`PUT`/`PATCH`/`DELETE`) once a session cookie is present. `GET` is never checked. `/api/auth/login` and `/api/auth/setup` are explicitly exempt, since they establish a session rather than act within one — a stale, unrelated cookie in the browser must not block a fresh login attempt.
+- **`X-User-Id` is gone** as an authentication mechanism. It was the placeholder identity header used before this issue; the session cookie is now the only thing `get_current_user()` will accept.
+- **Bootstrapping**: there is no self-registration. The very first Adult is created through `POST /api/auth/setup`, a one-time endpoint gated by an `INITIAL_SETUP_TOKEN` secret (environment-configured, never committed) and only usable while the `users` table is empty. Every subsequent User is created through the existing `POST /api/users` (Adult-only) — but that endpoint creates a domain `User` only, with **no credentials**. Such a User is a fully valid participant in every other part of the system (discoverable, assignable, can be assigned points, etc.) but cannot log in until they're given credentials. Provisioning those credentials for non-setup Users (invitation/activation) is deliberately deferred to a future issue.
+
 ## Migrations
 
 Alembic migrations are **never run automatically** (not on backend container startup, not implicitly by any script). They are an explicit step, run via:

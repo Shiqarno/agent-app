@@ -1,16 +1,13 @@
 import uuid
 from collections.abc import Callable
 
+from conftest import auth
 from fastapi.testclient import TestClient
 
 from app.models import User, UserRole
 
 ADULT = UserRole.ADULT
 CHILD = UserRole.CHILD
-
-
-def auth(user: User) -> dict[str, str]:
-    return {"X-User-Id": str(user.id)}
 
 
 def create_reward(client: TestClient, adult: User, **overrides: object) -> dict[str, object]:
