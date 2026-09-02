@@ -1,10 +1,11 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.errors import ProjectNotFoundError
 from app.models import Project, utcnow
 from app.schemas import ProjectCreate, ProjectResponse, ProjectUpdate
 
@@ -20,7 +21,7 @@ def list_projects(db: Session = Depends(get_db)) -> list[Project]:
 def get_project(project_id: uuid.UUID, db: Session = Depends(get_db)) -> Project:
     project = db.get(Project, project_id)
     if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+        raise ProjectNotFoundError()
     return project
 
 
@@ -39,7 +40,7 @@ def update_project(
 ) -> Project:
     project = db.get(Project, project_id)
     if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+        raise ProjectNotFoundError()
     project.name = payload.name
     project.description = payload.description
     project.updated_at = utcnow()
@@ -52,7 +53,7 @@ def update_project(
 def delete_project(project_id: uuid.UUID, db: Session = Depends(get_db)) -> Response:
     project = db.get(Project, project_id)
     if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+        raise ProjectNotFoundError()
     db.delete(project)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

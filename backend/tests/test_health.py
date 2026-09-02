@@ -29,7 +29,20 @@ def test_health_returns_503_when_database_unreachable(monkeypatch: pytest.Monkey
     response = client.get("/health")
 
     assert response.status_code == 503
-    assert response.json() == {"status": "error", "database": "unavailable"}
+    assert response.json() == {
+        "error": {"code": "DATABASE_UNAVAILABLE", "message": "Database unavailable"}
+    }
+
+
+def test_health_failure_does_not_use_old_flat_structure(monkeypatch: pytest.MonkeyPatch) -> None:
+    unreachable_engine = create_engine("postgresql+psycopg://app:app@localhost:1/app", future=True)
+    monkeypatch.setattr(db, "engine", unreachable_engine)
+
+    response = client.get("/health")
+
+    body = response.json()
+    assert "status" not in body
+    assert "database" not in body
 
 
 def test_database_is_available_returns_false_when_unreachable(

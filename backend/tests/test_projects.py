@@ -63,6 +63,9 @@ def test_get_missing_project_returns_404(client: TestClient) -> None:
     response = client.get(f"/api/projects/{uuid.uuid4()}")
 
     assert response.status_code == 404
+    assert response.json() == {
+        "error": {"code": "PROJECT_NOT_FOUND", "message": "Project not found"}
+    }
 
 
 def test_update_existing_project(client: TestClient) -> None:
@@ -94,6 +97,9 @@ def test_update_missing_project_returns_404(client: TestClient) -> None:
     response = client.put(f"/api/projects/{uuid.uuid4()}", json={"name": "Updated"})
 
     assert response.status_code == 404
+    assert response.json() == {
+        "error": {"code": "PROJECT_NOT_FOUND", "message": "Project not found"}
+    }
 
 
 def test_delete_existing_project(client: TestClient) -> None:
@@ -118,6 +124,9 @@ def test_delete_missing_project_returns_404(client: TestClient) -> None:
     response = client.delete(f"/api/projects/{uuid.uuid4()}")
 
     assert response.status_code == 404
+    assert response.json() == {
+        "error": {"code": "PROJECT_NOT_FOUND", "message": "Project not found"}
+    }
 
 
 def test_project_data_persists_across_separate_sessions(

@@ -10,7 +10,7 @@ import {
 type ListState =
   | { phase: 'loading' }
   | { phase: 'loaded'; projects: Project[] }
-  | { phase: 'error' }
+  | { phase: 'error'; message: string }
 
 type FormValues = {
   name: string
@@ -18,6 +18,10 @@ type FormValues = {
 }
 
 const emptyForm: FormValues = { name: '', description: '' }
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback
+}
 
 function App() {
   const [listState, setListState] = useState<ListState>({ phase: 'loading' })
@@ -37,9 +41,12 @@ function App() {
           setListState({ phase: 'loaded', projects })
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!cancelled) {
-          setListState({ phase: 'error' })
+          setListState({
+            phase: 'error',
+            message: errorMessage(error, 'Unable to load projects.'),
+          })
         }
       })
 
@@ -100,8 +107,10 @@ function App() {
       }
       setEditingId(null)
       setForm(emptyForm)
-    } catch {
-      setActionError(editingId ? 'Failed to update project.' : 'Failed to create project.')
+    } catch (error) {
+      setActionError(
+        errorMessage(error, editingId ? 'Failed to update project.' : 'Failed to create project.'),
+      )
     } finally {
       setSubmitting(false)
     }
@@ -121,8 +130,8 @@ function App() {
       if (editingId === id) {
         cancelEdit()
       }
-    } catch {
-      setActionError('Failed to delete project.')
+    } catch (error) {
+      setActionError(errorMessage(error, 'Failed to delete project.'))
     } finally {
       setDeletingId(null)
     }
@@ -163,7 +172,7 @@ function App() {
       {actionError && <p role="alert">{actionError}</p>}
 
       {listState.phase === 'loading' && <p>Loading...</p>}
-      {listState.phase === 'error' && <p>Unable to load projects.</p>}
+      {listState.phase === 'error' && <p>{listState.message}</p>}
       {listState.phase === 'loaded' && listState.projects.length === 0 && <p>No projects yet.</p>}
       {listState.phase === 'loaded' &&
         listState.projects.map((project) => (

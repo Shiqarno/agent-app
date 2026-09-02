@@ -13,6 +13,25 @@ export type ProjectInput = {
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
+type ApiErrorBody = {
+  error?: {
+    code?: string
+    message?: string
+  }
+}
+
+async function extractErrorMessage(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as ApiErrorBody
+    if (typeof body?.error?.message === 'string' && body.error.message) {
+      return body.error.message
+    }
+  } catch {
+    // response body was not JSON, or did not match the expected error shape
+  }
+  return `Request failed with status ${response.status}`
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
@@ -23,7 +42,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
 
   if (!response.ok) {
-    throw new Error(`Request to ${path} failed with status ${response.status}`)
+    throw new Error(await extractErrorMessage(response))
   }
 
   if (response.status === 204) {

@@ -68,7 +68,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -86,3 +86,55 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env
+        run: cp .env.example .env
+
+      - name: Build Docker images
+        run: docker compose build
+
+      - name: Start the stack
+        run: docker compose up -d
+
+      - name: Wait for PostgreSQL to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if docker compose exec -T db pg_isready -U app; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "PostgreSQL did not become ready in time"
+          docker compose logs db
+          exit 1
+
+      - name: Apply migrations
+        run: docker compose run --rm backend alembic upgrade head
+
+      - name: Wait for backend /health to report healthy
+        run: |
+          for i in $(seq 1 30); do
+            body=$(curl -fsS http://localhost:8000/health || true)
+            if echo "$body" | grep -q '"status":"ok"' && echo "$body" | grep -q '"database":"ok"'; then
+              echo "backend is healthy: $body"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "backend did not become healthy in time"
+          docker compose logs backend
+          exit 1
+
+      - name: Show container status
+        if: always()
+        run: docker compose ps
+
+      - name: Shut down the stack
+        if: always()
+        run: docker compose down -v

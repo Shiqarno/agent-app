@@ -153,7 +153,7 @@ describe('App', () => {
     })
   })
 
-  it('shows an error state when the project list fails to load', async () => {
+  it('shows the backend error message when the project list fails to load with a malformed body', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => jsonResponse(500, {})),
@@ -162,17 +162,20 @@ describe('App', () => {
     render(<App />)
 
     await waitFor(() => {
-      expect(screen.getByText(/unable to load projects/i)).toBeInTheDocument()
+      expect(screen.getByText(/request failed with status 500/i)).toBeInTheDocument()
     })
   })
 
-  it('shows an error when creating a project fails', async () => {
+  it('displays the structured backend error message on a failed update', async () => {
+    const existing = project()
     const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
       if (!init?.method) {
-        return jsonResponse(200, [])
+        return jsonResponse(200, [existing])
       }
-      if (init.method === 'POST') {
-        return jsonResponse(500, {})
+      if (init.method === 'PUT') {
+        return jsonResponse(404, {
+          error: { code: 'PROJECT_NOT_FOUND', message: 'Project not found' },
+        })
       }
       throw new Error(`Unexpected request: ${init.method}`)
     })
@@ -181,14 +184,29 @@ describe('App', () => {
     render(<App />)
 
     await waitFor(() => {
-      expect(screen.getByText(/no projects/i)).toBeInTheDocument()
+      expect(screen.getByText('My first project')).toBeInTheDocument()
     })
 
-    fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'New project' } })
-    fireEvent.click(screen.getByRole('button', { name: /new project/i }))
+    fireEvent.click(screen.getByRole('button', { name: /edit/i }))
+    fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Renamed project' } })
+    fireEvent.click(screen.getByRole('button', { name: /save/i }))
 
     await waitFor(() => {
-      expect(screen.getByText(/failed to create project/i)).toBeInTheDocument()
+      expect(screen.getByText('Project not found')).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/failed to update project/i)).not.toBeInTheDocument()
+  })
+
+  it('shows a useful fallback on a genuine network failure', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject('network down')),
+    )
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/unable to load projects/i)).toBeInTheDocument()
     })
   })
 
