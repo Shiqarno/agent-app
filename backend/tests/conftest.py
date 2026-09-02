@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db import engine, get_db
 from app.main import app
+from app.models import User, UserRole
 
 
 @pytest.fixture
@@ -32,3 +33,15 @@ def client(db_session: Session) -> Iterator[TestClient]:
         yield TestClient(app)
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def make_user(db_session: Session) -> Callable[..., User]:
+    def _make_user(role: UserRole, name: str = "Test User") -> User:
+        user = User(name=name, role=role)
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
+        return user
+
+    return _make_user

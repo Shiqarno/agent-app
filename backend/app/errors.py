@@ -22,6 +22,31 @@ class DatabaseUnavailableError(AppError):
         )
 
 
+class TaskNotFoundError(AppError):
+    def __init__(self) -> None:
+        super().__init__(status_code=404, code="TASK_NOT_FOUND", message="Task not found")
+
+
+class ChildNotFoundError(AppError):
+    def __init__(self) -> None:
+        super().__init__(status_code=422, code="CHILD_NOT_FOUND", message="Child not found")
+
+
+class InvalidTransitionError(AppError):
+    def __init__(self, message: str = "Invalid task state transition") -> None:
+        super().__init__(status_code=409, code="INVALID_TRANSITION", message=message)
+
+
+class UnauthenticatedError(AppError):
+    def __init__(self, message: str = "Missing or invalid X-User-Id header") -> None:
+        super().__init__(status_code=401, code="UNAUTHENTICATED", message=message)
+
+
+class ForbiddenError(AppError):
+    def __init__(self, message: str = "Forbidden") -> None:
+        super().__init__(status_code=403, code="FORBIDDEN", message=message)
+
+
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
