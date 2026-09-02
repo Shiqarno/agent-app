@@ -2,6 +2,7 @@ import uuid
 from collections.abc import Callable
 
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from app.models import User, UserRole
 
@@ -137,3 +138,285 @@ def test_unknown_user_id_rejected(client: TestClient) -> None:
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "UNAUTHENTICATED"
+
+
+# =========================================================================================
+# User creation (Issue #8)
+# =========================================================================================
+
+# --- Authorization -------------------------------------------------------------------------
+
+
+def test_adult_can_create_a_child(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
+
+    response = client.post(
+        "/api/users", json={"name": "New Child", "role": "child"}, headers=auth(adult)
+    )
+
+    assert response.status_code == 201
+    assert response.json()["role"] == "child"
+
+
+def test_adult_can_create_an_adult(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
+
+    response = client.post(
+        "/api/users", json={"name": "New Adult", "role": "adult"}, headers=auth(adult)
+    )
+
+    assert response.status_code == 201
+    assert response.json()["role"] == "adult"
+
+
+def test_child_cannot_create_a_child(client: TestClient, make_user: Callable[..., User]) -> None:
+    child = make_user(CHILD)
+
+    response = client.post(
+        "/api/users", json={"name": "New Child", "role": "child"}, headers=auth(child)
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+def test_child_cannot_create_an_adult(client: TestClient, make_user: Callable[..., User]) -> None:
+    child = make_user(CHILD)
+
+    response = client.post(
+        "/api/users", json={"name": "New Adult", "role": "adult"}, headers=auth(child)
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+def test_create_missing_identity_header_rejected(client: TestClient) -> None:
+    response = client.post("/api/users", json={"name": "New User", "role": "child"})
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHENTICATED"
+
+
+def test_create_unknown_user_id_rejected(client: TestClient) -> None:
+    response = client.post(
+        "/api/users",
+        json={"name": "New User", "role": "child"},
+        headers={"X-User-Id": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHENTICATED"
+
+
+# --- Creation --------------------------------------------------------------------------------
+
+
+def test_successful_creation_returns_generated_fields(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+
+    response = client.post(
+        "/api/users", json={"name": "Alice", "role": "child"}, headers=auth(adult)
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert uuid.UUID(body["id"])
+    assert body["name"] == "Alice"
+    assert body["role"] == "child"
+    assert body["created_at"] is not None
+    assert body["updated_at"] is not None
+
+
+def test_created_user_is_persisted_in_the_database(
+    client: TestClient, make_user: Callable[..., User], db_session: Session
+) -> None:
+    adult = make_user(ADULT)
+
+    response = client.post(
+        "/api/users", json={"name": "Alice", "role": "child"}, headers=auth(adult)
+    )
+
+    created_id = uuid.UUID(response.json()["id"])
+    stored = db_session.get(User, created_id)
+    assert stored is not None
+    assert stored.name == "Alice"
+    assert stored.role == CHILD
+
+
+def test_created_user_appears_via_get_users(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+
+    created = client.post(
+        "/api/users", json={"name": "Alice", "role": "child"}, headers=auth(adult)
+    ).json()
+
+    response = client.get("/api/users", headers=auth(adult))
+
+    ids = [entry["id"] for entry in response.json()]
+    assert created["id"] in ids
+
+
+# --- Validation --------------------------------------------------------------------------------
+
+
+def test_missing_name_returns_422(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
+
+    response = client.post("/api/users", json={"role": "child"}, headers=auth(adult))
+
+    assert response.status_code == 422
+
+
+def test_empty_name_returns_422(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
+
+    response = client.post(
+        "/api/users", json={"name": "", "role": "child"}, headers=auth(adult)
+    )
+
+    assert response.status_code == 422
+
+
+def test_whitespace_only_name_returns_422(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+
+    response = client.post(
+        "/api/users", json={"name": "   \t\n", "role": "child"}, headers=auth(adult)
+    )
+
+    assert response.status_code == 422
+
+
+def test_missing_role_returns_422(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
+
+    response = client.post("/api/users", json={"name": "Alice"}, headers=auth(adult))
+
+    assert response.status_code == 422
+
+
+def test_invalid_role_returns_422(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
+
+    response = client.post(
+        "/api/users", json={"name": "Alice", "role": "grandparent"}, headers=auth(adult)
+    )
+
+    assert response.status_code == 422
+
+
+def test_duplicate_names_are_allowed(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
+
+    first = client.post(
+        "/api/users", json={"name": "Alice", "role": "child"}, headers=auth(adult)
+    )
+    second = client.post(
+        "/api/users", json={"name": "Alice", "role": "child"}, headers=auth(adult)
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["id"] != second.json()["id"]
+
+
+# --- Input protection --------------------------------------------------------------------------
+
+
+def test_client_cannot_choose_the_user_id(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    requested_id = str(uuid.uuid4())
+
+    response = client.post(
+        "/api/users",
+        json={"id": requested_id, "name": "Alice", "role": "child"},
+        headers=auth(adult),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["id"] != requested_id
+
+
+def test_client_cannot_set_created_at(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
+
+    response = client.post(
+        "/api/users",
+        json={"name": "Alice", "role": "child", "created_at": "2000-01-01T00:00:00Z"},
+        headers=auth(adult),
+    )
+
+    assert response.status_code == 201
+    assert not response.json()["created_at"].startswith("2000-01-01")
+
+
+def test_client_cannot_set_updated_at(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
+
+    response = client.post(
+        "/api/users",
+        json={"name": "Alice", "role": "child", "updated_at": "2000-01-01T00:00:00Z"},
+        headers=auth(adult),
+    )
+
+    assert response.status_code == 201
+    assert not response.json()["updated_at"].startswith("2000-01-01")
+
+
+def test_created_by_field_does_not_exist(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+
+    response = client.post(
+        "/api/users",
+        json={"name": "Alice", "role": "child", "created_by": str(adult.id)},
+        headers=auth(adult),
+    )
+
+    assert response.status_code == 201
+    assert "created_by" not in response.json()
+
+
+# --- Integration: creation -> discovery -> task assignment --------------------------------------
+
+
+def test_new_user_integrates_with_discovery_and_task_assignment(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+
+    created = client.post(
+        "/api/users", json={"name": "Fresh Child", "role": "child"}, headers=auth(adult)
+    ).json()
+    child_id = created["id"]
+
+    discovered = client.get("/api/users", headers=auth(adult)).json()
+    assert child_id in [entry["id"] for entry in discovered]
+
+    task = client.post(
+        "/api/tasks",
+        json={"title": "Tidy up", "assigned_to": child_id, "reward_points": 10},
+        headers=auth(adult),
+    ).json()
+    assert task["assigned_to"] == child_id
+    assert task["status"] == "ASSIGNED"
+
+    start = client.post(
+        f"/api/tasks/{task['id']}/start", headers={"X-User-Id": child_id}
+    )
+    assert start.status_code == 200
+    assert start.json()["status"] == "IN_PROGRESS"
+
+    balance = client.get("/api/points/balance", headers={"X-User-Id": child_id})
+    assert balance.status_code == 200
+    assert balance.json() == {"balance": 0}

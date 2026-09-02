@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db import database_is_available
 from app.errors import DatabaseUnavailableError, register_error_handlers
+from app.routers.points import router as points_router
 from app.routers.projects import router as projects_router
 from app.routers.rewards import router as rewards_router
 from app.routers.tasks import router as tasks_router
@@ -20,6 +21,7 @@ app.add_middleware(
 
 register_error_handlers(app)
 
+app.include_router(points_router)
 app.include_router(projects_router)
 app.include_router(rewards_router)
 app.include_router(tasks_router)

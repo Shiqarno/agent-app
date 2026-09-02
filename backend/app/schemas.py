@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models import TaskStatus, UserRole
+from app.models import PointTransactionReason, TaskStatus, UserRole
 
 
 class ProjectBase(BaseModel):
@@ -74,6 +74,29 @@ class UserResponse(BaseModel):
     role: UserRole
 
 
+class UserCreate(BaseModel):
+    name: str
+    role: UserRole
+
+    @field_validator("name")
+    @classmethod
+    def name_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("name must not be empty or whitespace-only")
+        return stripped
+
+
+class UserCreateResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    role: UserRole
+    created_at: datetime
+    updated_at: datetime
+
+
 class RewardCreate(BaseModel):
     name: str
     description: str | None = None
@@ -123,4 +146,19 @@ class RewardRedemptionResponse(BaseModel):
     reward_id: uuid.UUID
     user_id: uuid.UUID
     cost_points: int
+    created_at: datetime
+
+
+class BalanceResponse(BaseModel):
+    balance: int
+
+
+class PointTransactionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    amount: int
+    reason: PointTransactionReason
+    task_id: uuid.UUID | None
+    redemption_id: uuid.UUID | None
     created_at: datetime
