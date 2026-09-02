@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -75,3 +75,28 @@ class Task(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PointTransactionReason(StrEnum):
+    TASK_COMPLETED = "TASK_COMPLETED"
+
+
+class PointTransaction(Base):
+    __tablename__ = "point_transactions"
+    __table_args__ = (
+        UniqueConstraint("task_id", "reason", name="uq_point_transactions_task_id_reason"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tasks.id"), nullable=False
+    )
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[PointTransactionReason] = mapped_column(
+        SAEnum(PointTransactionReason, native_enum=False, length=32, values_callable=_enum_values),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

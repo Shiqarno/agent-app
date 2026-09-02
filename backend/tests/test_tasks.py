@@ -2,8 +2,6 @@ import uuid
 from collections.abc import Callable
 
 from fastapi.testclient import TestClient
-from sqlalchemy import inspect
-from sqlalchemy.orm import Session
 
 from app.models import User, UserRole
 
@@ -401,23 +399,9 @@ def test_cannot_transition_a_completed_task(
     assert response.json()["error"]["code"] == "INVALID_TRANSITION"
 
 
-# --- AC16: completion does not award points ----------------------------------------------
-
-
-def test_task_completion_has_no_points_side_effect(
-    client: TestClient, make_user: Callable[..., User], db_session: Session
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child, reward_points=42)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
-    client.post(f"/api/tasks/{task['id']}/ready", headers=auth(child))
-
-    response = client.post(f"/api/tasks/{task['id']}/confirm", headers=auth(adult))
-
-    assert response.status_code == 200
-    inspector = inspect(db_session.get_bind())
-    assert set(inspector.get_table_names()) == {"alembic_version", "projects", "users", "tasks"}
+# Note: the "completion has no points side effect" invariant from Issue #1/#2
+# is intentionally superseded by Issue #3 (Point Ledger) -- see tests/test_points.py,
+# which now covers the (correct, current) point-awarding behavior on confirmation.
 
 
 # --- Task creation validation ---------------------------------------------------------

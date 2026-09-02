@@ -2,6 +2,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, status
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -12,7 +13,7 @@ from app.errors import (
     TaskNotFoundError,
 )
 from app.identity import get_current_user, require_adult
-from app.models import Task, TaskStatus, User, utcnow
+from app.models import PointTransaction, PointTransactionReason, Task, TaskStatus, User, utcnow
 from app.schemas import TaskCreate, TaskResponse
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -104,6 +105,18 @@ def confirm_task(
 
     task.status = TaskStatus.COMPLETED
     task.updated_at = utcnow()
-    db.commit()
+    db.add(
+        PointTransaction(
+            user_id=task.assigned_to,
+            task_id=task.id,
+            amount=task.reward_points,
+            reason=PointTransactionReason.TASK_COMPLETED,
+        )
+    )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise InvalidTransitionError("Task has already been confirmed") from exc
     db.refresh(task)
     return task
