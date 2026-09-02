@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models import TaskStatus
+from app.models import TaskStatus, UserRole
 
 
 class ProjectBase(BaseModel):
@@ -64,3 +64,11 @@ class TaskResponse(BaseModel):
     status: TaskStatus
     created_at: datetime
     updated_at: datetime
+
+
+class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    role: UserRole
