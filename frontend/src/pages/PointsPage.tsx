@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { getBalance, getHistory, type PointTransaction } from '../api/points'
+import { getTasks, type Task } from '../api/tasks'
 
 type BalanceState =
   | { phase: 'loading' }
@@ -11,72 +12,113 @@ type HistoryState =
   | { phase: 'loaded'; transactions: PointTransaction[] }
   | { phase: 'error'; message: string }
 
+const REASON_LABELS: Record<PointTransaction['reason'], string> = {
+  TASK_COMPLETED: 'Task completed',
+  REWARD_REDEEMED: 'Reward redeemed',
+}
+
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
+}
+
+function useTasksById() {
+  const [byId, setById] = useState<Record<string, Task>>({})
+
+  useEffect(() => {
+    getTasks()
+      .then((tasks) => setById(Object.fromEntries(tasks.map((task) => [task.id, task]))))
+      .catch(() => {
+        // A task title is a presentation nicety on top of the transaction
+        // reason; if this fails, history still renders without it. There is
+        // no existing endpoint to resolve a redemption_id back to a reward
+        // name, so redemption transactions never get this extra line.
+      })
+  }, [])
+
+  return byId
 }
 
 function PointsPage() {
   const [balanceState, setBalanceState] = useState<BalanceState>({ phase: 'loading' })
   const [historyState, setHistoryState] = useState<HistoryState>({ phase: 'loading' })
+  const tasksById = useTasksById()
 
-  useEffect(() => {
-    let cancelled = false
+  const loadBalance = useCallback(() => {
+    setBalanceState({ phase: 'loading' })
     getBalance()
-      .then((balance) => {
-        if (!cancelled) setBalanceState({ phase: 'loaded', balance: balance.balance })
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setBalanceState({ phase: 'error', message: errorMessage(error, 'Unable to load balance.') })
-        }
-      })
-    return () => {
-      cancelled = true
-    }
+      .then((balance) => setBalanceState({ phase: 'loaded', balance: balance.balance }))
+      .catch((error: unknown) =>
+        setBalanceState({ phase: 'error', message: errorMessage(error, 'Could not load balance.') }),
+      )
+  }, [])
+
+  const loadHistory = useCallback(() => {
+    setHistoryState({ phase: 'loading' })
+    getHistory()
+      .then((transactions) => setHistoryState({ phase: 'loaded', transactions }))
+      .catch((error: unknown) =>
+        setHistoryState({
+          phase: 'error',
+          message: errorMessage(error, 'Could not load points history.'),
+        }),
+      )
   }, [])
 
   useEffect(() => {
-    let cancelled = false
-    getHistory()
-      .then((transactions) => {
-        if (!cancelled) setHistoryState({ phase: 'loaded', transactions })
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setHistoryState({
-            phase: 'error',
-            message: errorMessage(error, 'Unable to load history.'),
-          })
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    loadBalance()
+  }, [loadBalance])
+
+  useEffect(() => {
+    loadHistory()
+  }, [loadHistory])
 
   return (
     <div>
       <h1>Points</h1>
-      {balanceState.phase === 'loading' && <p>Loading...</p>}
-      {balanceState.phase === 'error' && <p role="alert">{balanceState.message}</p>}
-      {balanceState.phase === 'loaded' && <p>Balance: {balanceState.balance}</p>}
 
-      <h2>History</h2>
-      {historyState.phase === 'loading' && <p>Loading...</p>}
-      {historyState.phase === 'error' && <p role="alert">{historyState.message}</p>}
-      {historyState.phase === 'loaded' && historyState.transactions.length === 0 && (
-        <p>No point transactions yet.</p>
-      )}
-      {historyState.phase === 'loaded' && historyState.transactions.length > 0 && (
-        <ul>
-          {historyState.transactions.map((txn) => (
-            <li key={txn.id}>
-              {txn.amount > 0 ? '+' : ''}
-              {txn.amount} — {txn.reason}
-            </li>
-          ))}
-        </ul>
-      )}
+      <section aria-labelledby="balance-heading">
+        <h2 id="balance-heading">Current balance</h2>
+        {balanceState.phase === 'loading' && <p>Loading balance...</p>}
+        {balanceState.phase === 'error' && (
+          <p role="alert">
+            {balanceState.message} <button onClick={loadBalance}>Retry</button>
+          </p>
+        )}
+        {balanceState.phase === 'loaded' && <p>{balanceState.balance} points</p>}
+      </section>
+
+      <section aria-labelledby="history-heading">
+        <h2 id="history-heading">History</h2>
+        {historyState.phase === 'loading' && <p>Loading history...</p>}
+        {historyState.phase === 'error' && (
+          <p role="alert">
+            {historyState.message} <button onClick={loadHistory}>Retry</button>
+          </p>
+        )}
+        {historyState.phase === 'loaded' && historyState.transactions.length === 0 && (
+          <p>No points history yet.</p>
+        )}
+        {historyState.phase === 'loaded' && historyState.transactions.length > 0 && (
+          // The backend already orders history by created_at desc, id desc
+          // -- rendered as returned, no client-side re-sort.
+          <ul className="transaction-list">
+            {historyState.transactions.map((txn) => {
+              const task = txn.task_id ? tasksById[txn.task_id] : undefined
+              return (
+                <li key={txn.id} className="transaction-card">
+                  <p className="transaction-amount">
+                    {txn.amount > 0 ? '+' : ''}
+                    {txn.amount} points
+                  </p>
+                  <p>{REASON_LABELS[txn.reason]}</p>
+                  {task && <p>&quot;{task.title}&quot;</p>}
+                  <p>{new Date(txn.created_at).toLocaleDateString()}</p>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
     </div>
   )
 }

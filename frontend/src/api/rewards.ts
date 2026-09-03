@@ -55,3 +55,15 @@ export function updateReward(id: string, input: RewardInput): Promise<Reward> {
     body: JSON.stringify(input),
   })
 }
+
+export type RewardRedemption = {
+  id: string
+  reward_id: string
+  user_id: string
+  cost_points: number
+  created_at: string
+}
+
+export function redeemReward(id: string): Promise<RewardRedemption> {
+  return request<RewardRedemption>(`/api/rewards/${id}/redeem`, { method: 'POST' })
+}

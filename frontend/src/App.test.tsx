@@ -29,6 +29,21 @@ function stubDashboardData(url: string) {
   return undefined
 }
 
+// A default stub for the Rewards page's own data requests (rewards catalog
+// + balance), reused by every test that reaches it as either role.
+function stubRewardsData(url: string) {
+  if (url.endsWith('/api/rewards')) {
+    return jsonResponse(200, [])
+  }
+  if (url.endsWith('/api/points/balance')) {
+    return jsonResponse(200, { balance: 0 })
+  }
+  if (url.endsWith('/api/points/history')) {
+    return jsonResponse(200, [])
+  }
+  return undefined
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
   window.history.pushState({}, '', '/')
@@ -139,11 +154,13 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: /^dashboard$/i })).toBeInTheDocument()
   })
 
-  it('an authenticated Child does not receive the Adult Dashboard shell', async () => {
+  it('an authenticated Child does not receive the Adult Dashboard shell, and lands on Rewards', async () => {
     const fetchMock = vi.fn((url: string) => {
       if (url.endsWith('/api/auth/me')) {
         return jsonResponse(200, CHILD_USER)
       }
+      const rewards = stubRewardsData(url)
+      if (rewards) return rewards
       throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -154,7 +171,80 @@ describe('App', () => {
       expect(screen.getByText(/signed in as kiddo/i)).toBeInTheDocument()
     })
     expect(screen.queryByRole('heading', { name: /^dashboard$/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /^rewards$/i })).toBeInTheDocument()
+  })
+
+  it("a Child's navigation only offers Rewards and Points, no Adult-only sections", async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(200, CHILD_USER)
+      }
+      const rewards = stubRewardsData(url)
+      if (rewards) return rewards
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('navigation')).toBeInTheDocument()
+    })
+    const nav = screen.getByRole('navigation')
+    expect(nav).toHaveTextContent('Rewards')
+    expect(nav).toHaveTextContent('Points')
+    expect(nav).not.toHaveTextContent('Dashboard')
+    expect(nav).not.toHaveTextContent('Tasks')
+    expect(nav).not.toHaveTextContent('Users')
+  })
+
+  it('a Child can navigate between /rewards and /points through the real router', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(200, CHILD_USER)
+      }
+      const rewards = stubRewardsData(url)
+      if (rewards) return rewards
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^rewards$/i })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('link', { name: 'Points' }))
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^points$/i })).toBeInTheDocument()
+    })
+    expect(window.location.pathname).toBe('/points')
+
+    fireEvent.click(screen.getByRole('link', { name: 'Rewards' }))
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^rewards$/i })).toBeInTheDocument()
+    })
+  })
+
+  it('a Child navigating directly to an Adult-only route (e.g. /dashboard) falls back to Rewards, not Dashboard', async () => {
+    window.history.pushState({}, '', '/dashboard')
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(200, CHILD_USER)
+      }
+      const rewards = stubRewardsData(url)
+      if (rewards) return rewards
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^rewards$/i })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('heading', { name: /^dashboard$/i })).not.toBeInTheDocument()
   })
 
   it('navigating directly to an Adult route while unauthenticated shows Login, not the route', async () => {
@@ -376,5 +466,33 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.getByLabelText(/^name$/i)).toHaveValue('Movie night')
     })
+  })
+
+  it("the Dashboard's own View history affordance navigates to /points", async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(200, ADULT_USER)
+      }
+      if (url.endsWith('/api/points/history')) {
+        return jsonResponse(200, [])
+      }
+      const dashboard = stubDashboardData(url)
+      if (dashboard) return dashboard
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^dashboard$/i })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('link', { name: /view history/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^points$/i })).toBeInTheDocument()
+    })
+    expect(window.location.pathname).toBe('/points')
   })
 })

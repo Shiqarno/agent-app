@@ -145,15 +145,29 @@ const ADULT_ROUTES: Record<string, ComponentType> = {
 // see router.tsx for why a full route-matching library isn't warranted here.
 const REWARD_EDIT_PATH = /^\/rewards\/[^/]+\/edit$/
 
-function resolvePage(path: string): ComponentType {
+function resolveAdultPage(path: string): ComponentType {
   if (ADULT_ROUTES[path]) return ADULT_ROUTES[path]
   if (REWARD_EDIT_PATH.test(path)) return EditRewardPage
   return DashboardPage
 }
 
-function AdultApp({ user, onLogout }: { user: CurrentUser; onLogout: () => void }) {
+// Children get the minimum Rewards/Points access this issue requires (view
+// balance/history/catalog, redeem) -- everything else, including Reward
+// management and any Adult-only path, falls back to /rewards. A full Child
+// shell/Dashboard remains out of scope; this reuses the same RewardsPage
+// and PointsPage Adults use rather than creating separate Child pages.
+const CHILD_ROUTES: Record<string, ComponentType> = {
+  '/rewards': RewardsPage,
+  '/points': PointsPage,
+}
+
+function resolveChildPage(path: string): ComponentType {
+  return CHILD_ROUTES[path] ?? RewardsPage
+}
+
+function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () => void }) {
   const { path } = useRouter()
-  const Page = resolvePage(path)
+  const Page = user.role === 'adult' ? resolveAdultPage(path) : resolveChildPage(path)
 
   return (
     <AppShell user={user} onLogout={onLogout}>
@@ -221,21 +235,9 @@ function App() {
     return <LoginForm onLogin={handleAuthenticated} />
   }
 
-  if (auth.user.role !== 'adult') {
-    // The Child landing page is out of scope for this issue -- Children
-    // must not receive Adult Dashboard capabilities merely by navigating
-    // to an Adult route, so no shell/router is mounted for them at all.
-    return (
-      <p>
-        Signed in as {auth.user.name} ({auth.user.role})
-        <button onClick={handleLogout}>Log out</button>
-      </p>
-    )
-  }
-
   return (
     <RouterProvider>
-      <AdultApp user={auth.user} onLogout={handleLogout} />
+      <AuthenticatedApp user={auth.user} onLogout={handleLogout} />
     </RouterProvider>
   )
 }
