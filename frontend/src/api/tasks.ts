@@ -1,6 +1,13 @@
-import { request } from './http'
+import { ApiError, request } from './http'
 
-export type TaskStatus = 'ASSIGNED' | 'IN_PROGRESS' | 'AWAITING_CONFIRMATION' | 'COMPLETED'
+export { ApiError }
+
+export type TaskStatus =
+  | 'ASSIGNED'
+  | 'IN_PROGRESS'
+  | 'AWAITING_CONFIRMATION'
+  | 'COMPLETED'
+  | 'CANCELLED'
 
 export type Task = {
   id: string
@@ -21,14 +28,37 @@ export type TaskInput = {
   reward_points: number
 }
 
+export type TaskUpdateInput = {
+  title?: string
+  description?: string
+}
+
 export function getTasks(): Promise<Task[]> {
   return request<Task[]>('/api/tasks')
+}
+
+export function getTask(id: string): Promise<Task> {
+  return request<Task>(`/api/tasks/${id}`)
 }
 
 export function createTask(input: TaskInput): Promise<Task> {
   return request<Task>('/api/tasks', {
     method: 'POST',
     body: JSON.stringify(input),
+  })
+}
+
+export function updateTask(id: string, input: TaskUpdateInput): Promise<Task> {
+  return request<Task>(`/api/tasks/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  })
+}
+
+export function reassignTask(id: string, assignedTo: string): Promise<Task> {
+  return request<Task>(`/api/tasks/${id}/reassign`, {
+    method: 'POST',
+    body: JSON.stringify({ assigned_to: assignedTo }),
   })
 }
 
@@ -42,4 +72,8 @@ export function readyTask(id: string): Promise<Task> {
 
 export function confirmTask(id: string): Promise<Task> {
   return request<Task>(`/api/tasks/${id}/confirm`, { method: 'POST' })
+}
+
+export function cancelTask(id: string): Promise<Task> {
+  return request<Task>(`/api/tasks/${id}/cancel`, { method: 'POST' })
 }

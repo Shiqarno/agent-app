@@ -595,4 +595,113 @@ describe('App', () => {
     })
     expect(window.location.pathname).toBe('/points')
   })
+
+  it('Adult: /tasks -> Details -> Edit -> Save resolves the dynamic Task routes through the real router', async () => {
+    const existingTask = {
+      id: 'task-99',
+      title: 'Feed the cat',
+      description: null,
+      assigned_to: ADULT_USER.id,
+      created_by: ADULT_USER.id,
+      reward_points: 5,
+      status: 'ASSIGNED',
+      created_at: '2026-09-03T10:00:00Z',
+      updated_at: '2026-09-03T10:00:00Z',
+    }
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(200, ADULT_USER)
+      }
+      if (url.endsWith('/api/tasks') && (init?.method ?? 'GET') === 'GET') {
+        return jsonResponse(200, [existingTask])
+      }
+      if (url.endsWith('/api/tasks/task-99') && (init?.method ?? 'GET') === 'GET') {
+        return jsonResponse(200, existingTask)
+      }
+      if (url.endsWith('/api/tasks/task-99') && init?.method === 'PATCH') {
+        return jsonResponse(200, { ...existingTask, title: 'Feed the cat and dog' })
+      }
+      const dashboard = stubDashboardData(url)
+      if (dashboard) return dashboard
+      throw new Error(`Unexpected request: ${url} ${String(init?.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^dashboard$/i })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('link', { name: 'Tasks' }))
+    await waitFor(() => {
+      expect(screen.getByText('Feed the cat')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('link', { name: /details/i }))
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Feed the cat' })).toBeInTheDocument()
+    })
+    expect(window.location.pathname).toBe('/tasks/task-99')
+
+    fireEvent.click(screen.getByRole('link', { name: /^edit$/i }))
+    await waitFor(() => {
+      expect(screen.getByLabelText(/title/i)).toHaveValue('Feed the cat')
+    })
+    expect(window.location.pathname).toBe('/tasks/task-99/edit')
+
+    fireEvent.change(screen.getByLabelText(/title/i), {
+      target: { value: 'Feed the cat and dog' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/tasks/task-99')
+    })
+  })
+
+  it('Child can open Task Details for their own task, but /tasks/:id/edit falls back to Tasks', async () => {
+    const childTask = {
+      id: 'task-77',
+      title: 'Walk the dog',
+      description: null,
+      assigned_to: CHILD_USER.id,
+      created_by: ADULT_USER.id,
+      reward_points: 5,
+      status: 'ASSIGNED',
+      created_at: '2026-09-03T10:00:00Z',
+      updated_at: '2026-09-03T10:00:00Z',
+    }
+    window.history.pushState({}, '', '/tasks/task-77')
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(200, CHILD_USER)
+      }
+      if (url.endsWith('/api/tasks/task-77')) {
+        return jsonResponse(200, childTask)
+      }
+      const tasks = stubTasksData(url)
+      if (tasks) return tasks
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { unmount } = render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Walk the dog' })).toBeInTheDocument()
+    })
+    expect(window.location.pathname).toBe('/tasks/task-77')
+    // Assignee action available, but no creator-only management controls.
+    expect(screen.getByRole('button', { name: /^start$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /^edit$/i })).not.toBeInTheDocument()
+    unmount()
+
+    window.history.pushState({}, '', '/tasks/task-77/edit')
+    // Re-render fresh, as the router would resolve a direct navigation.
+    render(<App />)
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^tasks$/i })).toBeInTheDocument()
+    })
+  })
 })

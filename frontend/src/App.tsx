@@ -3,11 +3,13 @@ import { activate, login, logout, me, type CurrentUser } from './api/auth'
 import AppShell from './AppShell'
 import DashboardPage from './pages/DashboardPage'
 import EditRewardPage from './pages/EditRewardPage'
+import EditTaskPage from './pages/EditTaskPage'
 import NewRewardPage from './pages/NewRewardPage'
 import NewTaskPage from './pages/NewTaskPage'
 import NewUserPage from './pages/NewUserPage'
 import PointsPage from './pages/PointsPage'
 import RewardsPage from './pages/RewardsPage'
+import TaskDetailsPage from './pages/TaskDetailsPage'
 import TasksPage from './pages/TasksPage'
 import UsersPage from './pages/UsersPage'
 import { RouterProvider, useRouter } from './router'
@@ -141,22 +143,31 @@ const ADULT_ROUTES: Record<string, ComponentType> = {
   '/points': PointsPage,
 }
 
-// The only route with a dynamic segment. A single regex check is enough --
-// see router.tsx for why a full route-matching library isn't warranted here.
+// Routes with a dynamic segment. Plain regex checks are enough -- see
+// router.tsx for why a full route-matching library isn't warranted here.
 const REWARD_EDIT_PATH = /^\/rewards\/[^/]+\/edit$/
+const TASK_EDIT_PATH = /^\/tasks\/[^/]+\/edit$/
+// Deliberately excludes /tasks/new (an exact match in ADULT_ROUTES, checked
+// first) and /tasks/:id/edit (a second path segment, which [^/]+$ rejects).
+const TASK_DETAILS_PATH = /^\/tasks\/[^/]+$/
 
 function resolveAdultPage(path: string): ComponentType {
   if (ADULT_ROUTES[path]) return ADULT_ROUTES[path]
   if (REWARD_EDIT_PATH.test(path)) return EditRewardPage
+  if (TASK_EDIT_PATH.test(path)) return EditTaskPage
+  if (TASK_DETAILS_PATH.test(path)) return TaskDetailsPage
   return DashboardPage
 }
 
-// Children get Tasks (their default/home route), plus the Rewards/Points
-// access from Issue #14 -- everything else, including Reward management,
-// User management, Dashboard, and Task creation, falls back to /tasks. A
-// full Child shell/Dashboard remains out of scope; this reuses the same
-// TasksPage, RewardsPage, and PointsPage Adults use (each already
-// role-aware internally) rather than creating separate Child pages.
+// Children get Tasks (their default/home route) -- including Task Details,
+// since a Child is routinely the assignee a Task Details page's Start/Mark
+// ready actions are for -- plus the Rewards/Points access from Issue #14.
+// Everything else, including Reward/User management, Dashboard, Task
+// creation, and Task editing (edit is creator-only, and a Child can never
+// be a creator), falls back to /tasks. A full Child shell/Dashboard remains
+// out of scope; this reuses the same TasksPage, TaskDetailsPage,
+// RewardsPage, and PointsPage Adults use (each already role-aware
+// internally) rather than creating separate Child pages.
 const CHILD_ROUTES: Record<string, ComponentType> = {
   '/tasks': TasksPage,
   '/rewards': RewardsPage,
@@ -164,7 +175,13 @@ const CHILD_ROUTES: Record<string, ComponentType> = {
 }
 
 function resolveChildPage(path: string): ComponentType {
-  return CHILD_ROUTES[path] ?? TasksPage
+  if (CHILD_ROUTES[path]) return CHILD_ROUTES[path]
+  // Unlike resolveAdultPage, there's no exact match for /tasks/new here to
+  // short-circuit before the regex -- it's deliberately absent from
+  // CHILD_ROUTES (Task creation is Adult-only) -- so it must be excluded
+  // explicitly, or "new" would be treated as a task id.
+  if (path !== '/tasks/new' && TASK_DETAILS_PATH.test(path)) return TaskDetailsPage
+  return TasksPage
 }
 
 function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () => void }) {

@@ -623,4 +623,23 @@ describe('TasksPage', () => {
       )
     })
   })
+
+  it('each task card exposes a Details link to /tasks/:id', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.endsWith('/api/tasks')) return jsonResponse(200, [task({ id: 'task-42' })])
+        return baseHandlers(url) ?? Promise.reject(new Error(`Unexpected request: ${url}`))
+      }),
+    )
+
+    renderTasksPage()
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /details/i })).toHaveAttribute(
+        'href',
+        '/tasks/task-42',
+      )
+    })
+  })
 })

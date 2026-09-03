@@ -58,6 +58,25 @@ class TaskCreate(BaseModel):
         return stripped
 
 
+class TaskUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def title_must_not_be_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("title must not be empty or whitespace-only")
+        return stripped
+
+
+class TaskReassign(BaseModel):
+    assigned_to: uuid.UUID
+
+
 class TaskResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

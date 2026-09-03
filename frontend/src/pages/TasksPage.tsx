@@ -25,6 +25,7 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: 'IN_PROGRESS', label: 'In progress' },
   { value: 'AWAITING_CONFIRMATION', label: 'Awaiting confirmation' },
   { value: 'COMPLETED', label: 'Completed' },
+  { value: 'CANCELLED', label: 'Cancelled' },
 ]
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
@@ -32,6 +33,7 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   IN_PROGRESS: 'In progress',
   AWAITING_CONFIRMATION: 'Awaiting confirmation',
   COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled',
 }
 
 type ActionKind = 'start' | 'ready' | 'confirm'
@@ -203,6 +205,7 @@ function TasksPage() {
                 <p>Points: {task.reward_points}</p>
                 <p>Status: {STATUS_LABELS[task.status]}</p>
                 <p>Created: {new Date(task.created_at).toLocaleString()}</p>
+                <Link to={`/tasks/${task.id}`}>Details</Link>
                 {action && (
                   <button
                     onClick={() => runAction(task, action)}
