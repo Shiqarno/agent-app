@@ -16,6 +16,7 @@ There are no other infrastructure services (no Redis, no Kafka, no Kubernetes, n
 - Vite gives a fast dev server with hot module reload and minimal configuration.
 - TypeScript satisfies the type-checking requirement on the client.
 - Builds to static files, so production hosting is cheap (static hosting or a single lightweight server), with no Node process required in production.
+- Routing (`src/router.tsx`) is a small hand-rolled History API wrapper (`RouterProvider`/`useRouter`/`Link`), not a routing library. The app has a handful of static routes (`/dashboard`, `/tasks`, `/tasks/new`, etc.) with no nested or dynamic segments, so a routing library would be more than the project needs (see CLAUDE.md: no new dependencies unless necessary). Revisit if routes grow dynamic segments or nesting.
 
 **Open trade-off:** a server-rendered Python app (FastAPI + Jinja2 + htmx) would reduce the stack to a single language and remove the frontend build step entirely. React/TS/Vite was chosen because "web client" was specified as its own tier, implying a separable frontend, but this is worth reconsidering if the product turns out to be simple CRUD/forms with little client-side interactivity.
 

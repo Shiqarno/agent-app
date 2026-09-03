@@ -1,6 +1,15 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { type ComponentType, type FormEvent, useEffect, useState } from 'react'
 import { activate, login, logout, me, type CurrentUser } from './api/auth'
-import ProjectsPage from './ProjectsPage'
+import AppShell from './AppShell'
+import DashboardPage from './pages/DashboardPage'
+import NewRewardPage from './pages/NewRewardPage'
+import NewTaskPage from './pages/NewTaskPage'
+import NewUserPage from './pages/NewUserPage'
+import PointsPage from './pages/PointsPage'
+import RewardsPage from './pages/RewardsPage'
+import TasksPage from './pages/TasksPage'
+import UsersPage from './pages/UsersPage'
+import { RouterProvider, useRouter } from './router'
 
 type AuthState =
   | { phase: 'loading' }
@@ -117,14 +126,41 @@ function ActivationForm({
   )
 }
 
+// Adult-only routes. Static paths only -- no nested/dynamic segments are
+// needed, so a plain lookup table is enough (see router.tsx).
+const ADULT_ROUTES: Record<string, ComponentType> = {
+  '/': DashboardPage,
+  '/dashboard': DashboardPage,
+  '/tasks': TasksPage,
+  '/tasks/new': NewTaskPage,
+  '/users': UsersPage,
+  '/users/new': NewUserPage,
+  '/rewards': RewardsPage,
+  '/rewards/new': NewRewardPage,
+  '/points': PointsPage,
+}
+
+function AdultApp({ user, onLogout }: { user: CurrentUser; onLogout: () => void }) {
+  const { path } = useRouter()
+  const Page = ADULT_ROUTES[path] ?? DashboardPage
+
+  return (
+    <AppShell user={user} onLogout={onLogout}>
+      <Page />
+    </AppShell>
+  )
+}
+
 function App() {
   const [auth, setAuth] = useState<AuthState>({ phase: 'loading' })
   // The activation link (POST /api/users creates this token server-side, out
-  // of band -- Issue #10) carries the token as a URL query parameter. It is
+  // of band -- Issue #10) lives at /activate?activation_token=... . It is
   // read once and never persisted client-side (no localStorage), matching
   // the same "never store a raw token" discipline as the session cookie.
   const [activationToken] = useState(() =>
-    new URLSearchParams(window.location.search).get('activation_token'),
+    window.location.pathname === '/activate'
+      ? new URLSearchParams(window.location.search).get('activation_token')
+      : null,
   )
 
   useEffect(() => {
@@ -155,30 +191,41 @@ function App() {
     }
   }
 
+  function handleAuthenticated(user: CurrentUser) {
+    // Dashboard is the landing page after a successful Adult login.
+    if (user.role === 'adult' && window.location.pathname !== '/dashboard') {
+      window.history.pushState({}, '', '/dashboard')
+    }
+    setAuth({ phase: 'authenticated', user })
+  }
+
   if (auth.phase === 'loading') {
     return <p>Loading...</p>
   }
 
   if (auth.phase === 'anonymous') {
     if (activationToken) {
-      return (
-        <ActivationForm
-          token={activationToken}
-          onActivated={(user) => setAuth({ phase: 'authenticated', user })}
-        />
-      )
+      return <ActivationForm token={activationToken} onActivated={handleAuthenticated} />
     }
-    return <LoginForm onLogin={(user) => setAuth({ phase: 'authenticated', user })} />
+    return <LoginForm onLogin={handleAuthenticated} />
   }
 
-  return (
-    <>
+  if (auth.user.role !== 'adult') {
+    // The Child landing page is out of scope for this issue -- Children
+    // must not receive Adult Dashboard capabilities merely by navigating
+    // to an Adult route, so no shell/router is mounted for them at all.
+    return (
       <p>
         Signed in as {auth.user.name} ({auth.user.role})
         <button onClick={handleLogout}>Log out</button>
       </p>
-      <ProjectsPage />
-    </>
+    )
+  }
+
+  return (
+    <RouterProvider>
+      <AdultApp user={auth.user} onLogout={handleLogout} />
+    </RouterProvider>
   )
 }
 

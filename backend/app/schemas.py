@@ -95,6 +95,7 @@ class UserCreateResponse(BaseModel):
     role: UserRole
     created_at: datetime
     updated_at: datetime
+    activation_token: str
 
 
 class RewardCreate(BaseModel):

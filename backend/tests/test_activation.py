@@ -486,9 +486,13 @@ def test_creating_a_user_creates_an_activation_record(
     assert activation.expires_at > utcnow()
 
 
-def test_user_creation_response_never_exposes_the_activation_token(
+def test_user_creation_response_includes_the_raw_activation_token(
     client: TestClient, make_user: Callable[..., User]
 ) -> None:
+    """Issue #11 extends UserCreateResponse: the raw token is now returned
+    once, to the creating Adult, so the frontend can present an activation
+    link. Every other field is unchanged.
+    """
     adult = make_user(ADULT)
 
     response = client.post(
@@ -496,39 +500,62 @@ def test_user_creation_response_never_exposes_the_activation_token(
     )
 
     assert response.status_code == 201
-    assert set(response.json().keys()) == {"id", "name", "role", "created_at", "updated_at"}
+    body = response.json()
+    expected_keys = {"id", "name", "role", "created_at", "updated_at", "activation_token"}
+    assert set(body.keys()) == expected_keys
+    assert isinstance(body["activation_token"], str)
+    assert body["activation_token"]
+
+
+def test_returned_activation_token_matches_the_stored_hash(
+    client: TestClient, make_user: Callable[..., User], db_session: Session
+) -> None:
+    adult = make_user(ADULT)
+
+    created = client.post(
+        "/api/users", json={"name": "New Kid", "role": "child"}, headers=auth(adult)
+    ).json()
+
+    activation = db_session.scalar(
+        select(UserActivation).where(UserActivation.user_id == uuid.UUID(created["id"]))
+    )
+    assert activation is not None
+    assert activation.token_hash != created["activation_token"]
+    assert activation.token_hash == hash_token(created["activation_token"])
 
 
 def test_the_created_users_activation_token_actually_activates_them(
-    client: TestClient, make_user: Callable[..., User], db_session: Session
+    client: TestClient, make_user: Callable[..., User]
 ) -> None:
-    """The production endpoint never returns the raw token; this drives the
-    exact same internal helper (`app.activation.create_activation`) it uses
-    against the created User to confirm the token it stores is genuinely
-    usable end-to-end, without adding a dev-only retrieval endpoint.
-    """
     adult = make_user(ADULT)
     created = client.post(
         "/api/users", json={"name": "New Kid", "role": "child"}, headers=auth(adult)
     ).json()
-    created_id = uuid.UUID(created["id"])
-
-    existing_activation = db_session.scalar(
-        select(UserActivation).where(UserActivation.user_id == created_id)
-    )
-    assert existing_activation is not None
-    db_session.delete(existing_activation)
-    db_session.commit()
-    token = insert_activation(db_session, created_id)
-    db_session.commit()
 
     response = client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "newkid@example.com", "password": PASSWORD},
+        json={
+            "token": created["activation_token"],
+            "email": "newkid@example.com",
+            "password": PASSWORD,
+        },
     )
 
     assert response.status_code == 200
-    assert response.json()["id"] == str(created_id)
+    assert response.json()["id"] == created["id"]
+
+
+def test_activation_token_is_not_exposed_by_user_discovery(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    client.post("/api/users", json={"name": "New Kid", "role": "child"}, headers=auth(adult))
+
+    response = client.get("/api/users", headers=auth(adult))
+
+    assert response.status_code == 200
+    for entry in response.json():
+        assert "activation_token" not in entry
 
 
 # --- Concurrency ------------------------------------------------------------------------------

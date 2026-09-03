@@ -22,12 +22,19 @@ def list_users(user: User = Depends(require_adult), db: Session = Depends(get_db
 @router.post("", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_user(
     payload: UserCreate, user: User = Depends(require_adult), db: Session = Depends(get_db)
-) -> User:
+) -> UserCreateResponse:
     new_user_id = uuid.uuid4()
     new_user = User(id=new_user_id, name=payload.name, role=payload.role)
     db.add(new_user)
     db.flush()
-    create_activation(db, new_user_id)
+    raw_activation_token = create_activation(db, new_user_id)
     db.commit()
     db.refresh(new_user)
-    return new_user
+    return UserCreateResponse(
+        id=new_user.id,
+        name=new_user.name,
+        role=new_user.role,
+        created_at=new_user.created_at,
+        updated_at=new_user.updated_at,
+        activation_token=raw_activation_token,
+    )
