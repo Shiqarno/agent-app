@@ -331,6 +331,106 @@ describe('TasksPage', () => {
     expect(within(item).queryByRole('button')).not.toBeInTheDocument()
   })
 
+  // --- Child role (Issue #15) -------------------------------------------------
+
+  it('a Child sees Start on their own ASSIGNED task', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.endsWith('/api/tasks')) {
+          return jsonResponse(200, [task({ status: 'ASSIGNED', assigned_to: CHILD.id })])
+        }
+        return baseHandlers(url, CHILD) ?? Promise.reject(new Error(`Unexpected request: ${url}`))
+      }),
+    )
+
+    renderTasksPage()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^start$/i })).toBeInTheDocument()
+    })
+  })
+
+  it('a Child sees Mark ready on their own IN_PROGRESS task', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.endsWith('/api/tasks')) {
+          return jsonResponse(200, [task({ status: 'IN_PROGRESS', assigned_to: CHILD.id })])
+        }
+        return baseHandlers(url, CHILD) ?? Promise.reject(new Error(`Unexpected request: ${url}`))
+      }),
+    )
+
+    renderTasksPage()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /mark ready/i })).toBeInTheDocument()
+    })
+  })
+
+  it('a Child never sees Confirm, even on an AWAITING_CONFIRMATION task, and sees a status instead', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.endsWith('/api/tasks')) {
+          // created_by set to the Child's own id: structurally this can never
+          // happen for real (task creation is Adult-only), but the rule is
+          // asserted explicitly (Issue #15 §8), so prove it holds even here.
+          return jsonResponse(200, [
+            task({ status: 'AWAITING_CONFIRMATION', assigned_to: CHILD.id, created_by: CHILD.id }),
+          ])
+        }
+        return baseHandlers(url, CHILD) ?? Promise.reject(new Error(`Unexpected request: ${url}`))
+      }),
+    )
+
+    renderTasksPage()
+
+    await waitFor(() => {
+      expect(screen.getByText(/status: Awaiting confirmation/i)).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('button', { name: /^confirm$/i })).not.toBeInTheDocument()
+  })
+
+  it('a Child sees no action and no Create task button anywhere on the page', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.endsWith('/api/tasks')) {
+          return jsonResponse(200, [
+            task({ status: 'COMPLETED', assigned_to: CHILD.id, created_by: ADULT.id }),
+          ])
+        }
+        return baseHandlers(url, CHILD) ?? Promise.reject(new Error(`Unexpected request: ${url}`))
+      }),
+    )
+
+    renderTasksPage()
+
+    await waitFor(() => {
+      expect(screen.getByText(/status: Completed/i)).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('link', { name: /create task/i })).not.toBeInTheDocument()
+  })
+
+  it('a Child sees no Create task action on the empty state either', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.endsWith('/api/tasks')) return jsonResponse(200, [])
+        return baseHandlers(url, CHILD) ?? Promise.reject(new Error(`Unexpected request: ${url}`))
+      }),
+    )
+
+    renderTasksPage()
+
+    await waitFor(() => {
+      expect(screen.getByText(/no tasks yet/i)).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('link', { name: /create.*task/i })).not.toBeInTheDocument()
+  })
+
   // --- Mutation success ------------------------------------------------------
 
   it('Start reloads the task list on success', async () => {
@@ -358,7 +458,7 @@ describe('TasksPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /^start$/i }))
 
     await waitFor(() => {
-      expect(screen.getByText(/status: IN_PROGRESS/i)).toBeInTheDocument()
+      expect(screen.getByText(/status: In progress/i)).toBeInTheDocument()
     })
     expect(tasksCallCount).toBe(2)
   })
@@ -388,7 +488,7 @@ describe('TasksPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /mark ready/i }))
 
     await waitFor(() => {
-      expect(screen.getByText(/status: AWAITING_CONFIRMATION/i)).toBeInTheDocument()
+      expect(screen.getByText(/status: Awaiting confirmation/i)).toBeInTheDocument()
     })
     expect(tasksCallCount).toBe(2)
   })
@@ -467,7 +567,7 @@ describe('TasksPage', () => {
     resolveStart()
 
     await waitFor(() => {
-      expect(screen.getByText(/status: IN_PROGRESS/i)).toBeInTheDocument()
+      expect(screen.getByText(/status: In progress/i)).toBeInTheDocument()
     })
   })
 

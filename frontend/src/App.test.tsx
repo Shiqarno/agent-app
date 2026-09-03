@@ -44,6 +44,21 @@ function stubRewardsData(url: string) {
   return undefined
 }
 
+// A default stub for the Tasks page's own data requests, reused by every
+// Child test (Tasks is the Child's landing page as of Issue #15). /api/users
+// genuinely 403s for a Child against the real backend (Adult-only); TasksPage
+// already swallows that failure silently (assignee names are a presentation
+// nicety), so this mirrors real backend behavior rather than papering over it.
+function stubTasksData(url: string) {
+  if (url.endsWith('/api/tasks')) {
+    return jsonResponse(200, [])
+  }
+  if (url.endsWith('/api/users')) {
+    return jsonResponse(403, { error: { code: 'FORBIDDEN', message: 'Forbidden' } })
+  }
+  return undefined
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
   window.history.pushState({}, '', '/')
@@ -105,6 +120,37 @@ describe('App', () => {
     expect(window.location.pathname).toBe('/dashboard')
   })
 
+  it('logs in as a Child and lands on Tasks', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'nope' } })
+      }
+      if (url.endsWith('/api/auth/login')) {
+        return jsonResponse(200, CHILD_USER)
+      }
+      const tasks = stubTasksData(url)
+      if (tasks) return tasks
+      throw new Error(`Unexpected request: ${url} ${String(init?.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'kiddo@example.com' } })
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'a-password-1' } })
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/signed in as kiddo/i)).toBeInTheDocument()
+    })
+    expect(screen.getByRole('heading', { name: /^tasks$/i })).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/tasks')
+  })
+
   it('shows a login error on invalid credentials', async () => {
     const fetchMock = vi.fn((url: string) => {
       if (url.endsWith('/api/auth/me')) {
@@ -154,13 +200,13 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: /^dashboard$/i })).toBeInTheDocument()
   })
 
-  it('an authenticated Child does not receive the Adult Dashboard shell, and lands on Rewards', async () => {
+  it('an authenticated Child does not receive the Adult Dashboard shell, and lands on Tasks', async () => {
     const fetchMock = vi.fn((url: string) => {
       if (url.endsWith('/api/auth/me')) {
         return jsonResponse(200, CHILD_USER)
       }
-      const rewards = stubRewardsData(url)
-      if (rewards) return rewards
+      const tasks = stubTasksData(url)
+      if (tasks) return tasks
       throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -171,16 +217,19 @@ describe('App', () => {
       expect(screen.getByText(/signed in as kiddo/i)).toBeInTheDocument()
     })
     expect(screen.queryByRole('heading', { name: /^dashboard$/i })).not.toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /^rewards$/i })).toBeInTheDocument()
+    // Content resolves to Tasks via the fallback route (unmatched/'/' -> Tasks
+    // for a Child) -- same as how an Adult's session at '/' resolves to
+    // Dashboard without the URL itself being rewritten.
+    expect(screen.getByRole('heading', { name: /^tasks$/i })).toBeInTheDocument()
   })
 
-  it("a Child's navigation only offers Rewards and Points, no Adult-only sections", async () => {
+  it('a Child\'s navigation offers exactly Tasks, Rewards, and Points, no Adult-only sections', async () => {
     const fetchMock = vi.fn((url: string) => {
       if (url.endsWith('/api/auth/me')) {
         return jsonResponse(200, CHILD_USER)
       }
-      const rewards = stubRewardsData(url)
-      if (rewards) return rewards
+      const tasks = stubTasksData(url)
+      if (tasks) return tasks
       throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -191,18 +240,20 @@ describe('App', () => {
       expect(screen.getByRole('navigation')).toBeInTheDocument()
     })
     const nav = screen.getByRole('navigation')
+    expect(nav).toHaveTextContent('Tasks')
     expect(nav).toHaveTextContent('Rewards')
     expect(nav).toHaveTextContent('Points')
     expect(nav).not.toHaveTextContent('Dashboard')
-    expect(nav).not.toHaveTextContent('Tasks')
     expect(nav).not.toHaveTextContent('Users')
   })
 
-  it('a Child can navigate between /rewards and /points through the real router', async () => {
+  it('a Child can navigate between Tasks, Rewards, and Points through the real router', async () => {
     const fetchMock = vi.fn((url: string) => {
       if (url.endsWith('/api/auth/me')) {
         return jsonResponse(200, CHILD_USER)
       }
+      const tasks = stubTasksData(url)
+      if (tasks) return tasks
       const rewards = stubRewardsData(url)
       if (rewards) return rewards
       throw new Error(`Unexpected request: ${url}`)
@@ -212,8 +263,14 @@ describe('App', () => {
     render(<App />)
 
     await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^tasks$/i })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('link', { name: 'Rewards' }))
+    await waitFor(() => {
       expect(screen.getByRole('heading', { name: /^rewards$/i })).toBeInTheDocument()
     })
+    expect(window.location.pathname).toBe('/rewards')
 
     fireEvent.click(screen.getByRole('link', { name: 'Points' }))
     await waitFor(() => {
@@ -221,31 +278,40 @@ describe('App', () => {
     })
     expect(window.location.pathname).toBe('/points')
 
-    fireEvent.click(screen.getByRole('link', { name: 'Rewards' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Tasks' }))
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /^rewards$/i })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: /^tasks$/i })).toBeInTheDocument()
     })
   })
 
-  it('a Child navigating directly to an Adult-only route (e.g. /dashboard) falls back to Rewards, not Dashboard', async () => {
-    window.history.pushState({}, '', '/dashboard')
-    const fetchMock = vi.fn((url: string) => {
-      if (url.endsWith('/api/auth/me')) {
-        return jsonResponse(200, CHILD_USER)
-      }
-      const rewards = stubRewardsData(url)
-      if (rewards) return rewards
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubGlobal('fetch', fetchMock)
+  it.each([
+    ['/dashboard', 'Dashboard'],
+    ['/users', 'Users'],
+    ['/tasks/new', 'Create task'],
+  ])(
+    'a Child navigating directly to the Adult-only route %s falls back to Tasks, not %s',
+    async (adultPath) => {
+      window.history.pushState({}, '', adultPath)
+      const fetchMock = vi.fn((url: string) => {
+        if (url.endsWith('/api/auth/me')) {
+          return jsonResponse(200, CHILD_USER)
+        }
+        const tasks = stubTasksData(url)
+        if (tasks) return tasks
+        throw new Error(`Unexpected request: ${url}`)
+      })
+      vi.stubGlobal('fetch', fetchMock)
 
-    render(<App />)
+      render(<App />)
 
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /^rewards$/i })).toBeInTheDocument()
-    })
-    expect(screen.queryByRole('heading', { name: /^dashboard$/i })).not.toBeInTheDocument()
-  })
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /^tasks$/i })).toBeInTheDocument()
+      })
+      expect(screen.queryByRole('heading', { name: /^dashboard$/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: /^users$/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: /^create task$/i })).not.toBeInTheDocument()
+    },
+  )
 
   it('navigating directly to an Adult route while unauthenticated shows Login, not the route', async () => {
     window.history.pushState({}, '', '/tasks')

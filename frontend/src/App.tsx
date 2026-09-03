@@ -151,18 +151,20 @@ function resolveAdultPage(path: string): ComponentType {
   return DashboardPage
 }
 
-// Children get the minimum Rewards/Points access this issue requires (view
-// balance/history/catalog, redeem) -- everything else, including Reward
-// management and any Adult-only path, falls back to /rewards. A full Child
-// shell/Dashboard remains out of scope; this reuses the same RewardsPage
-// and PointsPage Adults use rather than creating separate Child pages.
+// Children get Tasks (their default/home route), plus the Rewards/Points
+// access from Issue #14 -- everything else, including Reward management,
+// User management, Dashboard, and Task creation, falls back to /tasks. A
+// full Child shell/Dashboard remains out of scope; this reuses the same
+// TasksPage, RewardsPage, and PointsPage Adults use (each already
+// role-aware internally) rather than creating separate Child pages.
 const CHILD_ROUTES: Record<string, ComponentType> = {
+  '/tasks': TasksPage,
   '/rewards': RewardsPage,
   '/points': PointsPage,
 }
 
 function resolveChildPage(path: string): ComponentType {
-  return CHILD_ROUTES[path] ?? RewardsPage
+  return CHILD_ROUTES[path] ?? TasksPage
 }
 
 function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () => void }) {
@@ -217,9 +219,11 @@ function App() {
   }
 
   function handleAuthenticated(user: CurrentUser) {
-    // Dashboard is the landing page after a successful Adult login.
-    if (user.role === 'adult' && window.location.pathname !== '/dashboard') {
-      window.history.pushState({}, '', '/dashboard')
+    // Dashboard is the landing page after a successful Adult login; Tasks
+    // is the landing page for a Child.
+    const landingPath = user.role === 'adult' ? '/dashboard' : '/tasks'
+    if (window.location.pathname !== landingPath) {
+      window.history.pushState({}, '', landingPath)
     }
     setAuth({ phase: 'authenticated', user })
   }

@@ -27,6 +27,13 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: 'COMPLETED', label: 'Completed' },
 ]
 
+const STATUS_LABELS: Record<TaskStatus, string> = {
+  ASSIGNED: 'Assigned',
+  IN_PROGRESS: 'In progress',
+  AWAITING_CONFIRMATION: 'Awaiting confirmation',
+  COMPLETED: 'Completed',
+}
+
 type ActionKind = 'start' | 'ready' | 'confirm'
 
 const ACTION_LABELS: Record<ActionKind, { idle: string; busy: string }> = {
@@ -52,22 +59,36 @@ function assigneeLabel(usersById: Record<string, UserSummary>, userId: string): 
   return usersById[userId]?.name ?? userId
 }
 
+type CurrentUser = { id: string; role: 'adult' | 'child' }
+
 // The backend remains authoritative for every transition; this only decides
 // which single action button (if any) is worth *offering* to the current
-// Adult for a given Task, based on the same visibility/ownership data the
+// user for a given Task, based on the same visibility/ownership data the
 // Task response already carries. A rejected action always surfaces the
 // backend's own error -- nothing here fakes a new state.
-function actionFor(task: Task, currentUserId: string | null): ActionKind | null {
-  if (currentUserId === null) return null
-  if (task.status === 'ASSIGNED' && task.assigned_to === currentUserId) return 'start'
-  if (task.status === 'IN_PROGRESS' && task.assigned_to === currentUserId) return 'ready'
-  if (task.status === 'AWAITING_CONFIRMATION' && task.created_by === currentUserId) return 'confirm'
+//
+// The role check on 'confirm' is a deliberate belt-and-braces addition
+// (Issue #15): a Child could never actually satisfy task.created_by ===
+// currentUser.id in practice, since task creation is Adult-only, but the
+// rule "Child must never be offered Confirm" is explicit enough in the spec
+// to assert directly rather than lean on that being true elsewhere.
+function actionFor(task: Task, currentUser: CurrentUser | null): ActionKind | null {
+  if (currentUser === null) return null
+  if (task.status === 'ASSIGNED' && task.assigned_to === currentUser.id) return 'start'
+  if (task.status === 'IN_PROGRESS' && task.assigned_to === currentUser.id) return 'ready'
+  if (
+    task.status === 'AWAITING_CONFIRMATION' &&
+    task.created_by === currentUser.id &&
+    currentUser.role === 'adult'
+  ) {
+    return 'confirm'
+  }
   return null
 }
 
 function TasksPage() {
   const [state, setState] = useState<ListState>({ phase: 'loading' })
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
   const [usersById, setUsersById] = useState<Record<string, UserSummary>>({})
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const [mutatingTaskId, setMutatingTaskId] = useState<string | null>(null)
@@ -88,7 +109,7 @@ function TasksPage() {
 
   useEffect(() => {
     me()
-      .then((user) => setCurrentUserId(user.id))
+      .then((user) => setCurrentUser({ id: user.id, role: user.role }))
       .catch(() => {
         // Only used to decide which action button to offer; if this fails,
         // no actions are offered (safe default -- the backend enforces
@@ -137,7 +158,7 @@ function TasksPage() {
   return (
     <div>
       <h1>Tasks</h1>
-      <Link to="/tasks/new?from=tasks">+ Create task</Link>
+      {currentUser?.role === 'adult' && <Link to="/tasks/new?from=tasks">+ Create task</Link>}
 
       <div className="status-filter" role="group" aria-label="Filter by status">
         {STATUS_FILTERS.map((filter) => (
@@ -161,7 +182,9 @@ function TasksPage() {
       {state.phase === 'loaded' && allTasks.length === 0 && (
         <div>
           <p>No tasks yet.</p>
-          <Link to="/tasks/new?from=tasks">Create your first task</Link>
+          {currentUser?.role === 'adult' && (
+            <Link to="/tasks/new?from=tasks">Create your first task</Link>
+          )}
         </div>
       )}
       {state.phase === 'loaded' && allTasks.length > 0 && visibleTasks.length === 0 && (
@@ -170,7 +193,7 @@ function TasksPage() {
       {state.phase === 'loaded' && visibleTasks.length > 0 && (
         <ul className="task-list">
           {visibleTasks.map((task) => {
-            const action = actionFor(task, currentUserId)
+            const action = actionFor(task, currentUser)
             return (
               <li key={task.id} className="task-card">
                 <p className="task-card-title">{task.title}</p>
@@ -178,7 +201,7 @@ function TasksPage() {
                 <p>Assigned to: {assigneeLabel(usersById, task.assigned_to)}</p>
                 <p>Created by: {assigneeLabel(usersById, task.created_by)}</p>
                 <p>Points: {task.reward_points}</p>
-                <p>Status: {task.status}</p>
+                <p>Status: {STATUS_LABELS[task.status]}</p>
                 <p>Created: {new Date(task.created_at).toLocaleString()}</p>
                 {action && (
                   <button

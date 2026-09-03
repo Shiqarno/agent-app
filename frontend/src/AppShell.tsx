@@ -10,9 +10,10 @@ const ADULT_NAV_ITEMS: { to: string; label: string }[] = [
   { to: '/points', label: 'Points' },
 ]
 
-// Children get only the minimum Rewards/Points access this issue requires --
-// no Dashboard, Tasks, or Users management (out of scope; see App.tsx).
+// Children get Tasks (their home) plus Rewards/Points -- no Dashboard or
+// Users management (out of scope; see App.tsx).
 const CHILD_NAV_ITEMS: { to: string; label: string }[] = [
+  { to: '/tasks', label: 'Tasks' },
   { to: '/rewards', label: 'Rewards' },
   { to: '/points', label: 'Points' },
 ]
