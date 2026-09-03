@@ -2,6 +2,7 @@ import { type ComponentType, type FormEvent, useEffect, useState } from 'react'
 import { activate, login, logout, me, type CurrentUser } from './api/auth'
 import AppShell from './AppShell'
 import DashboardPage from './pages/DashboardPage'
+import EditRewardPage from './pages/EditRewardPage'
 import NewRewardPage from './pages/NewRewardPage'
 import NewTaskPage from './pages/NewTaskPage'
 import NewUserPage from './pages/NewUserPage'
@@ -140,9 +141,19 @@ const ADULT_ROUTES: Record<string, ComponentType> = {
   '/points': PointsPage,
 }
 
+// The only route with a dynamic segment. A single regex check is enough --
+// see router.tsx for why a full route-matching library isn't warranted here.
+const REWARD_EDIT_PATH = /^\/rewards\/[^/]+\/edit$/
+
+function resolvePage(path: string): ComponentType {
+  if (ADULT_ROUTES[path]) return ADULT_ROUTES[path]
+  if (REWARD_EDIT_PATH.test(path)) return EditRewardPage
+  return DashboardPage
+}
+
 function AdultApp({ user, onLogout }: { user: CurrentUser; onLogout: () => void }) {
   const { path } = useRouter()
-  const Page = ADULT_ROUTES[path] ?? DashboardPage
+  const Page = resolvePage(path)
 
   return (
     <AppShell user={user} onLogout={onLogout}>

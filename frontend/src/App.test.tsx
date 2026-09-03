@@ -295,4 +295,86 @@ describe('App', () => {
     expect(window.location.pathname).toBe('/tasks/new')
     expect(window.location.search).toBe('?from=dashboard')
   })
+
+  it('/rewards -> /rewards/new renders the creation page through the real router', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(200, ADULT_USER)
+      }
+      if (url.endsWith('/api/rewards')) {
+        return jsonResponse(200, [])
+      }
+      const dashboard = stubDashboardData(url)
+      if (dashboard) return dashboard
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^dashboard$/i })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('link', { name: 'Rewards' }))
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^rewards$/i })).toBeInTheDocument()
+    })
+    expect(window.location.pathname).toBe('/rewards')
+
+    fireEvent.click(screen.getByRole('link', { name: /\+ create reward/i }))
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^create reward$/i })).toBeInTheDocument()
+    })
+    expect(window.location.pathname).toBe('/rewards/new')
+  })
+
+  it('clicking Edit on a Reward resolves the dynamic /rewards/:id/edit route through the real router', async () => {
+    const existingReward = {
+      id: 'reward-99',
+      name: 'Movie night',
+      description: 'Pick the movie',
+      cost_points: 30,
+      created_by: 'adult-1',
+      created_at: '2026-09-03T10:00:00Z',
+      updated_at: '2026-09-03T10:00:00Z',
+    }
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(200, ADULT_USER)
+      }
+      if (url.endsWith('/api/rewards')) {
+        return jsonResponse(200, [existingReward])
+      }
+      const dashboard = stubDashboardData(url)
+      if (dashboard) return dashboard
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^dashboard$/i })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('link', { name: 'Rewards' }))
+    await waitFor(() => {
+      expect(screen.getByText('Movie night')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('link', { name: /^edit$/i }))
+
+    // The router only matches static paths by default; /rewards/:id/edit is
+    // the one dynamic route, resolved via a small pattern check in App.tsx.
+    // This proves it actually renders EditRewardPage rather than falling
+    // back to Dashboard.
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^edit reward$/i })).toBeInTheDocument()
+    })
+    expect(window.location.pathname).toBe('/rewards/reward-99/edit')
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^name$/i)).toHaveValue('Movie night')
+    })
+  })
 })

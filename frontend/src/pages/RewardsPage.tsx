@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { getRewards, type Reward } from '../api/rewards'
 import { Link } from '../router'
 
@@ -11,40 +11,50 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
-// A minimal read-only preview, not full Reward Management (out of scope for
-// Issue #11) -- this is a placeholder destination for the "Rewards" nav
-// entry. The Dashboard itself does not show this catalog (Issue #11 §15).
 function RewardsPage() {
   const [state, setState] = useState<ListState>({ phase: 'loading' })
 
-  useEffect(() => {
-    let cancelled = false
+  const load = useCallback(() => {
+    setState({ phase: 'loading' })
     getRewards()
-      .then((rewards) => {
-        if (!cancelled) setState({ phase: 'loaded', rewards })
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setState({ phase: 'error', message: errorMessage(error, 'Unable to load rewards.') })
-        }
-      })
-    return () => {
-      cancelled = true
-    }
+      .then((rewards) => setState({ phase: 'loaded', rewards }))
+      .catch((error: unknown) =>
+        setState({ phase: 'error', message: errorMessage(error, 'Could not load rewards.') }),
+      )
   }, [])
+
+  useEffect(() => {
+    load()
+  }, [load])
 
   return (
     <div>
       <h1>Rewards</h1>
-      <Link to="/rewards/new">Create reward</Link>
-      {state.phase === 'loading' && <p>Loading...</p>}
-      {state.phase === 'error' && <p role="alert">{state.message}</p>}
-      {state.phase === 'loaded' && state.rewards.length === 0 && <p>No rewards yet.</p>}
+      <Link to="/rewards/new">+ Create reward</Link>
+
+      {state.phase === 'loading' && <p>Loading rewards...</p>}
+      {state.phase === 'error' && (
+        <p role="alert">
+          {state.message} <button onClick={load}>Retry</button>
+        </p>
+      )}
+      {state.phase === 'loaded' && state.rewards.length === 0 && (
+        <div>
+          <p>No rewards yet.</p>
+          <Link to="/rewards/new">Create your first reward</Link>
+        </div>
+      )}
       {state.phase === 'loaded' && state.rewards.length > 0 && (
-        <ul>
+        // Rendered in the order the backend returns (name asc, id asc,
+        // already deterministic) -- no client-side re-sort, per spec: an
+        // API-defined ordering is respected rather than overridden.
+        <ul className="reward-list">
           {state.rewards.map((reward) => (
-            <li key={reward.id}>
-              {reward.name} — {reward.cost_points} pts
+            <li key={reward.id} className="reward-card">
+              <p className="reward-card-title">{reward.name}</p>
+              {reward.description && <p>{reward.description}</p>}
+              <p>Cost: {reward.cost_points} points</p>
+              <Link to={`/rewards/${reward.id}/edit`}>Edit</Link>
             </li>
           ))}
         </ul>
