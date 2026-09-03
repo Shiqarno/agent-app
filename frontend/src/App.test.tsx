@@ -266,4 +266,33 @@ describe('App', () => {
       expect(screen.getByRole('heading', { name: /^dashboard$/i })).toBeInTheDocument()
     })
   })
+
+  it('Create task from the Dashboard Quick Action reaches NewTaskPage and returns to /dashboard', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(200, ADULT_USER)
+      }
+      const dashboard = stubDashboardData(url)
+      if (dashboard) return dashboard
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^dashboard$/i })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('link', { name: /create task/i }))
+
+    // The Quick Action's link carries a "?from=dashboard" query string; the
+    // router must still resolve /tasks/new (not silently fall back to
+    // Dashboard) despite the query string.
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^create task$/i })).toBeInTheDocument()
+    })
+    expect(window.location.pathname).toBe('/tasks/new')
+    expect(window.location.search).toBe('?from=dashboard')
+  })
 })

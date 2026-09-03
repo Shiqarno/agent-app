@@ -218,7 +218,7 @@ function QuickActions() {
   return (
     <section aria-labelledby="quick-actions-heading">
       <h2 id="quick-actions-heading">Quick Actions</h2>
-      <Link to="/tasks/new">Create task</Link>
+      <Link to="/tasks/new?from=dashboard">Create task</Link>
       <Link to="/users/new">Add user</Link>
       <Link to="/rewards/new">Create reward</Link>
     </section>

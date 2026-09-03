@@ -137,7 +137,7 @@ function TasksPage() {
   return (
     <div>
       <h1>Tasks</h1>
-      <Link to="/tasks/new">+ Create task</Link>
+      <Link to="/tasks/new?from=tasks">+ Create task</Link>
 
       <div className="status-filter" role="group" aria-label="Filter by status">
         {STATUS_FILTERS.map((filter) => (
@@ -161,7 +161,7 @@ function TasksPage() {
       {state.phase === 'loaded' && allTasks.length === 0 && (
         <div>
           <p>No tasks yet.</p>
-          <Link to="/tasks/new">Create your first task</Link>
+          <Link to="/tasks/new?from=tasks">Create your first task</Link>
         </div>
       )}
       {state.phase === 'loaded' && allTasks.length > 0 && visibleTasks.length === 0 && (

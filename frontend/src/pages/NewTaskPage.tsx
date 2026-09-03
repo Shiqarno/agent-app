@@ -9,6 +9,17 @@ function errorMessage(error: unknown, fallback: string): string {
 
 function NewTaskPage() {
   const { navigate } = useRouter()
+  // /tasks/new is shared by two entry points: the Dashboard's "Create task"
+  // Quick Action and the Tasks page's own creation entry point. Each tags
+  // its link with ?from=... so this page can return the Adult to wherever
+  // they came from; read once at mount so it can't drift if the URL is
+  // otherwise manipulated mid-flow (same pattern as the activation token in
+  // App.tsx).
+  const [returnTo] = useState<'/dashboard' | '/tasks'>(() =>
+    new URLSearchParams(window.location.search).get('from') === 'dashboard'
+      ? '/dashboard'
+      : '/tasks',
+  )
   const [users, setUsers] = useState<UserSummary[]>([])
   const [usersError, setUsersError] = useState<string | null>(null)
   const [title, setTitle] = useState('')
@@ -57,10 +68,7 @@ function NewTaskPage() {
         assigned_to: assignedTo,
         reward_points: points,
       })
-      // /tasks/new is shared by the Dashboard's "Create task" Quick Action
-      // and the Tasks page's own creation entry point; Issue #12 makes
-      // /tasks the working screen for Tasks, so creation now returns there.
-      navigate('/tasks')
+      navigate(returnTo)
     } catch (err) {
       setError(errorMessage(err, 'Failed to create task.'))
     } finally {

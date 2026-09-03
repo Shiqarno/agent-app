@@ -261,7 +261,7 @@ describe('DashboardPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('link', { name: /create task/i })).toHaveAttribute(
         'href',
-        '/tasks/new',
+        '/tasks/new?from=dashboard',
       )
     })
     expect(screen.getByRole('link', { name: /add user/i })).toHaveAttribute('href', '/users/new')

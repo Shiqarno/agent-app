@@ -111,7 +111,7 @@ describe('TasksPage', () => {
     })
     expect(screen.getByRole('link', { name: /create your first task/i })).toHaveAttribute(
       'href',
-      '/tasks/new',
+      '/tasks/new?from=tasks',
     )
   })
 
@@ -519,7 +519,7 @@ describe('TasksPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('link', { name: /\+ create task/i })).toHaveAttribute(
         'href',
-        '/tasks/new',
+        '/tasks/new?from=tasks',
       )
     })
   })

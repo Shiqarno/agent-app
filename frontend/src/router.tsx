@@ -31,10 +31,14 @@ export function RouterProvider({ children }: { children: ReactNode }) {
   }, [])
 
   function navigate(to: string) {
-    if (to !== window.location.pathname) {
+    if (to !== window.location.pathname + window.location.search) {
       window.history.pushState({}, '', to)
     }
-    setPath(to)
+    // `path` (used for route matching) is pathname-only, matching the
+    // initial state above and the popstate handler -- a `to` carrying a
+    // query string (e.g. "/tasks/new?from=dashboard") must not become the
+    // route key itself, only change the URL the page can read from.
+    setPath(to.split('?')[0].split('#')[0])
   }
 
   return <RouterContext.Provider value={{ path, navigate }}>{children}</RouterContext.Provider>
