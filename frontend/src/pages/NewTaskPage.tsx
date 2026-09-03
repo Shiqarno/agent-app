@@ -31,12 +31,7 @@ function NewTaskPage() {
 
   useEffect(() => {
     getUsers()
-      .then((fetched) => {
-        setUsers(fetched)
-        if (fetched.length > 0) {
-          setAssignedTo((current) => current || fetched[0].id)
-        }
-      })
+      .then((fetched) => setUsers(fetched))
       .catch((err: unknown) => setUsersError(errorMessage(err, 'Unable to load users.')))
   }, [])
 
@@ -48,10 +43,6 @@ function NewTaskPage() {
       setError('Title is required.')
       return
     }
-    if (!assignedTo) {
-      setError('Assignee is required.')
-      return
-    }
     const points = Number(rewardPoints)
     if (!Number.isInteger(points) || points <= 0) {
       setError('Reward points must be a positive whole number.')
@@ -61,11 +52,13 @@ function NewTaskPage() {
     setSubmitting(true)
     try {
       // The backend remains responsible for the task lifecycle and points
-      // behavior; this only calls the existing creation endpoint.
+      // behavior; this only calls the existing creation endpoint. Leaving
+      // assignedTo empty creates an unclaimed Task any active Child can
+      // claim later, instead of directly assigning it now.
       await createTask({
         title: title.trim(),
         description: description.trim() === '' ? null : description,
-        assigned_to: assignedTo,
+        ...(assignedTo ? { assigned_to: assignedTo } : {}),
         reward_points: points,
       })
       navigate(returnTo)
@@ -100,6 +93,7 @@ function NewTaskPage() {
             value={assignedTo}
             onChange={(event) => setAssignedTo(event.target.value)}
           >
+            <option value="">Unassigned (available for children to claim)</option>
             {users.map((user) => (
               <option key={user.id} value={user.id}>
                 {user.name} ({user.role})

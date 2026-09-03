@@ -4,7 +4,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models import PointTransactionReason, TaskStatus, UserRole
+from app.models import PointTransactionReason, TaskExecutionStatus, UserRole
 
 
 class ActivationStatus(StrEnum):
@@ -46,7 +46,7 @@ class ProjectResponse(BaseModel):
 class TaskCreate(BaseModel):
     title: str
     description: str | None = None
-    assigned_to: uuid.UUID
+    assigned_to: uuid.UUID | None = None
     reward_points: int = Field(gt=0)
 
     @field_validator("title")
@@ -61,6 +61,8 @@ class TaskCreate(BaseModel):
 class TaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
+    reward_points: int | None = Field(default=None, gt=0)
+    is_active: bool | None = None
 
     @field_validator("title")
     @classmethod
@@ -83,10 +85,21 @@ class TaskResponse(BaseModel):
     id: uuid.UUID
     title: str
     description: str | None
-    assigned_to: uuid.UUID
-    created_by: uuid.UUID
     reward_points: int
-    status: TaskStatus
+    is_active: bool
+    created_by: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+
+
+class TaskExecutionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    task_id: uuid.UUID
+    user_id: uuid.UUID
+    status: TaskExecutionStatus
+    reward_points: int
     created_at: datetime
     updated_at: datetime
 
@@ -192,7 +205,7 @@ class PointTransactionResponse(BaseModel):
     id: uuid.UUID
     amount: int
     reason: PointTransactionReason
-    task_id: uuid.UUID | None
+    task_execution_id: uuid.UUID | None
     redemption_id: uuid.UUID | None
     created_at: datetime
 

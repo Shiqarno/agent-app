@@ -3,14 +3,17 @@ import { me } from '../api/auth'
 import { getBalance } from '../api/points'
 import {
   ApiError,
-  cancelTask,
-  confirmTask,
+  cancelTaskExecution,
+  claimTask,
+  confirmTaskExecution,
   getTask,
-  readyTask,
-  reassignTask,
-  startTask,
+  getTaskExecutions,
+  readyTaskExecution,
+  reassignTaskExecution,
+  startTaskExecution,
   type Task,
-  type TaskStatus,
+  type TaskExecution,
+  type TaskExecutionStatus,
 } from '../api/tasks'
 import { getUsers, type UserSummary } from '../api/users'
 import { Link } from '../router'
@@ -23,20 +26,12 @@ type TaskState =
 
 type CurrentUser = { id: string; role: 'adult' | 'child' }
 
-type LifecycleAction = 'start' | 'ready' | 'confirm'
-
-const STATUS_LABELS: Record<TaskStatus, string> = {
+const STATUS_LABELS: Record<TaskExecutionStatus, string> = {
   ASSIGNED: 'Assigned',
   IN_PROGRESS: 'In progress',
   AWAITING_CONFIRMATION: 'Awaiting confirmation',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
-}
-
-const LIFECYCLE_LABELS: Record<LifecycleAction, { idle: string; busy: string }> = {
-  start: { idle: 'Start', busy: 'Starting...' },
-  ready: { idle: 'Mark ready', busy: 'Marking ready...' },
-  confirm: { idle: 'Confirm', busy: 'Confirming...' },
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -55,63 +50,159 @@ function userLabel(usersById: Record<string, UserSummary>, userId: string): stri
   return user ? `${user.name} (${user.role})` : userId
 }
 
-type Actions = {
-  canEdit: boolean
-  canReassign: boolean
-  canCancel: boolean
-  canStart: boolean
-  canMarkReady: boolean
-  canConfirm: boolean
-}
+// One row in the creator's execution list. Each execution has its own
+// pending/error/confirm-step state (not a single page-wide one) since a
+// creator may be acting on several executions of the same Task.
+function ExecutionRow({
+  execution,
+  usersById,
+  onChanged,
+}: {
+  execution: TaskExecution
+  usersById: Record<string, UserSummary>
+  onChanged: () => void
+}) {
+  const [pending, setPending] = useState<'confirm' | 'cancel' | 'reassign' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [confirmingCancel, setConfirmingCancel] = useState(false)
+  const [showReassign, setShowReassign] = useState(false)
+  const [reassignTarget, setReassignTarget] = useState('')
 
-// The backend remains authoritative for every transition and authorization
-// check; this only decides which actions are worth *offering* in the UI
-// from the same creator/assignee/status data the Task response carries.
-function actionsFor(task: Task, currentUser: CurrentUser | null): Actions {
-  if (currentUser === null) {
-    return {
-      canEdit: false,
-      canReassign: false,
-      canCancel: false,
-      canStart: false,
-      canMarkReady: false,
-      canConfirm: false,
+  async function handleConfirm() {
+    setPending('confirm')
+    setError(null)
+    try {
+      await confirmTaskExecution(execution.id)
+      // Confirmation may award points; the backend owns that transaction
+      // and the resulting balance -- this only refreshes it.
+      getBalance().catch(() => {})
+      onChanged()
+    } catch (err) {
+      setError(errorMessage(err, 'Could not confirm this task.'))
+      setPending(null)
     }
   }
-  const isCreator = task.created_by === currentUser.id
-  const isAssignee = task.assigned_to === currentUser.id
-  const cancellable =
-    task.status === 'ASSIGNED' ||
-    task.status === 'IN_PROGRESS' ||
-    task.status === 'AWAITING_CONFIRMATION'
 
-  return {
-    canEdit: isCreator && task.status === 'ASSIGNED',
-    canReassign: isCreator && task.status === 'ASSIGNED',
-    canCancel: isCreator && cancellable,
-    canStart: isAssignee && task.status === 'ASSIGNED',
-    canMarkReady: isAssignee && task.status === 'IN_PROGRESS',
-    canConfirm: isCreator && task.status === 'AWAITING_CONFIRMATION' && currentUser.role === 'adult',
+  async function handleCancel() {
+    setPending('cancel')
+    setError(null)
+    try {
+      await cancelTaskExecution(execution.id)
+      setConfirmingCancel(false)
+      onChanged()
+    } catch (err) {
+      setError(errorMessage(err, 'Could not cancel this task.'))
+      setPending(null)
+    }
   }
+
+  async function handleReassignSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!reassignTarget) return
+    setPending('reassign')
+    setError(null)
+    try {
+      await reassignTaskExecution(execution.id, reassignTarget)
+      setShowReassign(false)
+      onChanged()
+    } catch (err) {
+      setError(errorMessage(err, 'Could not reassign this task.'))
+      setPending(null)
+    }
+  }
+
+  const cancellable =
+    execution.status === 'ASSIGNED' ||
+    execution.status === 'IN_PROGRESS' ||
+    execution.status === 'AWAITING_CONFIRMATION'
+
+  return (
+    <li className="execution-card">
+      <p>Assignee: {userLabel(usersById, execution.user_id)}</p>
+      <p>Status: {STATUS_LABELS[execution.status]}</p>
+      <p>Points: {execution.reward_points}</p>
+      <p>Created: {new Date(execution.created_at).toLocaleString()}</p>
+
+      {execution.status === 'AWAITING_CONFIRMATION' && (
+        <button onClick={handleConfirm} disabled={pending !== null}>
+          {pending === 'confirm' ? 'Confirming...' : 'Confirm'}
+        </button>
+      )}
+
+      {execution.status === 'ASSIGNED' && (
+        <div>
+          {!showReassign && (
+            <button onClick={() => setShowReassign(true)} disabled={pending !== null}>
+              Reassign
+            </button>
+          )}
+          {showReassign && (
+            <form onSubmit={handleReassignSubmit}>
+              <label htmlFor={`reassign-target-${execution.id}`}>New assignee</label>
+              <select
+                id={`reassign-target-${execution.id}`}
+                value={reassignTarget}
+                onChange={(event) => setReassignTarget(event.target.value)}
+              >
+                <option value="">Select a user</option>
+                {Object.values(usersById).map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name} ({user.role})
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setShowReassign(false)}
+                disabled={pending !== null}
+              >
+                Cancel
+              </button>
+              <button type="submit" disabled={pending !== null || !reassignTarget}>
+                {pending === 'reassign' ? 'Reassigning...' : 'Save'}
+              </button>
+            </form>
+          )}
+        </div>
+      )}
+
+      {cancellable && (
+        <div>
+          {!confirmingCancel && (
+            <button onClick={() => setConfirmingCancel(true)} disabled={pending !== null}>
+              Cancel task
+            </button>
+          )}
+          {confirmingCancel && (
+            <div>
+              <p>Cancel this execution? This cannot be undone.</p>
+              <button onClick={() => setConfirmingCancel(false)} disabled={pending !== null}>
+                Keep task
+              </button>
+              <button onClick={handleCancel} disabled={pending !== null}>
+                {pending === 'cancel' ? 'Cancelling...' : 'Cancel task'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && <p role="alert">{error}</p>}
+    </li>
+  )
 }
 
 function TaskDetailsPage() {
   const [taskId] = useState(taskIdFromPath)
   const [taskState, setTaskState] = useState<TaskState>({ phase: 'loading' })
+  const [executions, setExecutions] = useState<TaskExecution[]>([])
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
   const [usersById, setUsersById] = useState<Record<string, UserSummary>>({})
 
-  const [lifecyclePending, setLifecyclePending] = useState<LifecycleAction | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
-
-  const [confirmingCancel, setConfirmingCancel] = useState(false)
-  const [cancelPending, setCancelPending] = useState(false)
-  const [cancelError, setCancelError] = useState<string | null>(null)
-
-  const [showReassign, setShowReassign] = useState(false)
-  const [reassignTarget, setReassignTarget] = useState('')
-  const [reassignPending, setReassignPending] = useState(false)
-  const [reassignError, setReassignError] = useState<string | null>(null)
+  const [ownActionPending, setOwnActionPending] = useState(false)
+  const [ownActionError, setOwnActionError] = useState<string | null>(null)
+  const [claimPending, setClaimPending] = useState(false)
+  const [claimError, setClaimError] = useState<string | null>(null)
 
   const loadTask = useCallback(() => {
     setTaskState({ phase: 'loading' })
@@ -126,9 +217,23 @@ function TaskDetailsPage() {
       })
   }, [taskId])
 
+  const loadExecutions = useCallback(() => {
+    getTaskExecutions()
+      .then((all) => setExecutions(all.filter((execution) => execution.task_id === taskId)))
+      .catch(() => {
+        // Executions are only used to enrich this page (creator's list,
+        // Child's own status/claim eligibility); if this fails, the page
+        // still shows the Task itself.
+      })
+  }, [taskId])
+
   useEffect(() => {
     loadTask()
   }, [loadTask])
+
+  useEffect(() => {
+    loadExecutions()
+  }, [loadExecutions])
 
   useEffect(() => {
     me()
@@ -145,59 +250,49 @@ function TaskDetailsPage() {
       })
   }, [])
 
-  async function runLifecycleAction(action: LifecycleAction) {
-    setLifecyclePending(action)
-    setActionError(null)
+  function refreshAfterMutation() {
+    loadTask()
+    loadExecutions()
+  }
+
+  async function handleClaim() {
+    setClaimPending(true)
+    setClaimError(null)
+    try {
+      await claimTask(taskId)
+      refreshAfterMutation()
+    } catch (error) {
+      setClaimError(errorMessage(error, 'Could not claim this task.'))
+    } finally {
+      setClaimPending(false)
+    }
+  }
+
+  async function handleOwnAction(executionId: string, action: 'start' | 'ready') {
+    setOwnActionPending(true)
+    setOwnActionError(null)
     try {
       if (action === 'start') {
-        await startTask(taskId)
-      } else if (action === 'ready') {
-        await readyTask(taskId)
+        await startTaskExecution(executionId)
       } else {
-        await confirmTask(taskId)
-        // Confirmation may award points; the backend owns that transaction,
-        // this only refreshes the resulting balance (not shown on this page,
-        // kept fresh per the existing refresh contract from Issue #12).
-        getBalance().catch(() => {})
+        await readyTaskExecution(executionId)
       }
-      loadTask()
+      refreshAfterMutation()
     } catch (error) {
-      setActionError(errorMessage(error, 'Action failed.'))
+      setOwnActionError(errorMessage(error, 'Action failed.'))
     } finally {
-      setLifecyclePending(null)
+      setOwnActionPending(false)
     }
   }
 
-  async function handleCancelConfirm() {
-    setCancelPending(true)
-    setCancelError(null)
-    try {
-      await cancelTask(taskId)
-      setConfirmingCancel(false)
-      loadTask()
-    } catch (error) {
-      setCancelError(errorMessage(error, 'Could not cancel this task.'))
-    } finally {
-      setCancelPending(false)
-    }
-  }
-
-  async function handleReassignSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!reassignTarget) return
-
-    setReassignPending(true)
-    setReassignError(null)
-    try {
-      await reassignTask(taskId, reassignTarget)
-      setShowReassign(false)
-      loadTask()
-    } catch (error) {
-      setReassignError(errorMessage(error, 'Could not reassign this task.'))
-    } finally {
-      setReassignPending(false)
-    }
-  }
+  const isCreator =
+    taskState.phase === 'loaded' &&
+    currentUser !== null &&
+    taskState.task.created_by === currentUser.id
+  const ownExecution =
+    currentUser !== null
+      ? (executions.find((execution) => execution.user_id === currentUser.id) ?? null)
+      : null
 
   return (
     <div>
@@ -219,107 +314,68 @@ function TaskDetailsPage() {
       {taskState.phase === 'loaded' &&
         (() => {
           const task = taskState.task
-          const actions = actionsFor(task, currentUser)
 
           return (
             <div>
               <h2>{task.title}</h2>
               {task.description && <p>{task.description}</p>}
-              <p>Points: {task.reward_points}</p>
-              <p>Status: {STATUS_LABELS[task.status]}</p>
-              <p>Assignee: {userLabel(usersById, task.assigned_to)}</p>
+              <p>Reward points: {task.reward_points}</p>
+              <p>{task.is_active ? 'Active' : 'Inactive'}</p>
               <p>Creator: {userLabel(usersById, task.created_by)}</p>
               <p>Created: {new Date(task.created_at).toLocaleString()}</p>
               <p>Updated: {new Date(task.updated_at).toLocaleString()}</p>
 
-              {actions.canEdit && <Link to={`/tasks/${task.id}/edit`}>Edit</Link>}
-
-              {actions.canStart && (
-                <button
-                  onClick={() => runLifecycleAction('start')}
-                  disabled={lifecyclePending === 'start'}
-                >
-                  {lifecyclePending === 'start'
-                    ? LIFECYCLE_LABELS.start.busy
-                    : LIFECYCLE_LABELS.start.idle}
-                </button>
-              )}
-              {actions.canMarkReady && (
-                <button
-                  onClick={() => runLifecycleAction('ready')}
-                  disabled={lifecyclePending === 'ready'}
-                >
-                  {lifecyclePending === 'ready'
-                    ? LIFECYCLE_LABELS.ready.busy
-                    : LIFECYCLE_LABELS.ready.idle}
-                </button>
-              )}
-              {actions.canConfirm && (
-                <button
-                  onClick={() => runLifecycleAction('confirm')}
-                  disabled={lifecyclePending === 'confirm'}
-                >
-                  {lifecyclePending === 'confirm'
-                    ? LIFECYCLE_LABELS.confirm.busy
-                    : LIFECYCLE_LABELS.confirm.idle}
-                </button>
-              )}
-              {actionError && <p role="alert">{actionError}</p>}
-
-              {actions.canReassign && (
+              {isCreator && (
                 <div>
-                  {!showReassign && (
-                    <button onClick={() => setShowReassign(true)}>Reassign</button>
-                  )}
-                  {showReassign && (
-                    <form onSubmit={handleReassignSubmit}>
-                      <label htmlFor="reassign-target">New assignee</label>
-                      <select
-                        id="reassign-target"
-                        value={reassignTarget}
-                        onChange={(event) => setReassignTarget(event.target.value)}
-                      >
-                        <option value="">Select a user</option>
-                        {Object.values(usersById).map((user) => (
-                          <option key={user.id} value={user.id}>
-                            {user.name} ({user.role})
-                          </option>
-                        ))}
-                      </select>
-                      {reassignError && <p role="alert">{reassignError}</p>}
-                      <button
-                        type="button"
-                        onClick={() => setShowReassign(false)}
-                        disabled={reassignPending}
-                      >
-                        Cancel
-                      </button>
-                      <button type="submit" disabled={reassignPending || !reassignTarget}>
-                        {reassignPending ? 'Reassigning...' : 'Save'}
-                      </button>
-                    </form>
+                  <Link to={`/tasks/${task.id}/edit`}>Edit</Link>
+
+                  <h3>Executions</h3>
+                  {executions.length === 0 && <p>No one has claimed this task yet.</p>}
+                  {executions.length > 0 && (
+                    <ul>
+                      {executions.map((execution) => (
+                        <ExecutionRow
+                          key={execution.id}
+                          execution={execution}
+                          usersById={usersById}
+                          onChanged={refreshAfterMutation}
+                        />
+                      ))}
+                    </ul>
                   )}
                 </div>
               )}
 
-              {actions.canCancel && (
+              {!isCreator && currentUser !== null && (
                 <div>
-                  {!confirmingCancel && (
-                    <button onClick={() => setConfirmingCancel(true)}>Cancel task</button>
-                  )}
-                  {confirmingCancel && (
+                  {ownExecution && (
                     <div>
-                      <p>Cancel &quot;{task.title}&quot;? This cannot be undone.</p>
-                      <button
-                        onClick={() => setConfirmingCancel(false)}
-                        disabled={cancelPending}
-                      >
-                        Keep task
+                      <p>Your status: {STATUS_LABELS[ownExecution.status]}</p>
+                      {ownExecution.status === 'ASSIGNED' && (
+                        <button
+                          onClick={() => handleOwnAction(ownExecution.id, 'start')}
+                          disabled={ownActionPending}
+                        >
+                          {ownActionPending ? 'Starting...' : 'Start'}
+                        </button>
+                      )}
+                      {ownExecution.status === 'IN_PROGRESS' && (
+                        <button
+                          onClick={() => handleOwnAction(ownExecution.id, 'ready')}
+                          disabled={ownActionPending}
+                        >
+                          {ownActionPending ? 'Marking ready...' : 'Mark ready'}
+                        </button>
+                      )}
+                      {ownActionError && <p role="alert">{ownActionError}</p>}
+                    </div>
+                  )}
+                  {!ownExecution && task.is_active && (
+                    <div>
+                      <button onClick={handleClaim} disabled={claimPending}>
+                        {claimPending ? 'Claiming...' : 'Claim task'}
                       </button>
-                      <button onClick={handleCancelConfirm} disabled={cancelPending}>
-                        {cancelPending ? 'Cancelling...' : 'Cancel task'}
-                      </button>
-                      {cancelError && <p role="alert">{cancelError}</p>}
+                      {claimError && <p role="alert">{claimError}</p>}
                     </div>
                   )}
                 </div>

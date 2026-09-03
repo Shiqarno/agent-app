@@ -8,7 +8,7 @@ export type PointTransaction = {
   id: string
   amount: number
   reason: 'TASK_COMPLETED' | 'REWARD_REDEEMED'
-  task_id: string | null
+  task_execution_id: string | null
   redemption_id: string | null
   created_at: string
 }

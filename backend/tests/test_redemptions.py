@@ -22,7 +22,8 @@ from app.models import (
     Reward,
     RewardRedemption,
     Task,
-    TaskStatus,
+    TaskExecution,
+    TaskExecutionStatus,
     User,
     UserRole,
     UserSession,
@@ -51,6 +52,7 @@ def real_session_headers(session: Session, user_id: uuid.UUID) -> dict[str, str]
         CSRF_HEADER_NAME: csrf_value,
     }
 
+
 ADULT = UserRole.ADULT
 CHILD = UserRole.CHILD
 
@@ -65,20 +67,23 @@ def create_reward(client: TestClient, adult: User, **overrides: object) -> dict[
 def seed_balance(db_session: Session, user: User, amount: int) -> None:
     """Give `user` `amount` points via a real completed Task, mirroring how
     balance is actually earned in this application (Issue #3)."""
-    task = Task(
-        title="Balance seed",
-        reward_points=amount,
-        status=TaskStatus.COMPLETED,
-        assigned_to=user.id,
-        created_by=user.id,
-    )
+    task = Task(title="Balance seed", reward_points=amount, created_by=user.id)
     db_session.add(task)
     db_session.commit()
     db_session.refresh(task)
+    execution = TaskExecution(
+        task_id=task.id,
+        user_id=user.id,
+        status=TaskExecutionStatus.COMPLETED,
+        reward_points=amount,
+    )
+    db_session.add(execution)
+    db_session.commit()
+    db_session.refresh(execution)
     db_session.add(
         PointTransaction(
             user_id=user.id,
-            task_id=task.id,
+            task_execution_id=execution.id,
             amount=amount,
             reason=PointTransactionReason.TASK_COMPLETED,
         )
@@ -482,21 +487,25 @@ def test_concurrent_redemptions_cannot_overspend_the_balance() -> None:
     setup_session.commit()
     setup_session.refresh(reward)
 
-    task = Task(
-        title="Concurrency balance seed",
-        reward_points=100,
-        status=TaskStatus.COMPLETED,
-        assigned_to=adult.id,
-        created_by=adult.id,
-    )
+    task = Task(title="Concurrency balance seed", reward_points=100, created_by=adult.id)
     setup_session.add(task)
     setup_session.commit()
     setup_session.refresh(task)
 
+    execution = TaskExecution(
+        task_id=task.id,
+        user_id=adult.id,
+        status=TaskExecutionStatus.COMPLETED,
+        reward_points=100,
+    )
+    setup_session.add(execution)
+    setup_session.commit()
+    setup_session.refresh(execution)
+
     setup_session.add(
         PointTransaction(
             user_id=adult.id,
-            task_id=task.id,
+            task_execution_id=execution.id,
             amount=100,
             reason=PointTransactionReason.TASK_COMPLETED,
         )
@@ -544,6 +553,7 @@ def test_concurrent_redemptions_cannot_overspend_the_balance() -> None:
         setup_session.query(UserSession).filter_by(user_id=adult.id).delete()
         setup_session.query(PointTransaction).filter_by(user_id=adult.id).delete()
         setup_session.query(RewardRedemption).filter_by(user_id=adult.id).delete()
+        setup_session.query(TaskExecution).filter_by(id=execution.id).delete()
         setup_session.query(Task).filter_by(id=task.id).delete()
         setup_session.query(Reward).filter_by(id=reward.id).delete()
         setup_session.query(User).filter_by(id=adult.id).delete()

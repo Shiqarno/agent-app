@@ -16,7 +16,7 @@ function transaction(
     id: string
     amount: number
     reason: 'TASK_COMPLETED' | 'REWARD_REDEEMED'
-    task_id: string | null
+    task_execution_id: string | null
     redemption_id: string | null
     created_at: string
   }> = {},
@@ -25,7 +25,7 @@ function transaction(
     id: 'txn-1',
     amount: 20,
     reason: 'TASK_COMPLETED' as const,
-    task_id: null,
+    task_execution_id: null,
     redemption_id: null,
     created_at: '2026-09-03T10:00:00Z',
     ...overrides,
@@ -37,20 +37,34 @@ function task(overrides: Partial<{ id: string; title: string }> = {}) {
     id: 'task-1',
     title: 'Clean your room',
     description: null,
-    assigned_to: 'user-1',
-    created_by: 'adult-1',
     reward_points: 20,
-    status: 'COMPLETED',
+    is_active: true,
+    created_by: 'adult-1',
     created_at: '2026-09-02T10:00:00Z',
     updated_at: '2026-09-02T10:00:00Z',
     ...overrides,
   }
 }
 
-// A default stub for /api/tasks (used only to enrich TASK_COMPLETED rows
-// with a title), which every render requests regardless of scenario.
+function execution(overrides: Partial<{ id: string; task_id: string; user_id: string }> = {}) {
+  return {
+    id: 'exec-1',
+    task_id: 'task-1',
+    user_id: 'user-1',
+    status: 'COMPLETED',
+    reward_points: 20,
+    created_at: '2026-09-02T10:00:00Z',
+    updated_at: '2026-09-02T10:00:00Z',
+    ...overrides,
+  }
+}
+
+// A default stub for /api/tasks and /api/task-executions (used only to
+// enrich TASK_COMPLETED rows with a title), which every render requests
+// regardless of scenario.
 function baseHandlers(url: string) {
   if (url.endsWith('/api/tasks')) return jsonResponse(200, [])
+  if (url.endsWith('/api/task-executions')) return jsonResponse(200, [])
   return undefined
 }
 
@@ -123,10 +137,16 @@ describe('PointsPage', () => {
         if (url.endsWith('/api/points/balance')) return jsonResponse(200, { balance: 20 })
         if (url.endsWith('/api/points/history')) {
           return jsonResponse(200, [
-            transaction({ id: 't1', amount: 20, reason: 'TASK_COMPLETED', task_id: 'task-1' }),
+            transaction({
+              id: 't1',
+              amount: 20,
+              reason: 'TASK_COMPLETED',
+              task_execution_id: 'exec-1',
+            }),
           ])
         }
         if (url.endsWith('/api/tasks')) return jsonResponse(200, [task()])
+        if (url.endsWith('/api/task-executions')) return jsonResponse(200, [execution()])
         return Promise.reject(new Error(`Unexpected: ${url}`))
       }),
     )

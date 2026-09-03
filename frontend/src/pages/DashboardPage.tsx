@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getBalance } from '../api/points'
-import { confirmTask, getTasks, type Task } from '../api/tasks'
+import { confirmTaskExecution, getTaskExecutions, getTasks, type Task, type TaskExecution } from '../api/tasks'
 import { getUsers, type UserSummary } from '../api/users'
 import { Link } from '../router'
 
@@ -13,13 +13,13 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
-function useTasks() {
-  const [state, setState] = useState<SectionState<Task[]>>({ phase: 'loading' })
+function useTaskExecutions() {
+  const [state, setState] = useState<SectionState<TaskExecution[]>>({ phase: 'loading' })
 
   const load = useCallback(() => {
     setState({ phase: 'loading' })
-    getTasks()
-      .then((tasks) => setState({ phase: 'loaded', data: tasks }))
+    getTaskExecutions()
+      .then((executions) => setState({ phase: 'loaded', data: executions }))
       .catch((error: unknown) =>
         setState({ phase: 'error', message: errorMessage(error, 'Unable to load tasks.') }),
       )
@@ -68,12 +68,35 @@ function useUsersById() {
   return byId
 }
 
+// A TaskExecution only carries a task_id; resolving it to a title is a
+// second lookup against the Task definitions this Adult created (which is
+// exactly the set every execution here belongs to, per the backend's
+// visibility rules).
+function useTasksById() {
+  const [byId, setById] = useState<Record<string, Task>>({})
+
+  useEffect(() => {
+    getTasks()
+      .then((tasks) => setById(Object.fromEntries(tasks.map((task) => [task.id, task]))))
+      .catch(() => {
+        // A task title is a presentation nicety on top of the execution
+        // data; if this fails, sections below fall back to the raw task id.
+      })
+  }, [])
+
+  return byId
+}
+
+function taskTitle(tasksById: Record<string, Task>, taskId: string): string {
+  return tasksById[taskId]?.title ?? taskId
+}
+
 function assigneeLabel(usersById: Record<string, UserSummary>, userId: string): string {
   return usersById[userId]?.name ?? userId
 }
 
-function sortRecent(tasks: Task[]): Task[] {
-  return [...tasks].sort((a, b) => {
+function sortRecent(executions: TaskExecution[]): TaskExecution[] {
+  return [...executions].sort((a, b) => {
     if (a.created_at !== b.created_at) {
       return a.created_at < b.created_at ? 1 : -1
     }
@@ -90,24 +113,26 @@ function ErrorRetry({ message, onRetry }: { message: string; onRetry: () => void
 }
 
 function PendingTasksSection({
-  tasksState,
-  reloadTasks,
+  executionsState,
+  reloadExecutions,
   reloadBalance,
   usersById,
+  tasksById,
 }: {
-  tasksState: SectionState<Task[]>
-  reloadTasks: () => void
+  executionsState: SectionState<TaskExecution[]>
+  reloadExecutions: () => void
   reloadBalance: () => void
   usersById: Record<string, UserSummary>
+  tasksById: Record<string, Task>
 }) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const [confirmErrors, setConfirmErrors] = useState<Record<string, string>>({})
 
-  async function handleConfirm(taskId: string) {
-    setConfirmingId(taskId)
+  async function handleConfirm(executionId: string) {
+    setConfirmingId(executionId)
     setConfirmErrors((prev) => {
       const next = { ...prev }
-      delete next[taskId]
+      delete next[executionId]
       return next
     })
 
@@ -115,13 +140,13 @@ function PendingTasksSection({
       // The backend owns the AWAITING_CONFIRMATION -> COMPLETED transition
       // and the resulting TASK_COMPLETED point transaction; the dashboard
       // only triggers it and refreshes.
-      await confirmTask(taskId)
-      reloadTasks()
+      await confirmTaskExecution(executionId)
+      reloadExecutions()
       reloadBalance()
     } catch (error) {
       setConfirmErrors((prev) => ({
         ...prev,
-        [taskId]: errorMessage(error, 'Unable to confirm this task.'),
+        [executionId]: errorMessage(error, 'Unable to confirm this task.'),
       }))
     } finally {
       setConfirmingId(null)
@@ -131,26 +156,31 @@ function PendingTasksSection({
   return (
     <section aria-labelledby="pending-tasks-heading">
       <h2 id="pending-tasks-heading">Tasks requiring attention</h2>
-      {tasksState.phase === 'loading' && <p>Loading...</p>}
-      {tasksState.phase === 'error' && (
-        <ErrorRetry message={tasksState.message} onRetry={reloadTasks} />
+      {executionsState.phase === 'loading' && <p>Loading...</p>}
+      {executionsState.phase === 'error' && (
+        <ErrorRetry message={executionsState.message} onRetry={reloadExecutions} />
       )}
-      {tasksState.phase === 'loaded' &&
+      {executionsState.phase === 'loaded' &&
         (() => {
-          const pending = tasksState.data.filter((task) => task.status === 'AWAITING_CONFIRMATION')
+          const pending = executionsState.data.filter(
+            (execution) => execution.status === 'AWAITING_CONFIRMATION',
+          )
           if (pending.length === 0) {
             return <p>No tasks waiting for confirmation.</p>
           }
           return (
             <ul>
-              {pending.map((task) => (
-                <li key={task.id}>
-                  {task.title} — {assigneeLabel(usersById, task.assigned_to)} ({task.reward_points}{' '}
-                  pts)
-                  <button onClick={() => handleConfirm(task.id)} disabled={confirmingId === task.id}>
+              {pending.map((execution) => (
+                <li key={execution.id}>
+                  {taskTitle(tasksById, execution.task_id)} —{' '}
+                  {assigneeLabel(usersById, execution.user_id)} ({execution.reward_points} pts)
+                  <button
+                    onClick={() => handleConfirm(execution.id)}
+                    disabled={confirmingId === execution.id}
+                  >
                     Confirm
                   </button>
-                  {confirmErrors[task.id] && <p role="alert">{confirmErrors[task.id]}</p>}
+                  {confirmErrors[execution.id] && <p role="alert">{confirmErrors[execution.id]}</p>}
                 </li>
               ))}
             </ul>
@@ -161,31 +191,34 @@ function PendingTasksSection({
 }
 
 function RecentTasksSection({
-  tasksState,
-  reloadTasks,
+  executionsState,
+  reloadExecutions,
   usersById,
+  tasksById,
 }: {
-  tasksState: SectionState<Task[]>
-  reloadTasks: () => void
+  executionsState: SectionState<TaskExecution[]>
+  reloadExecutions: () => void
   usersById: Record<string, UserSummary>
+  tasksById: Record<string, Task>
 }) {
   return (
     <section aria-labelledby="recent-tasks-heading">
       <h2 id="recent-tasks-heading">Recent Tasks</h2>
-      {tasksState.phase === 'loading' && <p>Loading...</p>}
-      {tasksState.phase === 'error' && (
-        <ErrorRetry message={tasksState.message} onRetry={reloadTasks} />
+      {executionsState.phase === 'loading' && <p>Loading...</p>}
+      {executionsState.phase === 'error' && (
+        <ErrorRetry message={executionsState.message} onRetry={reloadExecutions} />
       )}
-      {tasksState.phase === 'loaded' &&
-        (tasksState.data.length === 0 ? (
+      {executionsState.phase === 'loaded' &&
+        (executionsState.data.length === 0 ? (
           <p>No tasks yet.</p>
         ) : (
           <ul>
-            {sortRecent(tasksState.data)
+            {sortRecent(executionsState.data)
               .slice(0, 5)
-              .map((task) => (
-                <li key={task.id}>
-                  {task.title} — {assigneeLabel(usersById, task.assigned_to)} — {task.status}
+              .map((execution) => (
+                <li key={execution.id}>
+                  {taskTitle(tasksById, execution.task_id)} —{' '}
+                  {assigneeLabel(usersById, execution.user_id)} — {execution.status}
                 </li>
               ))}
           </ul>
@@ -226,24 +259,27 @@ function QuickActions() {
 }
 
 function DashboardPage() {
-  const tasks = useTasks()
+  const executions = useTaskExecutions()
   const balance = useBalance()
   const usersById = useUsersById()
+  const tasksById = useTasksById()
 
   return (
     <div>
       <h1>Dashboard</h1>
       <div className="dashboard-grid">
         <PendingTasksSection
-          tasksState={tasks.state}
-          reloadTasks={tasks.reload}
+          executionsState={executions.state}
+          reloadExecutions={executions.reload}
           reloadBalance={balance.reload}
           usersById={usersById}
+          tasksById={tasksById}
         />
         <RecentTasksSection
-          tasksState={tasks.state}
-          reloadTasks={tasks.reload}
+          executionsState={executions.state}
+          reloadExecutions={executions.reload}
           usersById={usersById}
+          tasksById={tasksById}
         />
         <PointsSummary balanceState={balance.state} reloadBalance={balance.reload} />
         <QuickActions />

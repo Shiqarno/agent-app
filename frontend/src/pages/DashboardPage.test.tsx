@@ -22,10 +22,22 @@ function task(overrides: Record<string, unknown> = {}) {
     id: 'task-1',
     title: 'Tidy the room',
     description: null,
-    assigned_to: 'child-1',
-    created_by: 'adult-1',
     reward_points: 10,
+    is_active: true,
+    created_by: 'adult-1',
+    created_at: '2026-09-03T10:00:00Z',
+    updated_at: '2026-09-03T10:00:00Z',
+    ...overrides,
+  }
+}
+
+function execution(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'exec-1',
+    task_id: 'task-1',
+    user_id: 'child-1',
     status: 'ASSIGNED',
+    reward_points: 10,
     created_at: '2026-09-03T10:00:00Z',
     updated_at: '2026-09-03T10:00:00Z',
     ...overrides,
@@ -59,16 +71,18 @@ describe('DashboardPage', () => {
     expect(loadingTexts.length).toBeGreaterThanOrEqual(3)
   })
 
-  it('shows only AWAITING_CONFIRMATION tasks in the pending-confirmation block', async () => {
-    const tasks = [
-      task({ id: 'pending-1', title: 'Needs confirmation', status: 'AWAITING_CONFIRMATION' }),
-      task({ id: 'in-progress-1', title: 'Still working', status: 'IN_PROGRESS' }),
-      task({ id: 'assigned-1', title: 'Not started', status: 'ASSIGNED' }),
+  it('shows only AWAITING_CONFIRMATION executions in the pending-confirmation block', async () => {
+    const tasks = [task()]
+    const executions = [
+      execution({ id: 'pending-1', status: 'AWAITING_CONFIRMATION' }),
+      execution({ id: 'in-progress-1', status: 'IN_PROGRESS' }),
+      execution({ id: 'assigned-1', status: 'ASSIGNED' }),
     ]
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string) => {
         if (url.endsWith('/api/tasks')) return jsonResponse(200, tasks)
+        if (url.endsWith('/api/task-executions')) return jsonResponse(200, executions)
         if (url.endsWith('/api/points/balance')) return jsonResponse(200, { balance: 5 })
         if (url.endsWith('/api/users')) return jsonResponse(200, USERS)
         throw new Error(`Unexpected request: ${url}`)
@@ -82,10 +96,9 @@ describe('DashboardPage', () => {
     })
     const pending = pendingSection.closest('section') as HTMLElement
     await waitFor(() => {
-      expect(within(pending).getByText(/needs confirmation/i)).toBeInTheDocument()
+      expect(within(pending).getAllByText(/tidy the room/i).length).toBeGreaterThan(0)
     })
-    expect(within(pending).queryByText(/still working/i)).not.toBeInTheDocument()
-    expect(within(pending).queryByText(/not started/i)).not.toBeInTheDocument()
+    expect(within(pending).getAllByRole('listitem')).toHaveLength(1)
   })
 
   it('shows the empty state when there are no pending confirmations', async () => {
@@ -93,6 +106,7 @@ describe('DashboardPage', () => {
       'fetch',
       vi.fn((url: string) => {
         if (url.endsWith('/api/tasks')) return jsonResponse(200, [])
+        if (url.endsWith('/api/task-executions')) return jsonResponse(200, [])
         if (url.endsWith('/api/points/balance')) return jsonResponse(200, { balance: 0 })
         if (url.endsWith('/api/users')) return jsonResponse(200, [])
         throw new Error(`Unexpected request: ${url}`)
@@ -107,15 +121,17 @@ describe('DashboardPage', () => {
     expect(screen.getByText(/no tasks yet/i)).toBeInTheDocument()
   })
 
-  it('confirming a pending task calls the existing transition and refreshes tasks and points', async () => {
-    const pendingTask = task({ id: 'pending-1', title: 'Needs confirmation', status: 'AWAITING_CONFIRMATION' })
-    let tasksCallCount = 0
+  it('confirming a pending execution calls the existing transition and refreshes tasks and points', async () => {
+    const pendingExecution = execution({ id: 'pending-1', status: 'AWAITING_CONFIRMATION' })
+    let executionsCallCount = 0
     let balanceCallCount = 0
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
-      if (url.endsWith('/api/tasks')) {
-        tasksCallCount += 1
-        // After confirmation, the task is no longer AWAITING_CONFIRMATION.
-        const body = tasksCallCount === 1 ? [pendingTask] : [{ ...pendingTask, status: 'COMPLETED' }]
+      if (url.endsWith('/api/tasks')) return jsonResponse(200, [task()])
+      if (url.endsWith('/api/task-executions')) {
+        executionsCallCount += 1
+        // After confirmation, the execution is no longer AWAITING_CONFIRMATION.
+        const body =
+          executionsCallCount === 1 ? [pendingExecution] : [{ ...pendingExecution, status: 'COMPLETED' }]
         return jsonResponse(200, body)
       }
       if (url.endsWith('/api/points/balance')) {
@@ -125,9 +141,9 @@ describe('DashboardPage', () => {
       if (url.endsWith('/api/users')) {
         return jsonResponse(200, USERS)
       }
-      if (url.endsWith('/api/tasks/pending-1/confirm')) {
+      if (url.endsWith('/api/task-executions/pending-1/confirm')) {
         expect(init?.method).toBe('POST')
-        return jsonResponse(200, { ...pendingTask, status: 'COMPLETED' })
+        return jsonResponse(200, { ...pendingExecution, status: 'COMPLETED' })
       }
       throw new Error(`Unexpected request: ${url}`)
     })
@@ -148,21 +164,24 @@ describe('DashboardPage', () => {
     await waitFor(() => {
       expect(screen.getByText('10')).toBeInTheDocument()
     })
-    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/tasks'))).toHaveLength(2)
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/task-executions')),
+    ).toHaveLength(2)
     expect(
       fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/points/balance')),
     ).toHaveLength(2)
   })
 
-  it('keeps a task visible with an error if confirmation fails', async () => {
-    const pendingTask = task({ id: 'pending-1', title: 'Needs confirmation', status: 'AWAITING_CONFIRMATION' })
+  it('keeps an execution visible with an error if confirmation fails', async () => {
+    const pendingExecution = execution({ id: 'pending-1', status: 'AWAITING_CONFIRMATION' })
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string) => {
-        if (url.endsWith('/api/tasks')) return jsonResponse(200, [pendingTask])
+        if (url.endsWith('/api/tasks')) return jsonResponse(200, [task()])
+        if (url.endsWith('/api/task-executions')) return jsonResponse(200, [pendingExecution])
         if (url.endsWith('/api/points/balance')) return jsonResponse(200, { balance: 0 })
         if (url.endsWith('/api/users')) return jsonResponse(200, USERS)
-        if (url.endsWith('/api/tasks/pending-1/confirm')) {
+        if (url.endsWith('/api/task-executions/pending-1/confirm')) {
           return jsonResponse(409, {
             error: { code: 'INVALID_TRANSITION', message: 'Cannot confirm this task' },
           })
@@ -185,21 +204,31 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('button', { name: /confirm/i })).toBeInTheDocument()
   })
 
-  it('shows the 5 most recent tasks ordered by created_at desc, id desc, read-only', async () => {
+  it('shows the 5 most recent executions ordered by created_at desc, id desc, read-only', async () => {
+    const executions = [
+      execution({ id: 'a', task_id: 'task-a', created_at: '2026-09-01T00:00:00Z' }),
+      execution({ id: 'b', task_id: 'task-b', created_at: '2026-09-02T00:00:00Z' }),
+      execution({ id: 'c', task_id: 'task-c', created_at: '2026-09-03T00:00:00Z' }),
+      execution({ id: 'd', task_id: 'task-d', created_at: '2026-09-04T00:00:00Z' }),
+      execution({ id: 'e', task_id: 'task-e', created_at: '2026-09-05T00:00:00Z' }),
+      execution({ id: 'f', task_id: 'task-f', created_at: '2026-09-06T00:00:00Z' }),
+      // Same created_at as "f" -- tie broken by id desc.
+      execution({ id: 'g', task_id: 'task-g', created_at: '2026-09-06T00:00:00Z' }),
+    ]
     const tasks = [
-      task({ id: 'a', title: 'Oldest', created_at: '2026-09-01T00:00:00Z' }),
-      task({ id: 'b', title: 'Second', created_at: '2026-09-02T00:00:00Z' }),
-      task({ id: 'c', title: 'Third', created_at: '2026-09-03T00:00:00Z' }),
-      task({ id: 'd', title: 'Fourth', created_at: '2026-09-04T00:00:00Z' }),
-      task({ id: 'e', title: 'Fifth', created_at: '2026-09-05T00:00:00Z' }),
-      task({ id: 'f', title: 'Newest', created_at: '2026-09-06T00:00:00Z' }),
-      // Same created_at as "Newest" -- tie broken by id desc.
-      task({ id: 'g', title: 'Tied but higher id', created_at: '2026-09-06T00:00:00Z' }),
+      task({ id: 'task-a', title: 'Oldest' }),
+      task({ id: 'task-b', title: 'Second' }),
+      task({ id: 'task-c', title: 'Third' }),
+      task({ id: 'task-d', title: 'Fourth' }),
+      task({ id: 'task-e', title: 'Fifth' }),
+      task({ id: 'task-f', title: 'Newest' }),
+      task({ id: 'task-g', title: 'Tied but higher id' }),
     ]
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string) => {
         if (url.endsWith('/api/tasks')) return jsonResponse(200, tasks)
+        if (url.endsWith('/api/task-executions')) return jsonResponse(200, executions)
         if (url.endsWith('/api/points/balance')) return jsonResponse(200, { balance: 0 })
         if (url.endsWith('/api/users')) return jsonResponse(200, USERS)
         throw new Error(`Unexpected request: ${url}`)
@@ -231,6 +260,7 @@ describe('DashboardPage', () => {
       'fetch',
       vi.fn((url: string) => {
         if (url.endsWith('/api/tasks')) return jsonResponse(200, [])
+        if (url.endsWith('/api/task-executions')) return jsonResponse(200, [])
         if (url.endsWith('/api/points/balance')) return jsonResponse(200, { balance: 42 })
         if (url.endsWith('/api/users')) return jsonResponse(200, [])
         throw new Error(`Unexpected request: ${url}`)
@@ -250,6 +280,7 @@ describe('DashboardPage', () => {
       'fetch',
       vi.fn((url: string) => {
         if (url.endsWith('/api/tasks')) return jsonResponse(200, [])
+        if (url.endsWith('/api/task-executions')) return jsonResponse(200, [])
         if (url.endsWith('/api/points/balance')) return jsonResponse(200, { balance: 0 })
         if (url.endsWith('/api/users')) return jsonResponse(200, [])
         throw new Error(`Unexpected request: ${url}`)
@@ -272,13 +303,14 @@ describe('DashboardPage', () => {
   })
 
   it('a failed section shows a retry action without hiding successful sections', async () => {
-    let tasksCallCount = 0
+    let executionsCallCount = 0
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string) => {
-        if (url.endsWith('/api/tasks')) {
-          tasksCallCount += 1
-          if (tasksCallCount === 1) return jsonResponse(500, {})
+        if (url.endsWith('/api/tasks')) return jsonResponse(200, [])
+        if (url.endsWith('/api/task-executions')) {
+          executionsCallCount += 1
+          if (executionsCallCount === 1) return jsonResponse(500, {})
           return jsonResponse(200, [])
         }
         if (url.endsWith('/api/points/balance')) return jsonResponse(200, { balance: 7 })
@@ -292,7 +324,7 @@ describe('DashboardPage', () => {
     await waitFor(() => {
       expect(screen.getAllByRole('alert').length).toBeGreaterThan(0)
     })
-    // Points and Quick Actions remain available despite the tasks failure.
+    // Points and Quick Actions remain available despite the executions failure.
     expect(screen.getByText('7')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /create task/i })).toBeInTheDocument()
 

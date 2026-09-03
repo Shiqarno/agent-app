@@ -20,6 +20,9 @@ function stubDashboardData(url: string) {
   if (url.endsWith('/api/tasks')) {
     return jsonResponse(200, [])
   }
+  if (url.endsWith('/api/task-executions')) {
+    return jsonResponse(200, [])
+  }
   if (url.endsWith('/api/points/balance')) {
     return jsonResponse(200, { balance: 0 })
   }
@@ -51,6 +54,9 @@ function stubRewardsData(url: string) {
 // nicety), so this mirrors real backend behavior rather than papering over it.
 function stubTasksData(url: string) {
   if (url.endsWith('/api/tasks')) {
+    return jsonResponse(200, [])
+  }
+  if (url.endsWith('/api/task-executions')) {
     return jsonResponse(200, [])
   }
   if (url.endsWith('/api/users')) {
@@ -601,10 +607,9 @@ describe('App', () => {
       id: 'task-99',
       title: 'Feed the cat',
       description: null,
-      assigned_to: ADULT_USER.id,
-      created_by: ADULT_USER.id,
       reward_points: 5,
-      status: 'ASSIGNED',
+      is_active: true,
+      created_by: ADULT_USER.id,
       created_at: '2026-09-03T10:00:00Z',
       updated_at: '2026-09-03T10:00:00Z',
     }
@@ -620,6 +625,9 @@ describe('App', () => {
       }
       if (url.endsWith('/api/tasks/task-99') && init?.method === 'PATCH') {
         return jsonResponse(200, { ...existingTask, title: 'Feed the cat and dog' })
+      }
+      if (url.endsWith('/api/task-executions')) {
+        return jsonResponse(200, [])
       }
       const dashboard = stubDashboardData(url)
       if (dashboard) return dashboard
@@ -665,10 +673,18 @@ describe('App', () => {
       id: 'task-77',
       title: 'Walk the dog',
       description: null,
-      assigned_to: CHILD_USER.id,
-      created_by: ADULT_USER.id,
       reward_points: 5,
+      is_active: true,
+      created_by: ADULT_USER.id,
+      created_at: '2026-09-03T10:00:00Z',
+      updated_at: '2026-09-03T10:00:00Z',
+    }
+    const childExecution = {
+      id: 'exec-77',
+      task_id: 'task-77',
+      user_id: CHILD_USER.id,
       status: 'ASSIGNED',
+      reward_points: 5,
       created_at: '2026-09-03T10:00:00Z',
       updated_at: '2026-09-03T10:00:00Z',
     }
@@ -679,6 +695,9 @@ describe('App', () => {
       }
       if (url.endsWith('/api/tasks/task-77')) {
         return jsonResponse(200, childTask)
+      }
+      if (url.endsWith('/api/task-executions')) {
+        return jsonResponse(200, [childExecution])
       }
       const tasks = stubTasksData(url)
       if (tasks) return tasks

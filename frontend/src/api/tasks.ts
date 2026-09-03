@@ -2,7 +2,7 @@ import { ApiError, request } from './http'
 
 export { ApiError }
 
-export type TaskStatus =
+export type TaskExecutionStatus =
   | 'ASSIGNED'
   | 'IN_PROGRESS'
   | 'AWAITING_CONFIRMATION'
@@ -13,10 +13,19 @@ export type Task = {
   id: string
   title: string
   description: string | null
-  assigned_to: string
-  created_by: string
   reward_points: number
-  status: TaskStatus
+  is_active: boolean
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export type TaskExecution = {
+  id: string
+  task_id: string
+  user_id: string
+  status: TaskExecutionStatus
+  reward_points: number
   created_at: string
   updated_at: string
 }
@@ -24,13 +33,15 @@ export type Task = {
 export type TaskInput = {
   title: string
   description: string | null
-  assigned_to: string
+  assigned_to?: string
   reward_points: number
 }
 
 export type TaskUpdateInput = {
   title?: string
   description?: string
+  reward_points?: number
+  is_active?: boolean
 }
 
 export function getTasks(): Promise<Task[]> {
@@ -55,25 +66,37 @@ export function updateTask(id: string, input: TaskUpdateInput): Promise<Task> {
   })
 }
 
-export function reassignTask(id: string, assignedTo: string): Promise<Task> {
-  return request<Task>(`/api/tasks/${id}/reassign`, {
+export function claimTask(id: string): Promise<TaskExecution> {
+  return request<TaskExecution>(`/api/tasks/${id}/claim`, { method: 'POST' })
+}
+
+export function getTaskExecutions(): Promise<TaskExecution[]> {
+  return request<TaskExecution[]>('/api/task-executions')
+}
+
+export function getTaskExecution(id: string): Promise<TaskExecution> {
+  return request<TaskExecution>(`/api/task-executions/${id}`)
+}
+
+export function reassignTaskExecution(id: string, assignedTo: string): Promise<TaskExecution> {
+  return request<TaskExecution>(`/api/task-executions/${id}/reassign`, {
     method: 'POST',
     body: JSON.stringify({ assigned_to: assignedTo }),
   })
 }
 
-export function startTask(id: string): Promise<Task> {
-  return request<Task>(`/api/tasks/${id}/start`, { method: 'POST' })
+export function startTaskExecution(id: string): Promise<TaskExecution> {
+  return request<TaskExecution>(`/api/task-executions/${id}/start`, { method: 'POST' })
 }
 
-export function readyTask(id: string): Promise<Task> {
-  return request<Task>(`/api/tasks/${id}/ready`, { method: 'POST' })
+export function readyTaskExecution(id: string): Promise<TaskExecution> {
+  return request<TaskExecution>(`/api/task-executions/${id}/ready`, { method: 'POST' })
 }
 
-export function confirmTask(id: string): Promise<Task> {
-  return request<Task>(`/api/tasks/${id}/confirm`, { method: 'POST' })
+export function confirmTaskExecution(id: string): Promise<TaskExecution> {
+  return request<TaskExecution>(`/api/task-executions/${id}/confirm`, { method: 'POST' })
 }
 
-export function cancelTask(id: string): Promise<Task> {
-  return request<Task>(`/api/tasks/${id}/cancel`, { method: 'POST' })
+export function cancelTaskExecution(id: string): Promise<TaskExecution> {
+  return request<TaskExecution>(`/api/task-executions/${id}/cancel`, { method: 'POST' })
 }

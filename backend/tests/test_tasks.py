@@ -14,13 +14,20 @@ from app.csrf import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
 from app.db import SessionLocal
 from app.identity import SESSION_COOKIE_NAME
 from app.main import app
-from app.models import PointTransaction, Task, TaskStatus, User, UserRole, UserSession, utcnow
+from app.models import Task, TaskExecution, User, UserRole, UserSession, utcnow
 
 ADULT = UserRole.ADULT
 CHILD = UserRole.CHILD
 
 
-def create_task(
+def create_task(client: TestClient, creator: User, **overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {"title": "Task", "reward_points": 5}
+    payload.update(overrides)
+    response = client.post("/api/tasks", json=payload, headers=auth(creator))
+    return response.json()
+
+
+def create_assigned_task(
     client: TestClient, creator: User, assignee: User, **overrides: object
 ) -> dict[str, object]:
     payload: dict[str, object] = {
@@ -33,259 +40,86 @@ def create_task(
     return response.json()
 
 
-# --- AC1 / AC2 / AC3: Adult assigns to Child, another Adult, or themselves ------------
+def execution_for(
+    client: TestClient, viewer: User, task_id: str, user_id: str
+) -> dict[str, object]:
+    executions = client.get("/api/task-executions", headers=auth(viewer)).json()
+    return next(e for e in executions if e["task_id"] == task_id and e["user_id"] == user_id)
 
 
-def test_adult_assigns_task_to_child(client: TestClient, make_user: Callable[..., User]) -> None:
-    adult = make_user(ADULT, "Adult A")
-    child = make_user(CHILD, "Child A")
+# =========================================================================================
+# Task creation: POST /api/tasks
+# =========================================================================================
+
+
+def test_adult_creates_an_unassigned_task(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
 
     response = client.post(
         "/api/tasks",
-        json={
-            "title": "Clean room",
-            "description": "Tidy up",
-            "assigned_to": str(child.id),
-            "reward_points": 10,
-        },
+        json={"title": "Clean room", "description": "Tidy up", "reward_points": 10},
         headers=auth(adult),
     )
 
     assert response.status_code == 201
     body = response.json()
-    assert body["status"] == "ASSIGNED"
     assert body["title"] == "Clean room"
     assert body["description"] == "Tidy up"
-    assert body["assigned_to"] == str(child.id)
-    assert body["created_by"] == str(adult.id)
     assert body["reward_points"] == 10
-
-
-def test_adult_assigns_task_to_another_adult(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult_a = make_user(ADULT, "Adult A")
-    adult_b = make_user(ADULT, "Adult B")
-
-    response = client.post(
-        "/api/tasks",
-        json={"title": "Task", "assigned_to": str(adult_b.id), "reward_points": 10},
-        headers=auth(adult_a),
-    )
-
-    assert response.status_code == 201
-    body = response.json()
-    assert body["status"] == "ASSIGNED"
-    assert body["assigned_to"] == str(adult_b.id)
-    assert body["created_by"] == str(adult_a.id)
-
-
-def test_adult_assigns_task_to_self(client: TestClient, make_user: Callable[..., User]) -> None:
-    adult = make_user(ADULT)
-
-    response = client.post(
-        "/api/tasks",
-        json={"title": "Task", "assigned_to": str(adult.id), "reward_points": 10},
-        headers=auth(adult),
-    )
-
-    assert response.status_code == 201
-    body = response.json()
-    assert body["status"] == "ASSIGNED"
+    assert body["is_active"] is True
     assert body["created_by"] == str(adult.id)
-    assert body["assigned_to"] == str(adult.id)
+    assert "assigned_to" not in body
+    assert "status" not in body
 
 
-# --- AC4 / AC5: assigned Adult can start and mark ready -------------------------------
-
-
-def test_assigned_adult_can_start_task(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult_a = make_user(ADULT, "Adult A")
-    adult_b = make_user(ADULT, "Adult B")
-    task = create_task(client, adult_a, adult_b)
-
-    response = client.post(f"/api/tasks/{task['id']}/start", headers=auth(adult_b))
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "IN_PROGRESS"
-
-
-def test_assigned_adult_can_mark_task_ready(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult_a = make_user(ADULT, "Adult A")
-    adult_b = make_user(ADULT, "Adult B")
-    task = create_task(client, adult_a, adult_b)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(adult_b))
-
-    response = client.post(f"/api/tasks/{task['id']}/ready", headers=auth(adult_b))
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "AWAITING_CONFIRMATION"
-
-
-# --- AC6: creator confirms a task assigned to another Adult ---------------------------
-
-
-def test_creator_confirms_task_assigned_to_another_adult(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult_a = make_user(ADULT, "Adult A")
-    adult_b = make_user(ADULT, "Adult B")
-    task = create_task(client, adult_a, adult_b)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(adult_b))
-    client.post(f"/api/tasks/{task['id']}/ready", headers=auth(adult_b))
-
-    response = client.post(f"/api/tasks/{task['id']}/confirm", headers=auth(adult_a))
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "COMPLETED"
-
-
-# --- AC7: full self-assigned lifecycle -------------------------------------------------
-
-
-def test_self_assigned_task_can_complete_full_lifecycle(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    task = create_task(client, adult, adult)
-
-    start = client.post(f"/api/tasks/{task['id']}/start", headers=auth(adult))
-    assert start.json()["status"] == "IN_PROGRESS"
-
-    ready = client.post(f"/api/tasks/{task['id']}/ready", headers=auth(adult))
-    assert ready.json()["status"] == "AWAITING_CONFIRMATION"
-
-    confirm = client.post(f"/api/tasks/{task['id']}/confirm", headers=auth(adult))
-    assert confirm.status_code == 200
-    assert confirm.json()["status"] == "COMPLETED"
-
-
-# --- AC8: Child assignment remains valid -----------------------------------------------
-
-
-def test_child_assignment_lifecycle_still_works(
+def test_adult_creates_a_task_directly_assigned_to_a_child(
     client: TestClient, make_user: Callable[..., User]
 ) -> None:
     adult = make_user(ADULT)
     child = make_user(CHILD)
-    task = create_task(client, adult, child)
 
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
-    ready = client.post(f"/api/tasks/{task['id']}/ready", headers=auth(child))
-    assert ready.json()["status"] == "AWAITING_CONFIRMATION"
+    task = create_assigned_task(client, adult, child, title="Clean room")
 
-    confirm = client.post(f"/api/tasks/{task['id']}/confirm", headers=auth(adult))
-    assert confirm.status_code == 200
-    assert confirm.json()["status"] == "COMPLETED"
+    assert task["title"] == "Clean room"
+    execution = execution_for(client, adult, task["id"], str(child.id))
+    assert execution["status"] == "ASSIGNED"
+    assert execution["reward_points"] == 5
 
 
-# --- AC9: Child cannot create a task ----------------------------------------------------
+def test_adult_creates_a_task_directly_assigned_to_another_adult(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult_a = make_user(ADULT, "Adult A")
+    adult_b = make_user(ADULT, "Adult B")
+
+    task = create_assigned_task(client, adult_a, adult_b)
+
+    execution = execution_for(client, adult_a, task["id"], str(adult_b.id))
+    assert execution["status"] == "ASSIGNED"
+
+
+def test_adult_creates_a_task_directly_assigned_to_self(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+
+    task = create_assigned_task(client, adult, adult)
+
+    execution = execution_for(client, adult, task["id"], str(adult.id))
+    assert execution["status"] == "ASSIGNED"
 
 
 def test_child_cannot_create_task(client: TestClient, make_user: Callable[..., User]) -> None:
     child = make_user(CHILD)
-    other_child = make_user(CHILD, "Other Child")
 
     response = client.post(
-        "/api/tasks",
-        json={"title": "Task", "assigned_to": str(other_child.id), "reward_points": 5},
-        headers=auth(child),
+        "/api/tasks", json={"title": "Task", "reward_points": 5}, headers=auth(child)
     )
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "FORBIDDEN"
-
-
-# --- AC10: non-assignee cannot start/mark ready, regardless of role -------------------
-
-
-def test_non_assignee_adult_cannot_start_another_adults_task(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult_a = make_user(ADULT, "Adult A")
-    adult_b = make_user(ADULT, "Adult B")
-    adult_c = make_user(ADULT, "Adult C")
-    task = create_task(client, adult_a, adult_b)
-
-    response = client.post(f"/api/tasks/{task['id']}/start", headers=auth(adult_c))
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "FORBIDDEN"
-
-    unchanged = client.get("/api/tasks", headers=auth(adult_b)).json()
-    assert unchanged[0]["status"] == "ASSIGNED"
-
-
-def test_non_assignee_child_cannot_start_another_childs_task(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child_a = make_user(CHILD, "Child A")
-    child_b = make_user(CHILD, "Child B")
-    task = create_task(client, adult, child_a)
-
-    response = client.post(f"/api/tasks/{task['id']}/start", headers=auth(child_b))
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "FORBIDDEN"
-
-
-def test_non_assignee_cannot_mark_task_ready(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child_a = make_user(CHILD, "Child A")
-    child_b = make_user(CHILD, "Child B")
-    task = create_task(client, adult, child_a)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(child_a))
-
-    response = client.post(f"/api/tasks/{task['id']}/ready", headers=auth(child_b))
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "FORBIDDEN"
-
-
-# --- AC11: non-creator cannot confirm, even the assignee -------------------------------
-
-
-def test_assignee_cannot_confirm_their_own_task(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult_a = make_user(ADULT, "Adult A")
-    adult_b = make_user(ADULT, "Adult B")
-    task = create_task(client, adult_a, adult_b)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(adult_b))
-    client.post(f"/api/tasks/{task['id']}/ready", headers=auth(adult_b))
-
-    response = client.post(f"/api/tasks/{task['id']}/confirm", headers=auth(adult_b))
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "FORBIDDEN"
-
-    unchanged = client.get("/api/tasks", headers=auth(adult_a)).json()
-    assert unchanged[0]["status"] == "AWAITING_CONFIRMATION"
-
-
-def test_child_cannot_confirm_completion(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
-    client.post(f"/api/tasks/{task['id']}/ready", headers=auth(child))
-
-    response = client.post(f"/api/tasks/{task['id']}/confirm", headers=auth(child))
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "FORBIDDEN"
-
-
-# --- AC12: nonexistent assignee rejected ------------------------------------------------
 
 
 def test_create_task_nonexistent_assignee(
@@ -303,148 +137,19 @@ def test_create_task_nonexistent_assignee(
     assert response.json()["error"]["code"] == "ASSIGNEE_NOT_FOUND"
 
 
-# --- AC13 / AC14: task visibility, including self-assignment dedup ---------------------
-
-
-def test_task_visible_to_both_creator_and_assignee(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult_a = make_user(ADULT, "Adult A")
-    adult_b = make_user(ADULT, "Adult B")
-    adult_c = make_user(ADULT, "Adult C")
-    task = create_task(client, adult_a, adult_b)
-
-    creator_view = client.get("/api/tasks", headers=auth(adult_a)).json()
-    assert task["id"] in [t["id"] for t in creator_view]
-
-    assignee_view = client.get("/api/tasks", headers=auth(adult_b)).json()
-    assert task["id"] in [t["id"] for t in assignee_view]
-
-    unrelated_view = client.get("/api/tasks", headers=auth(adult_c)).json()
-    assert task["id"] not in [t["id"] for t in unrelated_view]
-
-
-def test_self_assigned_task_is_not_duplicated_in_list(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    task = create_task(client, adult, adult)
-
-    response = client.get("/api/tasks", headers=auth(adult))
-
-    matches = [t for t in response.json() if t["id"] == task["id"]]
-    assert len(matches) == 1
-
-
-def test_child_still_cannot_see_another_childs_task(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child_a = make_user(CHILD, "Child A")
-    child_b = make_user(CHILD, "Child B")
-    create_task(client, adult, child_a)
-
-    response = client.get("/api/tasks", headers=auth(child_b))
-
-    assert response.status_code == 200
-    assert response.json() == []
-
-
-# --- AC15: invalid state transitions remain rejected ------------------------------------
-
-
-def test_cannot_mark_ready_before_starting(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-
-    response = client.post(f"/api/tasks/{task['id']}/ready", headers=auth(child))
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INVALID_TRANSITION"
-
-
-def test_cannot_confirm_before_ready(client: TestClient, make_user: Callable[..., User]) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
-
-    response = client.post(f"/api/tasks/{task['id']}/confirm", headers=auth(adult))
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INVALID_TRANSITION"
-
-
-def test_cannot_start_task_twice(client: TestClient, make_user: Callable[..., User]) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
-
-    response = client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INVALID_TRANSITION"
-
-
-def test_cannot_transition_a_completed_task(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
-    client.post(f"/api/tasks/{task['id']}/ready", headers=auth(child))
-    client.post(f"/api/tasks/{task['id']}/confirm", headers=auth(adult))
-
-    response = client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INVALID_TRANSITION"
-
-
-# Note: the "completion has no points side effect" invariant from Issue #1/#2
-# is intentionally superseded by Issue #3 (Point Ledger) -- see tests/test_points.py,
-# which now covers the (correct, current) point-awarding behavior on confirmation.
-
-
-# --- Task creation validation ---------------------------------------------------------
-
-
 def test_create_task_missing_title(client: TestClient, make_user: Callable[..., User]) -> None:
     adult = make_user(ADULT)
-    child = make_user(CHILD)
 
-    response = client.post(
-        "/api/tasks",
-        json={"assigned_to": str(child.id), "reward_points": 5},
-        headers=auth(adult),
-    )
+    response = client.post("/api/tasks", json={"reward_points": 5}, headers=auth(adult))
 
     assert response.status_code == 422
 
 
 def test_create_task_blank_title(client: TestClient, make_user: Callable[..., User]) -> None:
     adult = make_user(ADULT)
-    child = make_user(CHILD)
 
     response = client.post(
-        "/api/tasks",
-        json={"title": "   ", "assigned_to": str(child.id), "reward_points": 5},
-        headers=auth(adult),
-    )
-
-    assert response.status_code == 422
-
-
-def test_create_task_missing_assignee(client: TestClient, make_user: Callable[..., User]) -> None:
-    adult = make_user(ADULT)
-
-    response = client.post(
-        "/api/tasks", json={"title": "Task", "reward_points": 5}, headers=auth(adult)
+        "/api/tasks", json={"title": "   ", "reward_points": 5}, headers=auth(adult)
     )
 
     assert response.status_code == 422
@@ -452,23 +157,17 @@ def test_create_task_missing_assignee(client: TestClient, make_user: Callable[..
 
 def test_create_task_missing_reward(client: TestClient, make_user: Callable[..., User]) -> None:
     adult = make_user(ADULT)
-    child = make_user(CHILD)
 
-    response = client.post(
-        "/api/tasks", json={"title": "Task", "assigned_to": str(child.id)}, headers=auth(adult)
-    )
+    response = client.post("/api/tasks", json={"title": "Task"}, headers=auth(adult))
 
     assert response.status_code == 422
 
 
 def test_create_task_zero_reward(client: TestClient, make_user: Callable[..., User]) -> None:
     adult = make_user(ADULT)
-    child = make_user(CHILD)
 
     response = client.post(
-        "/api/tasks",
-        json={"title": "Task", "assigned_to": str(child.id), "reward_points": 0},
-        headers=auth(adult),
+        "/api/tasks", json={"title": "Task", "reward_points": 0}, headers=auth(adult)
     )
 
     assert response.status_code == 422
@@ -476,67 +175,129 @@ def test_create_task_zero_reward(client: TestClient, make_user: Callable[..., Us
 
 def test_create_task_negative_reward(client: TestClient, make_user: Callable[..., User]) -> None:
     adult = make_user(ADULT)
-    child = make_user(CHILD)
 
     response = client.post(
-        "/api/tasks",
-        json={"title": "Task", "assigned_to": str(child.id), "reward_points": -1},
-        headers=auth(adult),
+        "/api/tasks", json={"title": "Task", "reward_points": -1}, headers=auth(adult)
     )
 
     assert response.status_code == 422
 
 
-# --- Identity edge cases ---------------------------------------------------------------
+def test_new_task_is_active_by_default(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
+
+    task = create_task(client, adult)
+
+    assert task["is_active"] is True
 
 
-def test_missing_identity_header_rejected(client: TestClient) -> None:
-    response = client.get("/api/tasks")
-
-    assert response.status_code == 401
-    assert response.json()["error"]["code"] == "UNAUTHENTICATED"
+# =========================================================================================
+# Task visibility: GET /api/tasks, GET /api/tasks/{id}
+# =========================================================================================
 
 
-def test_x_user_id_header_alone_does_not_authenticate(
+def test_creator_sees_their_own_task(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
+    task = create_task(client, adult)
+
+    response = client.get("/api/tasks", headers=auth(adult))
+
+    assert task["id"] in [t["id"] for t in response.json()]
+
+
+def test_adult_does_not_see_another_adults_task(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult_a = make_user(ADULT, "Adult A")
+    adult_b = make_user(ADULT, "Adult B")
+    task = create_task(client, adult_a)
+
+    response = client.get("/api/tasks", headers=auth(adult_b))
+
+    assert task["id"] not in [t["id"] for t in response.json()]
+
+
+def test_child_sees_active_task_as_available(
     client: TestClient, make_user: Callable[..., User]
 ) -> None:
     adult = make_user(ADULT)
-
-    response = client.get("/api/tasks", headers={"X-User-Id": str(adult.id)})
-
-    assert response.status_code == 401
-    assert response.json()["error"]["code"] == "UNAUTHENTICATED"
-
-
-def test_task_not_found_for_start(client: TestClient, make_user: Callable[..., User]) -> None:
     child = make_user(CHILD)
+    task = create_task(client, adult)
 
-    response = client.post(f"/api/tasks/{uuid.uuid4()}/start", headers=auth(child))
+    response = client.get("/api/tasks", headers=auth(child))
 
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "TASK_NOT_FOUND"
+    assert task["id"] in [t["id"] for t in response.json()]
 
 
-def test_task_not_found_for_confirm(client: TestClient, make_user: Callable[..., User]) -> None:
+def test_child_does_not_see_inactive_task_they_have_no_execution_for(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
     adult = make_user(ADULT)
+    child = make_user(CHILD)
+    task = create_task(client, adult)
+    client.patch(f"/api/tasks/{task['id']}", json={"is_active": False}, headers=auth(adult))
 
-    response = client.post(f"/api/tasks/{uuid.uuid4()}/confirm", headers=auth(adult))
+    response = client.get("/api/tasks", headers=auth(child))
 
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "TASK_NOT_FOUND"
+    assert task["id"] not in [t["id"] for t in response.json()]
 
 
-# =========================================================================================
-# Task Details: GET /api/tasks/{id} (Issue #17)
-# =========================================================================================
+def test_assignee_sees_task_via_their_execution(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    task = create_assigned_task(client, adult, child)
+
+    response = client.get("/api/tasks", headers=auth(child))
+
+    assert task["id"] in [t["id"] for t in response.json()]
+
+
+def test_child_still_sees_task_via_execution_after_it_is_deactivated(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    task = create_assigned_task(client, adult, child)
+    client.patch(f"/api/tasks/{task['id']}", json={"is_active": False}, headers=auth(adult))
+
+    response = client.get("/api/tasks", headers=auth(child))
+
+    assert task["id"] in [t["id"] for t in response.json()]
+
+
+def test_child_does_not_see_another_childs_execution_task_once_inactive(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    child_a = make_user(CHILD, "Child A")
+    child_b = make_user(CHILD, "Child B")
+    task = create_assigned_task(client, adult, child_a)
+    client.patch(f"/api/tasks/{task['id']}", json={"is_active": False}, headers=auth(adult))
+
+    response = client.get("/api/tasks", headers=auth(child_b))
+
+    assert task["id"] not in [t["id"] for t in response.json()]
+
+
+def test_self_assigned_task_is_not_duplicated_in_list(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    task = create_assigned_task(client, adult, adult)
+
+    response = client.get("/api/tasks", headers=auth(adult))
+
+    matches = [t for t in response.json() if t["id"] == task["id"]]
+    assert len(matches) == 1
 
 
 def test_creator_can_retrieve_their_task(
     client: TestClient, make_user: Callable[..., User]
 ) -> None:
     adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
+    task = create_task(client, adult)
 
     response = client.get(f"/api/tasks/{task['id']}", headers=auth(adult))
 
@@ -544,30 +305,16 @@ def test_creator_can_retrieve_their_task(
     assert response.json()["id"] == task["id"]
 
 
-def test_assignee_can_retrieve_their_task(
+def test_unrelated_adult_cannot_retrieve_the_task(
     client: TestClient, make_user: Callable[..., User]
 ) -> None:
     adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-
-    response = client.get(f"/api/tasks/{task['id']}", headers=auth(child))
-
-    assert response.status_code == 200
-    assert response.json()["id"] == task["id"]
-
-
-def test_unrelated_user_cannot_retrieve_the_task(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
     other_adult = make_user(ADULT, "Other Adult")
-    task = create_task(client, adult, child)
+    task = create_task(client, adult)
 
     response = client.get(f"/api/tasks/{task['id']}", headers=auth(other_adult))
 
-    # Existence is not leaked to a user who is neither creator nor assignee.
+    # Existence is not leaked to a user with no relationship to the task.
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "TASK_NOT_FOUND"
 
@@ -590,17 +337,32 @@ def test_unknown_task_returns_404_for_details(
     assert response.json()["error"]["code"] == "TASK_NOT_FOUND"
 
 
-# =========================================================================================
-# Task Editing: PATCH /api/tasks/{id} (Issue #17)
-# =========================================================================================
+def test_missing_identity_header_rejected(client: TestClient) -> None:
+    response = client.get("/api/tasks")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHENTICATED"
 
 
-def test_creator_can_edit_title_while_assigned(
+def test_x_user_id_header_alone_does_not_authenticate(
     client: TestClient, make_user: Callable[..., User]
 ) -> None:
     adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child, title="Old title")
+
+    response = client.get("/api/tasks", headers={"X-User-Id": str(adult.id)})
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHENTICATED"
+
+
+# =========================================================================================
+# Task editing: PATCH /api/tasks/{id}
+# =========================================================================================
+
+
+def test_creator_can_edit_title(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
+    task = create_task(client, adult, title="Old title")
 
     response = client.patch(
         f"/api/tasks/{task['id']}", json={"title": "New title"}, headers=auth(adult)
@@ -610,12 +372,9 @@ def test_creator_can_edit_title_while_assigned(
     assert response.json()["title"] == "New title"
 
 
-def test_creator_can_edit_description_while_assigned(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
+def test_creator_can_edit_description(client: TestClient, make_user: Callable[..., User]) -> None:
     adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
+    task = create_task(client, adult)
 
     response = client.patch(
         f"/api/tasks/{task['id']}", json={"description": "New description"}, headers=auth(adult)
@@ -625,10 +384,40 @@ def test_creator_can_edit_description_while_assigned(
     assert response.json()["description"] == "New description"
 
 
+def test_creator_can_edit_reward_points(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
+    task = create_task(client, adult, reward_points=5)
+
+    response = client.patch(
+        f"/api/tasks/{task['id']}", json={"reward_points": 25}, headers=auth(adult)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reward_points"] == 25
+
+
+def test_creator_can_deactivate_and_reactivate_a_task(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    task = create_task(client, adult)
+
+    deactivated = client.patch(
+        f"/api/tasks/{task['id']}", json={"is_active": False}, headers=auth(adult)
+    )
+    assert deactivated.status_code == 200
+    assert deactivated.json()["is_active"] is False
+
+    reactivated = client.patch(
+        f"/api/tasks/{task['id']}", json={"is_active": True}, headers=auth(adult)
+    )
+    assert reactivated.status_code == 200
+    assert reactivated.json()["is_active"] is True
+
+
 def test_edit_updates_updated_at(client: TestClient, make_user: Callable[..., User]) -> None:
     adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
+    task = create_task(client, adult)
     original_updated_at = task["updated_at"]
 
     response = client.patch(
@@ -639,26 +428,12 @@ def test_edit_updates_updated_at(client: TestClient, make_user: Callable[..., Us
     assert response.json()["updated_at"] != original_updated_at
 
 
-def test_assignee_cannot_edit_the_task(client: TestClient, make_user: Callable[..., User]) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-
-    response = client.patch(
-        f"/api/tasks/{task['id']}", json={"title": "Hijacked"}, headers=auth(child)
-    )
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "FORBIDDEN"
-
-
-def test_other_users_cannot_edit_the_task(
+def test_non_creator_cannot_edit_the_task(
     client: TestClient, make_user: Callable[..., User]
 ) -> None:
     adult = make_user(ADULT)
-    child = make_user(CHILD)
     other_adult = make_user(ADULT, "Other Adult")
-    task = create_task(client, adult, child)
+    task = create_task(client, adult)
 
     response = client.patch(
         f"/api/tasks/{task['id']}", json={"title": "Hijacked"}, headers=auth(other_adult)
@@ -668,465 +443,183 @@ def test_other_users_cannot_edit_the_task(
     assert response.json()["error"]["code"] == "FORBIDDEN"
 
 
-def test_edit_is_rejected_in_in_progress(
+def test_assignee_who_is_not_the_creator_cannot_edit_the_task(
     client: TestClient, make_user: Callable[..., User]
 ) -> None:
     adult = make_user(ADULT)
     child = make_user(CHILD)
-    task = create_task(client, adult, child)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
+    task = create_assigned_task(client, adult, child)
 
     response = client.patch(
-        f"/api/tasks/{task['id']}", json={"title": "Too late"}, headers=auth(adult)
-    )
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INVALID_TRANSITION"
-
-
-def test_edit_is_rejected_in_awaiting_confirmation(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
-    client.post(f"/api/tasks/{task['id']}/ready", headers=auth(child))
-
-    response = client.patch(
-        f"/api/tasks/{task['id']}", json={"title": "Too late"}, headers=auth(adult)
-    )
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INVALID_TRANSITION"
-
-
-def test_edit_is_rejected_for_completed_task(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
-    client.post(f"/api/tasks/{task['id']}/ready", headers=auth(child))
-    client.post(f"/api/tasks/{task['id']}/confirm", headers=auth(adult))
-
-    response = client.patch(
-        f"/api/tasks/{task['id']}", json={"title": "Too late"}, headers=auth(adult)
-    )
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INVALID_TRANSITION"
-
-
-def test_edit_is_rejected_for_cancelled_task(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-    client.post(f"/api/tasks/{task['id']}/cancel", headers=auth(adult))
-
-    response = client.patch(
-        f"/api/tasks/{task['id']}", json={"title": "Too late"}, headers=auth(adult)
-    )
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INVALID_TRANSITION"
-
-
-def test_reward_points_cannot_be_changed_through_update(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child, reward_points=5)
-
-    response = client.patch(
-        f"/api/tasks/{task['id']}",
-        json={"title": "New title", "reward_points": 999},
-        headers=auth(adult),
-    )
-
-    assert response.status_code == 200
-    assert response.json()["reward_points"] == 5
-
-
-def test_assignment_cannot_be_changed_through_update(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    other_child = make_user(CHILD, "Other Child")
-    task = create_task(client, adult, child)
-
-    response = client.patch(
-        f"/api/tasks/{task['id']}",
-        json={"title": "New title", "assigned_to": str(other_child.id)},
-        headers=auth(adult),
-    )
-
-    assert response.status_code == 200
-    assert response.json()["assigned_to"] == str(child.id)
-
-
-# =========================================================================================
-# Reassignment: POST /api/tasks/{id}/reassign (Issue #17)
-# =========================================================================================
-
-
-def test_creator_can_reassign_an_assigned_task(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    other_child = make_user(CHILD, "Other Child")
-    task = create_task(client, adult, child)
-
-    response = client.post(
-        f"/api/tasks/{task['id']}/reassign",
-        json={"assigned_to": str(other_child.id)},
-        headers=auth(adult),
-    )
-
-    assert response.status_code == 200
-    assert response.json()["assigned_to"] == str(other_child.id)
-
-
-def test_reassign_target_user_must_exist(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-
-    response = client.post(
-        f"/api/tasks/{task['id']}/reassign",
-        json={"assigned_to": str(uuid.uuid4())},
-        headers=auth(adult),
-    )
-
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "ASSIGNEE_NOT_FOUND"
-
-
-def test_reassignment_keeps_status_assigned(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    other_child = make_user(CHILD, "Other Child")
-    task = create_task(client, adult, child)
-
-    response = client.post(
-        f"/api/tasks/{task['id']}/reassign",
-        json={"assigned_to": str(other_child.id)},
-        headers=auth(adult),
-    )
-
-    assert response.json()["status"] == "ASSIGNED"
-
-
-def test_reassignment_updates_updated_at(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    other_child = make_user(CHILD, "Other Child")
-    task = create_task(client, adult, child)
-
-    response = client.post(
-        f"/api/tasks/{task['id']}/reassign",
-        json={"assigned_to": str(other_child.id)},
-        headers=auth(adult),
-    )
-
-    assert response.json()["updated_at"] != task["updated_at"]
-
-
-def test_assignee_cannot_reassign(client: TestClient, make_user: Callable[..., User]) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    other_child = make_user(CHILD, "Other Child")
-    task = create_task(client, adult, child)
-
-    response = client.post(
-        f"/api/tasks/{task['id']}/reassign",
-        json={"assigned_to": str(other_child.id)},
-        headers=auth(child),
+        f"/api/tasks/{task['id']}", json={"title": "Hijacked"}, headers=auth(child)
     )
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "FORBIDDEN"
 
 
-def test_other_users_cannot_reassign(client: TestClient, make_user: Callable[..., User]) -> None:
+def test_edit_has_no_lifecycle_gate_even_with_an_in_progress_execution(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    """Unlike the old single-Task model, Task itself has no lifecycle status
+    any more, so editing a definition is never blocked by what state one of
+    its (possibly many) executions happens to be in.
+    """
     adult = make_user(ADULT)
     child = make_user(CHILD)
+    task = create_assigned_task(client, adult, child)
+    execution = execution_for(client, adult, task["id"], str(child.id))
+    client.post(f"/api/task-executions/{execution['id']}/start", headers=auth(child))
+
+    response = client.patch(
+        f"/api/tasks/{task['id']}", json={"title": "Still editable"}, headers=auth(adult)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "Still editable"
+
+
+def test_reward_points_change_does_not_affect_an_existing_executions_snapshot(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    task = create_assigned_task(client, adult, child, reward_points=10)
+    execution = execution_for(client, adult, task["id"], str(child.id))
+
+    client.patch(f"/api/tasks/{task['id']}", json={"reward_points": 999}, headers=auth(adult))
+
+    unchanged = client.get(f"/api/task-executions/{execution['id']}", headers=auth(adult)).json()
+    assert unchanged["reward_points"] == 10
+
+
+def test_reward_points_change_applies_to_a_new_execution_created_afterwards(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    task = create_task(client, adult, reward_points=10)
+
+    client.patch(f"/api/tasks/{task['id']}", json={"reward_points": 40}, headers=auth(adult))
+    claimed = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child))
+
+    assert claimed.status_code == 201
+    assert claimed.json()["reward_points"] == 40
+
+
+# =========================================================================================
+# Claiming: POST /api/tasks/{id}/claim
+# =========================================================================================
+
+
+def test_child_can_claim_an_active_task(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    task = create_task(client, adult, reward_points=20)
+
+    response = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child))
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["task_id"] == task["id"]
+    assert body["user_id"] == str(child.id)
+    assert body["status"] == "ASSIGNED"
+    assert body["reward_points"] == 20
+
+
+def test_adult_cannot_claim_a_task(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
     other_adult = make_user(ADULT, "Other Adult")
-    task = create_task(client, adult, child)
+    task = create_task(client, adult)
 
-    response = client.post(
-        f"/api/tasks/{task['id']}/reassign",
-        json={"assigned_to": str(other_adult.id)},
-        headers=auth(other_adult),
-    )
+    response = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(other_adult))
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "FORBIDDEN"
 
 
-def test_reassignment_is_rejected_after_execution_begins(
+def test_claim_nonexistent_task_returns_404(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    child = make_user(CHILD)
+
+    response = client.post(f"/api/tasks/{uuid.uuid4()}/claim", headers=auth(child))
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "TASK_NOT_FOUND"
+
+
+def test_claim_an_inactive_task_is_rejected(
     client: TestClient, make_user: Callable[..., User]
 ) -> None:
     adult = make_user(ADULT)
     child = make_user(CHILD)
-    other_child = make_user(CHILD, "Other Child")
-    task = create_task(client, adult, child)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
+    task = create_task(client, adult)
+    client.patch(f"/api/tasks/{task['id']}", json={"is_active": False}, headers=auth(adult))
 
-    response = client.post(
-        f"/api/tasks/{task['id']}/reassign",
-        json={"assigned_to": str(other_child.id)},
-        headers=auth(adult),
-    )
+    response = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child))
 
     assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INVALID_TRANSITION"
+    assert response.json()["error"]["code"] == "TASK_INACTIVE"
 
 
-def test_reassignment_is_rejected_for_terminal_states(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    other_child = make_user(CHILD, "Other Child")
-    task = create_task(client, adult, child)
-    client.post(f"/api/tasks/{task['id']}/cancel", headers=auth(adult))
-
-    response = client.post(
-        f"/api/tasks/{task['id']}/reassign",
-        json={"assigned_to": str(other_child.id)},
-        headers=auth(adult),
-    )
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INVALID_TRANSITION"
-
-
-def test_reassignment_to_self_works(client: TestClient, make_user: Callable[..., User]) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-
-    response = client.post(
-        f"/api/tasks/{task['id']}/reassign",
-        json={"assigned_to": str(adult.id)},
-        headers=auth(adult),
-    )
-
-    assert response.status_code == 200
-    assert response.json()["assigned_to"] == str(adult.id)
-
-
-def test_reassignment_to_adult_works(client: TestClient, make_user: Callable[..., User]) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    other_adult = make_user(ADULT, "Other Adult")
-    task = create_task(client, adult, child)
-
-    response = client.post(
-        f"/api/tasks/{task['id']}/reassign",
-        json={"assigned_to": str(other_adult.id)},
-        headers=auth(adult),
-    )
-
-    assert response.status_code == 200
-    assert response.json()["assigned_to"] == str(other_adult.id)
-
-
-def test_reassignment_to_child_works(client: TestClient, make_user: Callable[..., User]) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    other_child = make_user(CHILD, "Other Child")
-    task = create_task(client, adult, child)
-
-    response = client.post(
-        f"/api/tasks/{task['id']}/reassign",
-        json={"assigned_to": str(other_child.id)},
-        headers=auth(adult),
-    )
-
-    assert response.status_code == 200
-    assert response.json()["assigned_to"] == str(other_child.id)
-
-
-# =========================================================================================
-# Cancellation: POST /api/tasks/{id}/cancel (Issue #17)
-# =========================================================================================
-
-
-def test_creator_can_cancel_an_assigned_task(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-
-    response = client.post(f"/api/tasks/{task['id']}/cancel", headers=auth(adult))
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "CANCELLED"
-
-
-def test_creator_can_cancel_an_in_progress_task(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
-
-    response = client.post(f"/api/tasks/{task['id']}/cancel", headers=auth(adult))
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "CANCELLED"
-
-
-def test_creator_can_cancel_an_awaiting_confirmation_task(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
-    client.post(f"/api/tasks/{task['id']}/ready", headers=auth(child))
-
-    response = client.post(f"/api/tasks/{task['id']}/cancel", headers=auth(adult))
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "CANCELLED"
-
-
-def test_cancellation_updates_updated_at(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-
-    response = client.post(f"/api/tasks/{task['id']}/cancel", headers=auth(adult))
-
-    assert response.json()["updated_at"] != task["updated_at"]
-
-
-def test_assignee_cannot_cancel(client: TestClient, make_user: Callable[..., User]) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-
-    response = client.post(f"/api/tasks/{task['id']}/cancel", headers=auth(child))
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "FORBIDDEN"
-
-
-def test_other_users_cannot_cancel(client: TestClient, make_user: Callable[..., User]) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    other_adult = make_user(ADULT, "Other Adult")
-    task = create_task(client, adult, child)
-
-    response = client.post(f"/api/tasks/{task['id']}/cancel", headers=auth(other_adult))
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "FORBIDDEN"
-
-
-def test_completed_task_cannot_be_cancelled(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
-    client.post(f"/api/tasks/{task['id']}/ready", headers=auth(child))
-    client.post(f"/api/tasks/{task['id']}/confirm", headers=auth(adult))
-
-    response = client.post(f"/api/tasks/{task['id']}/cancel", headers=auth(adult))
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INVALID_TRANSITION"
-
-
-def test_cancelled_task_cannot_be_cancelled_again(
-    client: TestClient, make_user: Callable[..., User]
-) -> None:
-    adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child)
-    client.post(f"/api/tasks/{task['id']}/cancel", headers=auth(adult))
-
-    response = client.post(f"/api/tasks/{task['id']}/cancel", headers=auth(adult))
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INVALID_TRANSITION"
-
-
-def test_cancellation_creates_no_point_transaction(
+def test_child_cannot_claim_the_same_task_twice(
     client: TestClient, make_user: Callable[..., User], db_session: Session
 ) -> None:
     adult = make_user(ADULT)
     child = make_user(CHILD)
-    task = create_task(client, adult, child)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
-    client.post(f"/api/tasks/{task['id']}/ready", headers=auth(child))
+    task = create_task(client, adult)
+    client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child))
 
-    client.post(f"/api/tasks/{task['id']}/cancel", headers=auth(adult))
+    response = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child))
 
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "TASK_ALREADY_CLAIMED"
     count = db_session.scalar(
         select(func.count())
-        .select_from(PointTransaction)
-        .where(PointTransaction.task_id == uuid.UUID(task["id"]))
+        .select_from(TaskExecution)
+        .where(TaskExecution.task_id == uuid.UUID(task["id"]), TaskExecution.user_id == child.id)
     )
-    assert count == 0
+    assert count == 1
 
 
-# =========================================================================================
-# Lifecycle regression (Issue #17 must not change existing behavior)
-# =========================================================================================
-
-
-def test_confirm_still_creates_exactly_one_task_completion_transaction(
-    client: TestClient, make_user: Callable[..., User], db_session: Session
+def test_two_different_children_can_independently_claim_the_same_task(
+    client: TestClient, make_user: Callable[..., User]
 ) -> None:
     adult = make_user(ADULT)
-    child = make_user(CHILD)
-    task = create_task(client, adult, child, reward_points=15)
-    client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
-    client.post(f"/api/tasks/{task['id']}/ready", headers=auth(child))
+    child_a = make_user(CHILD, "Child A")
+    child_b = make_user(CHILD, "Child B")
+    task = create_task(client, adult)
 
-    client.post(f"/api/tasks/{task['id']}/confirm", headers=auth(adult))
+    response_a = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child_a))
+    response_b = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child_b))
 
-    transactions = list(
-        db_session.scalars(
-            select(PointTransaction).where(PointTransaction.task_id == uuid.UUID(task["id"]))
-        )
-    )
-    assert len(transactions) == 1
-    assert transactions[0].amount == 15
-    assert transactions[0].reason.value == "TASK_COMPLETED"
+    assert response_a.status_code == 201
+    assert response_b.status_code == 201
+    assert response_a.json()["id"] != response_b.json()["id"]
+    assert response_a.json()["status"] == "ASSIGNED"
+    assert response_b.json()["status"] == "ASSIGNED"
+
+
+def test_unauthenticated_cannot_claim(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
+    task = create_task(client, adult)
+
+    response = client.post(f"/api/tasks/{task['id']}/claim")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHENTICATED"
 
 
 # =========================================================================================
-# Concurrency (Issue #17)
+# Concurrency
 # =========================================================================================
 
 
 def real_session_headers(session: Session, user_id: uuid.UUID) -> dict[str, str]:
     """Like conftest.auth(), but against an explicitly supplied, real,
-    independently-committing session -- for the concurrency tests below,
-    which intentionally bypass the shared savepoint-isolated db_session
+    independently-committing session -- for the concurrency test below,
+    which intentionally bypasses the shared savepoint-isolated db_session
     fixture.
     """
     raw_token = secrets.token_urlsafe(32)
@@ -1145,12 +638,11 @@ def real_session_headers(session: Session, user_id: uuid.UUID) -> dict[str, str]
     }
 
 
-def test_concurrent_confirm_and_cancel_cannot_both_succeed() -> None:
-    """The contradictory-transition scenario Issue #17 explicitly calls out:
-    a Task in AWAITING_CONFIRMATION racing between the creator's confirm and
-    the creator's cancel must not end up COMPLETED-with-no-points-side-
-    effect-missing nor CANCELLED-with-a-stray-TASK_COMPLETED-transaction.
-    Exactly one request must win; the loser must see a real rejection.
+def test_concurrent_claim_by_the_same_child_succeeds_exactly_once() -> None:
+    """MVP rule: one User can have at most one TaskExecution per Task,
+    enforced at the DB level via UNIQUE(task_id, user_id). Two concurrent
+    claim requests from the same child on the same task must yield exactly
+    one success and one conflict, and exactly one TaskExecution row.
     """
     setup_session = SessionLocal()
     adult = User(name="Concurrent Adult", role=ADULT)
@@ -1160,119 +652,42 @@ def test_concurrent_confirm_and_cancel_cannot_both_succeed() -> None:
     setup_session.refresh(adult)
     setup_session.refresh(child)
 
-    task = Task(
-        title="Race me",
-        reward_points=25,
-        status=TaskStatus.AWAITING_CONFIRMATION,
-        assigned_to=child.id,
-        created_by=adult.id,
-    )
+    task = Task(title="Claim race", reward_points=10, created_by=adult.id)
     setup_session.add(task)
     setup_session.commit()
     setup_session.refresh(task)
 
-    auth_headers = real_session_headers(setup_session, adult.id)
-
-    try:
-        results: dict[str, int] = {}
-        barrier = threading.Barrier(2)
-
-        def attempt(action: str) -> None:
-            barrier.wait()
-            with TestClient(app) as thread_client:
-                response = thread_client.post(
-                    f"/api/tasks/{task.id}/{action}", headers=auth_headers
-                )
-            results[action] = response.status_code
-
-        threads = [
-            threading.Thread(target=attempt, args=("confirm",)),
-            threading.Thread(target=attempt, args=("cancel",)),
-        ]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        assert sorted(results.values()) == [200, 409]
-
-        setup_session.expire_all()
-        final_task = setup_session.get(Task, task.id)
-        assert final_task is not None
-        transaction_count = setup_session.scalar(
-            select(func.count())
-            .select_from(PointTransaction)
-            .where(PointTransaction.task_id == task.id)
-        )
-
-        if results["confirm"] == 200:
-            assert final_task.status == TaskStatus.COMPLETED
-            assert transaction_count == 1
-        else:
-            assert final_task.status == TaskStatus.CANCELLED
-            assert transaction_count == 0
-    finally:
-        setup_session.rollback()
-        setup_session.query(UserSession).filter_by(user_id=adult.id).delete()
-        setup_session.query(PointTransaction).filter_by(task_id=task.id).delete()
-        setup_session.query(Task).filter_by(id=task.id).delete()
-        setup_session.query(User).filter_by(id=child.id).delete()
-        setup_session.query(User).filter_by(id=adult.id).delete()
-        setup_session.commit()
-        setup_session.close()
-
-
-def test_concurrent_cancel_requests_leave_exactly_one_terminal_transition() -> None:
-    """Two simultaneous cancel requests on the same Task must not both
-    report success -- the row lock serializes them, so the second sees the
-    already-CANCELLED status and is correctly rejected.
-    """
-    setup_session = SessionLocal()
-    adult = User(name="Concurrent Adult 2", role=ADULT)
-    child = User(name="Concurrent Child 2", role=CHILD)
-    setup_session.add_all([adult, child])
-    setup_session.commit()
-    setup_session.refresh(adult)
-    setup_session.refresh(child)
-
-    task = Task(
-        title="Cancel race",
-        reward_points=10,
-        status=TaskStatus.ASSIGNED,
-        assigned_to=child.id,
-        created_by=adult.id,
-    )
-    setup_session.add(task)
-    setup_session.commit()
-    setup_session.refresh(task)
-
-    auth_headers = real_session_headers(setup_session, adult.id)
+    auth_headers = real_session_headers(setup_session, child.id)
 
     try:
         results: list[int] = []
         barrier = threading.Barrier(2)
 
-        def attempt_cancel() -> None:
+        def attempt_claim() -> None:
             barrier.wait()
             with TestClient(app) as thread_client:
-                response = thread_client.post(f"/api/tasks/{task.id}/cancel", headers=auth_headers)
+                response = thread_client.post(f"/api/tasks/{task.id}/claim", headers=auth_headers)
             results.append(response.status_code)
 
-        threads = [threading.Thread(target=attempt_cancel) for _ in range(2)]
+        threads = [threading.Thread(target=attempt_claim) for _ in range(2)]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
 
-        assert sorted(results) == [200, 409]
+        assert sorted(results) == [201, 409]
 
         setup_session.expire_all()
-        final_task = setup_session.get(Task, task.id)
-        assert final_task is not None
-        assert final_task.status == TaskStatus.CANCELLED
+        execution_count = setup_session.scalar(
+            select(func.count())
+            .select_from(TaskExecution)
+            .where(TaskExecution.task_id == task.id, TaskExecution.user_id == child.id)
+        )
+        assert execution_count == 1
     finally:
         setup_session.rollback()
-        setup_session.query(UserSession).filter_by(user_id=adult.id).delete()
+        setup_session.query(UserSession).filter_by(user_id=child.id).delete()
+        setup_session.query(TaskExecution).filter_by(task_id=task.id).delete()
         setup_session.query(Task).filter_by(id=task.id).delete()
         setup_session.query(User).filter_by(id=child.id).delete()
         setup_session.query(User).filter_by(id=adult.id).delete()

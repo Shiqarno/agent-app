@@ -32,10 +32,9 @@ function stubSuccessfulCreation() {
           id: 'task-1',
           title: 'Tidy up',
           description: null,
-          assigned_to: 'child-1',
-          created_by: 'adult-1',
           reward_points: 5,
-          status: 'ASSIGNED',
+          is_active: true,
+          created_by: 'adult-1',
           created_at: '2026-09-03T10:00:00Z',
           updated_at: '2026-09-03T10:00:00Z',
         })
@@ -104,6 +103,77 @@ describe('NewTaskPage', () => {
 
     await waitFor(() => {
       expect(window.location.pathname).toBe('/tasks')
+    })
+  })
+
+  it('defaults to Unassigned and omits assigned_to from the payload when left unset', async () => {
+    window.history.pushState({}, '', '/tasks/new')
+    let capturedBody: unknown
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url.endsWith('/api/users')) return jsonResponse(200, USERS)
+        if (url.endsWith('/api/tasks') && init?.method === 'POST') {
+          capturedBody = JSON.parse(init.body as string)
+          return jsonResponse(201, {
+            id: 'task-1',
+            title: 'Tidy up',
+            description: null,
+            reward_points: 5,
+            is_active: true,
+            created_by: 'adult-1',
+            created_at: '2026-09-03T10:00:00Z',
+            updated_at: '2026-09-03T10:00:00Z',
+          })
+        }
+        throw new Error(`Unexpected request: ${url}`)
+      }),
+    )
+
+    renderPage()
+    expect(screen.getByLabelText(/assignee/i)).toHaveValue('')
+    await submitTaskForm()
+
+    await waitFor(() => {
+      expect(capturedBody).not.toHaveProperty('assigned_to')
+    })
+  })
+
+  it('sends assigned_to when a user is explicitly selected', async () => {
+    window.history.pushState({}, '', '/tasks/new')
+    let capturedBody: unknown
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url.endsWith('/api/users')) return jsonResponse(200, USERS)
+        if (url.endsWith('/api/tasks') && init?.method === 'POST') {
+          capturedBody = JSON.parse(init.body as string)
+          return jsonResponse(201, {
+            id: 'task-1',
+            title: 'Tidy up',
+            description: null,
+            reward_points: 5,
+            is_active: true,
+            created_by: 'adult-1',
+            created_at: '2026-09-03T10:00:00Z',
+            updated_at: '2026-09-03T10:00:00Z',
+          })
+        }
+        throw new Error(`Unexpected request: ${url}`)
+      }),
+    )
+
+    renderPage()
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /kiddo/i })).toBeInTheDocument()
+    })
+    fireEvent.change(screen.getByLabelText(/assignee/i), { target: { value: 'child-1' } })
+    fireEvent.change(screen.getByLabelText(/title/i), { target: { value: 'Tidy up' } })
+    fireEvent.change(screen.getByLabelText(/reward points/i), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: /create task/i }))
+
+    await waitFor(() => {
+      expect(capturedBody).toMatchObject({ assigned_to: 'child-1' })
     })
   })
 })

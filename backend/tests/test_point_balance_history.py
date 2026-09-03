@@ -12,7 +12,8 @@ from app.models import (
     Reward,
     RewardRedemption,
     Task,
-    TaskStatus,
+    TaskExecution,
+    TaskExecutionStatus,
     User,
     UserRole,
 )
@@ -24,20 +25,24 @@ CHILD = UserRole.CHILD
 def make_task_completed_transaction(
     db_session: Session, user: User, amount: int, created_at: datetime | None = None
 ) -> PointTransaction:
-    task = Task(
-        title="Seed task",
-        reward_points=amount,
-        status=TaskStatus.COMPLETED,
-        assigned_to=user.id,
-        created_by=user.id,
-    )
+    task = Task(title="Seed task", reward_points=amount, created_by=user.id)
     db_session.add(task)
     db_session.commit()
     db_session.refresh(task)
 
+    execution = TaskExecution(
+        task_id=task.id,
+        user_id=user.id,
+        status=TaskExecutionStatus.COMPLETED,
+        reward_points=amount,
+    )
+    db_session.add(execution)
+    db_session.commit()
+    db_session.refresh(execution)
+
     txn = PointTransaction(
         user_id=user.id,
-        task_id=task.id,
+        task_execution_id=execution.id,
         amount=amount,
         reason=PointTransactionReason.TASK_COMPLETED,
     )
@@ -218,7 +223,7 @@ def test_both_transaction_types_are_returned(
     assert reasons == {"TASK_COMPLETED", "REWARD_REDEEMED"}
 
 
-def test_task_id_is_returned_for_task_transactions(
+def test_task_execution_id_is_returned_for_task_transactions(
     client: TestClient, make_user: Callable[..., User], db_session: Session
 ) -> None:
     adult = make_user(ADULT)
@@ -227,7 +232,7 @@ def test_task_id_is_returned_for_task_transactions(
     response = client.get("/api/points/history", headers=auth(adult))
 
     entry = response.json()[0]
-    assert entry["task_id"] == str(txn.task_id)
+    assert entry["task_execution_id"] == str(txn.task_execution_id)
     assert entry["redemption_id"] is None
 
 
@@ -242,7 +247,7 @@ def test_redemption_id_is_returned_for_redemption_transactions(
 
     entry = next(e for e in response.json() if e["reason"] == "REWARD_REDEEMED")
     assert entry["redemption_id"] == str(txn.redemption_id)
-    assert entry["task_id"] is None
+    assert entry["task_execution_id"] is None
 
 
 def test_history_sorted_by_created_at_descending(

@@ -171,9 +171,7 @@ def test_users_with_equal_names_are_ordered_by_id(
 
     response = client.get("/api/users", headers=auth(adult))
 
-    alice_ids_in_order = [
-        entry["id"] for entry in response.json() if entry["name"] == "Alice"
-    ]
+    alice_ids_in_order = [entry["id"] for entry in response.json() if entry["name"] == "Alice"]
     assert alice_ids_in_order == [str(uid) for uid in expected_order]
 
 
@@ -347,9 +345,7 @@ def test_missing_name_returns_422(client: TestClient, make_user: Callable[..., U
 def test_empty_name_returns_422(client: TestClient, make_user: Callable[..., User]) -> None:
     adult = make_user(ADULT)
 
-    response = client.post(
-        "/api/users", json={"name": "", "role": "child"}, headers=auth(adult)
-    )
+    response = client.post("/api/users", json={"name": "", "role": "child"}, headers=auth(adult))
 
     assert response.status_code == 422
 
@@ -387,12 +383,8 @@ def test_invalid_role_returns_422(client: TestClient, make_user: Callable[..., U
 def test_duplicate_names_are_allowed(client: TestClient, make_user: Callable[..., User]) -> None:
     adult = make_user(ADULT)
 
-    first = client.post(
-        "/api/users", json={"name": "Alice", "role": "child"}, headers=auth(adult)
-    )
-    second = client.post(
-        "/api/users", json={"name": "Alice", "role": "child"}, headers=auth(adult)
-    )
+    first = client.post("/api/users", json={"name": "Alice", "role": "child"}, headers=auth(adult))
+    second = client.post("/api/users", json={"name": "Alice", "role": "child"}, headers=auth(adult))
 
     assert first.status_code == 201
     assert second.status_code == 201
@@ -487,10 +479,13 @@ def test_new_user_integrates_with_discovery_and_task_assignment(
         json={"title": "Tidy up", "assigned_to": child_id, "reward_points": 10},
         headers=auth(adult),
     ).json()
-    assert task["assigned_to"] == child_id
-    assert task["status"] == "ASSIGNED"
 
-    start = client.post(f"/api/tasks/{task['id']}/start", headers=auth(child))
+    executions = client.get("/api/task-executions", headers=auth(child)).json()
+    execution = next(e for e in executions if e["task_id"] == task["id"])
+    assert execution["user_id"] == child_id
+    assert execution["status"] == "ASSIGNED"
+
+    start = client.post(f"/api/task-executions/{execution['id']}/start", headers=auth(child))
     assert start.status_code == 200
     assert start.json()["status"] == "IN_PROGRESS"
 

@@ -16,10 +16,9 @@ const EXISTING_TASK = {
   id: 'task-1',
   title: 'Tidy the room',
   description: 'Make it spotless',
-  assigned_to: 'child-1',
-  created_by: 'adult-1',
   reward_points: 20,
-  status: 'ASSIGNED',
+  is_active: true,
+  created_by: 'adult-1',
   created_at: '2026-09-03T10:00:00Z',
   updated_at: '2026-09-03T10:00:00Z',
 }
@@ -57,10 +56,11 @@ describe('EditTaskPage', () => {
       expect(screen.getByLabelText(/title/i)).toHaveValue('Tidy the room')
     })
     expect(screen.getByLabelText(/description/i)).toHaveValue('Make it spotless')
-    // Reward points, status, creator, and assignee are never editable here.
-    expect(screen.queryByLabelText(/points/i)).not.toBeInTheDocument()
-    expect(screen.queryByLabelText(/status/i)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/reward points/i)).toHaveValue(20)
+    expect(screen.getByLabelText(/^active$/i)).toBeChecked()
+    // Assignment/claiming has its own dedicated flow and is never editable here.
     expect(screen.queryByLabelText(/assign/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/^status$/i)).not.toBeInTheDocument()
   })
 
   it('shows a load error with retry', async () => {
@@ -108,7 +108,7 @@ describe('EditTaskPage', () => {
     })
   })
 
-  it('saving calls PATCH with only title and description, and returns to Details', async () => {
+  it('saving calls PATCH with only the fields that changed, and returns to Details', async () => {
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
       if (url.endsWith('/api/tasks/task-1') && (init?.method ?? 'GET') === 'GET') {
         return jsonResponse(200, EXISTING_TASK)
@@ -116,7 +116,6 @@ describe('EditTaskPage', () => {
       if (url.endsWith('/api/tasks/task-1') && init?.method === 'PATCH') {
         expect(JSON.parse(init.body as string)).toEqual({
           title: 'Tidy the whole house',
-          description: 'Make it spotless',
         })
         return jsonResponse(200, { ...EXISTING_TASK, title: 'Tidy the whole house' })
       }
@@ -139,6 +138,61 @@ describe('EditTaskPage', () => {
     })
   })
 
+  it('saving with reward points and active changed includes both in the PATCH', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/tasks/task-1') && (init?.method ?? 'GET') === 'GET') {
+        return jsonResponse(200, EXISTING_TASK)
+      }
+      if (url.endsWith('/api/tasks/task-1') && init?.method === 'PATCH') {
+        expect(JSON.parse(init.body as string)).toEqual({
+          reward_points: 35,
+          is_active: false,
+        })
+        return jsonResponse(200, { ...EXISTING_TASK, reward_points: 35, is_active: false })
+      }
+      throw new Error(`Unexpected request: ${url} ${String(init?.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage()
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/title/i)).toHaveValue('Tidy the room')
+    })
+    fireEvent.change(screen.getByLabelText(/reward points/i), { target: { value: '35' } })
+    fireEvent.click(screen.getByLabelText(/^active$/i))
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/tasks/task-1')
+    })
+  })
+
+  it('saving with nothing changed sends an empty PATCH body', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/tasks/task-1') && (init?.method ?? 'GET') === 'GET') {
+        return jsonResponse(200, EXISTING_TASK)
+      }
+      if (url.endsWith('/api/tasks/task-1') && init?.method === 'PATCH') {
+        expect(JSON.parse(init.body as string)).toEqual({})
+        return jsonResponse(200, EXISTING_TASK)
+      }
+      throw new Error(`Unexpected request: ${url} ${String(init?.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage()
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/title/i)).toHaveValue('Tidy the room')
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/tasks/task-1')
+    })
+  })
+
   it('displays an API error on save failure and stays on the form', async () => {
     vi.stubGlobal(
       'fetch',
@@ -147,8 +201,8 @@ describe('EditTaskPage', () => {
           return jsonResponse(200, EXISTING_TASK)
         }
         if (url.endsWith('/api/tasks/task-1') && init?.method === 'PATCH') {
-          return jsonResponse(409, {
-            error: { code: 'INVALID_TRANSITION', message: 'Cannot edit this task' },
+          return jsonResponse(403, {
+            error: { code: 'FORBIDDEN', message: 'Cannot edit this task' },
           })
         }
         throw new Error(`Unexpected request: ${url}`)
@@ -160,6 +214,7 @@ describe('EditTaskPage', () => {
     await waitFor(() => {
       expect(screen.getByLabelText(/title/i)).toHaveValue('Tidy the room')
     })
+    fireEvent.change(screen.getByLabelText(/title/i), { target: { value: 'Changed' } })
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
     await waitFor(() => {

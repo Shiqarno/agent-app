@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getBalance, getHistory, type PointTransaction } from '../api/points'
-import { getTasks, type Task } from '../api/tasks'
+import { getTaskExecutions, getTasks, type Task } from '../api/tasks'
 
 type BalanceState =
   | { phase: 'loading' }
@@ -21,12 +21,29 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
-function useTasksById() {
-  const [byId, setById] = useState<Record<string, Task>>({})
+// A transaction only carries a task_execution_id; resolving it to a task
+// title is a two-hop lookup (execution -> task_id -> task) since neither
+// endpoint embeds the other (this codebase never uses ORM-style nested
+// responses -- see the backend's explicit-join convention).
+function useTaskTitleByExecutionId() {
+  const [titleByExecutionId, setTitleByExecutionId] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    getTasks()
-      .then((tasks) => setById(Object.fromEntries(tasks.map((task) => [task.id, task]))))
+    Promise.all([getTasks(), getTaskExecutions()])
+      .then(([tasks, executions]) => {
+        const tasksById: Record<string, Task> = Object.fromEntries(
+          tasks.map((task) => [task.id, task]),
+        )
+        const titles = Object.fromEntries(
+          executions
+            .map((execution): [string, string | undefined] => [
+              execution.id,
+              tasksById[execution.task_id]?.title,
+            ])
+            .filter((entry): entry is [string, string] => entry[1] !== undefined),
+        )
+        setTitleByExecutionId(titles)
+      })
       .catch(() => {
         // A task title is a presentation nicety on top of the transaction
         // reason; if this fails, history still renders without it. There is
@@ -35,13 +52,13 @@ function useTasksById() {
       })
   }, [])
 
-  return byId
+  return titleByExecutionId
 }
 
 function PointsPage() {
   const [balanceState, setBalanceState] = useState<BalanceState>({ phase: 'loading' })
   const [historyState, setHistoryState] = useState<HistoryState>({ phase: 'loading' })
-  const tasksById = useTasksById()
+  const taskTitleByExecutionId = useTaskTitleByExecutionId()
 
   const loadBalance = useCallback(() => {
     setBalanceState({ phase: 'loading' })
@@ -103,7 +120,9 @@ function PointsPage() {
           // -- rendered as returned, no client-side re-sort.
           <ul className="transaction-list">
             {historyState.transactions.map((txn) => {
-              const task = txn.task_id ? tasksById[txn.task_id] : undefined
+              const taskTitle = txn.task_execution_id
+                ? taskTitleByExecutionId[txn.task_execution_id]
+                : undefined
               return (
                 <li key={txn.id} className="transaction-card">
                   <p className="transaction-amount">
@@ -111,7 +130,7 @@ function PointsPage() {
                     {txn.amount} points
                   </p>
                   <p>{REASON_LABELS[txn.reason]}</p>
-                  {task && <p>&quot;{task.title}&quot;</p>}
+                  {taskTitle && <p>&quot;{taskTitle}&quot;</p>}
                   <p>{new Date(txn.created_at).toLocaleDateString()}</p>
                 </li>
               )

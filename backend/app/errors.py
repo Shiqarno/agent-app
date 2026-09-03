@@ -32,6 +32,27 @@ class AssigneeNotFoundError(AppError):
         super().__init__(status_code=422, code="ASSIGNEE_NOT_FOUND", message="Assignee not found")
 
 
+class TaskExecutionNotFoundError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=404, code="TASK_EXECUTION_NOT_FOUND", message="Task execution not found"
+        )
+
+
+class TaskInactiveError(AppError):
+    def __init__(self) -> None:
+        super().__init__(status_code=409, code="TASK_INACTIVE", message="Task is not active")
+
+
+class TaskAlreadyClaimedError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=409,
+            code="TASK_ALREADY_CLAIMED",
+            message="You already have an execution for this task",
+        )
+
+
 class RewardNotFoundError(AppError):
     def __init__(self) -> None:
         super().__init__(status_code=404, code="REWARD_NOT_FOUND", message="Reward not found")
@@ -73,9 +94,7 @@ class InvalidCredentialsError(AppError):
 
 class InvalidSetupTokenError(AppError):
     def __init__(self) -> None:
-        super().__init__(
-            status_code=401, code="INVALID_SETUP_TOKEN", message="Invalid setup token"
-        )
+        super().__init__(status_code=401, code="INVALID_SETUP_TOKEN", message="Invalid setup token")
 
 
 class SetupAlreadyCompletedError(AppError):
