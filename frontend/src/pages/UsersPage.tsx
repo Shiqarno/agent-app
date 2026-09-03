@@ -1,5 +1,12 @@
-import { useEffect, useState } from 'react'
-import { getUsers, type UserSummary } from '../api/users'
+import { useCallback, useEffect, useState } from 'react'
+import {
+  activationUrlFor,
+  ApiError,
+  getUsers,
+  regenerateActivation,
+  type ActivationStatus,
+  type UserSummary,
+} from '../api/users'
 import { Link } from '../router'
 
 type ListState =
@@ -7,44 +14,142 @@ type ListState =
   | { phase: 'loaded'; users: UserSummary[] }
   | { phase: 'error'; message: string }
 
+type RegenerationState =
+  | { phase: 'idle' }
+  | { phase: 'pending' }
+  | { phase: 'success'; activationUrl: string; expiresAt: string }
+  | { phase: 'error'; message: string }
+
+type CopyStatus = 'idle' | 'copied' | 'failed'
+
+const ACTIVATION_STATUS_LABELS: Record<ActivationStatus, string> = {
+  ACTIVE: 'Active',
+  PENDING: 'Pending activation',
+}
+
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
-// A minimal read-only preview, not full User Management (out of scope for
-// Issue #11) -- this is a placeholder destination for the "Users" nav entry.
 function UsersPage() {
   const [state, setState] = useState<ListState>({ phase: 'loading' })
+  const [regenerations, setRegenerations] = useState<Record<string, RegenerationState>>({})
+  const [copyStatuses, setCopyStatuses] = useState<Record<string, CopyStatus>>({})
+
+  const loadUsers = useCallback(() => {
+    setState({ phase: 'loading' })
+    getUsers()
+      .then((users) => setState({ phase: 'loaded', users }))
+      .catch((error: unknown) =>
+        setState({ phase: 'error', message: errorMessage(error, 'Unable to load users.') }),
+      )
+  }, [])
 
   useEffect(() => {
-    let cancelled = false
-    getUsers()
-      .then((users) => {
-        if (!cancelled) setState({ phase: 'loaded', users })
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setState({ phase: 'error', message: errorMessage(error, 'Unable to load users.') })
-        }
-      })
-    return () => {
-      cancelled = true
+    loadUsers()
+  }, [loadUsers])
+
+  async function handleGenerate(userId: string) {
+    setRegenerations((prev) => ({ ...prev, [userId]: { phase: 'pending' } }))
+    setCopyStatuses((prev) => ({ ...prev, [userId]: 'idle' }))
+
+    try {
+      // The backend owns token generation, hashing, storage, and TTL; this
+      // only calls the endpoint and reacts to the result -- no local state
+      // change is assumed until the request actually succeeds.
+      const response = await regenerateActivation(userId)
+      setRegenerations((prev) => ({
+        ...prev,
+        [userId]: {
+          phase: 'success',
+          activationUrl: activationUrlFor(response.activation_token),
+          expiresAt: response.expires_at,
+        },
+      }))
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'USER_ALREADY_ACTIVATED') {
+        // The status shown was stale (the user activated in the meantime);
+        // refresh the list so it reflects that rather than leaving a
+        // Generate action visible for a User who is now ACTIVE.
+        setRegenerations((prev) => ({ ...prev, [userId]: { phase: 'idle' } }))
+        loadUsers()
+        return
+      }
+      setRegenerations((prev) => ({
+        ...prev,
+        [userId]: { phase: 'error', message: errorMessage(error, 'Could not generate a link.') },
+      }))
     }
-  }, [])
+  }
+
+  async function handleCopy(userId: string, activationUrl: string) {
+    try {
+      await navigator.clipboard.writeText(activationUrl)
+      setCopyStatuses((prev) => ({ ...prev, [userId]: 'copied' }))
+    } catch {
+      setCopyStatuses((prev) => ({ ...prev, [userId]: 'failed' }))
+    }
+  }
 
   return (
     <div>
       <h1>Users</h1>
       <Link to="/users/new">Add user</Link>
-      {state.phase === 'loading' && <p>Loading...</p>}
-      {state.phase === 'error' && <p role="alert">{state.message}</p>}
-      {state.phase === 'loaded' && (
-        <ul>
-          {state.users.map((user) => (
-            <li key={user.id}>
-              {user.name} ({user.role})
-            </li>
-          ))}
+
+      {state.phase === 'loading' && <p>Loading users...</p>}
+      {state.phase === 'error' && (
+        <p role="alert">
+          {state.message} <button onClick={loadUsers}>Retry</button>
+        </p>
+      )}
+      {state.phase === 'loaded' && state.users.length === 0 && <p>No users yet.</p>}
+      {state.phase === 'loaded' && state.users.length > 0 && (
+        <ul className="user-list">
+          {state.users.map((user) => {
+            const regeneration = regenerations[user.id] ?? { phase: 'idle' }
+            return (
+              <li key={user.id} className="user-card">
+                <p className="user-card-title">{user.name}</p>
+                <p>Role: {user.role}</p>
+                <p>Status: {ACTIVATION_STATUS_LABELS[user.activation_status]}</p>
+
+                {user.activation_status === 'PENDING' && (
+                  <div>
+                    <button
+                      onClick={() => handleGenerate(user.id)}
+                      disabled={regeneration.phase === 'pending'}
+                    >
+                      {regeneration.phase === 'pending'
+                        ? 'Generating...'
+                        : 'Generate activation link'}
+                    </button>
+                    {regeneration.phase === 'error' && (
+                      <p role="alert">{regeneration.message}</p>
+                    )}
+                    {regeneration.phase === 'success' && (
+                      <div>
+                        <p>
+                          <code>{regeneration.activationUrl}</code>
+                        </p>
+                        <p>
+                          Expires: {new Date(regeneration.expiresAt).toLocaleString()}
+                        </p>
+                        <button
+                          onClick={() => handleCopy(user.id, regeneration.activationUrl)}
+                        >
+                          Copy link
+                        </button>
+                        {copyStatuses[user.id] === 'copied' && <p role="status">Copied.</p>}
+                        {copyStatuses[user.id] === 'failed' && (
+                          <p role="alert">Could not copy automatically.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>

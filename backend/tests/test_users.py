@@ -1,18 +1,59 @@
+import hashlib
+import secrets
+import threading
 import uuid
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
-from conftest import auth
+from conftest import auth, create_activation
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import User, UserActivation, UserRole, utcnow
-from app.security import hash_token
+from app.csrf import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
+from app.db import SessionLocal
+from app.identity import SESSION_COOKIE_NAME
+from app.main import app
+from app.models import User, UserActivation, UserCredential, UserRole, UserSession, utcnow
+from app.security import hash_password, hash_token
 
 ADULT = UserRole.ADULT
 CHILD = UserRole.CHILD
+PASSWORD = "a sufficiently long passphrase 1"
+
+
+def create_credential(
+    db_session: Session, user: User, email: str = "user@example.com"
+) -> UserCredential:
+    credential = UserCredential(user_id=user.id, email=email, password_hash=hash_password(PASSWORD))
+    db_session.add(credential)
+    db_session.commit()
+    db_session.refresh(credential)
+    return credential
+
+
+def real_session_headers(session: Session, user_id: uuid.UUID) -> dict[str, str]:
+    """Like conftest.auth(), but against an explicitly supplied, real,
+    independently-committing session -- for tests (e.g. the concurrency test
+    below) that intentionally bypass the shared savepoint-isolated
+    db_session fixture.
+    """
+    raw_token = secrets.token_urlsafe(32)
+    csrf_value = secrets.token_urlsafe(16)
+    session.add(
+        UserSession(
+            user_id=user_id,
+            token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+            expires_at=utcnow() + timedelta(days=7),
+        )
+    )
+    session.commit()
+    return {
+        "Cookie": f"{SESSION_COOKIE_NAME}={raw_token}; {CSRF_COOKIE_NAME}={csrf_value}",
+        CSRF_HEADER_NAME: csrf_value,
+    }
 
 
 # --- Adult can discover users -----------------------------------------------------------
@@ -31,10 +72,32 @@ def test_adult_can_discover_all_users(client: TestClient, make_user: Callable[..
     by_id = {entry["id"]: entry for entry in body}
 
     assert set(by_id) == {str(adult_a.id), str(adult_b.id), str(child_a.id), str(child_b.id)}
-    assert by_id[str(adult_a.id)] == {"id": str(adult_a.id), "name": "Adult A", "role": "adult"}
-    assert by_id[str(adult_b.id)] == {"id": str(adult_b.id), "name": "Adult B", "role": "adult"}
-    assert by_id[str(child_a.id)] == {"id": str(child_a.id), "name": "Child A", "role": "child"}
-    assert by_id[str(child_b.id)] == {"id": str(child_b.id), "name": "Child B", "role": "child"}
+    # make_user() (like the real POST /api/users -> credential-less flow)
+    # never gives these a UserCredential, so all are PENDING here.
+    assert by_id[str(adult_a.id)] == {
+        "id": str(adult_a.id),
+        "name": "Adult A",
+        "role": "adult",
+        "activation_status": "PENDING",
+    }
+    assert by_id[str(adult_b.id)] == {
+        "id": str(adult_b.id),
+        "name": "Adult B",
+        "role": "adult",
+        "activation_status": "PENDING",
+    }
+    assert by_id[str(child_a.id)] == {
+        "id": str(child_a.id),
+        "name": "Child A",
+        "role": "child",
+        "activation_status": "PENDING",
+    }
+    assert by_id[str(child_b.id)] == {
+        "id": str(child_b.id),
+        "name": "Child B",
+        "role": "child",
+        "activation_status": "PENDING",
+    }
 
 
 # --- Child cannot discover users --------------------------------------------------------
@@ -473,3 +536,328 @@ def test_user_and_activation_creation_is_transactional(db_session: Session) -> N
     db_session.rollback()
 
     assert db_session.get(User, new_user_id) is None
+
+
+# =========================================================================================
+# Activation status on GET /api/users (Issue #16)
+# =========================================================================================
+
+
+def test_active_user_is_reported_as_active(
+    client: TestClient, make_user: Callable[..., User], db_session: Session
+) -> None:
+    adult = make_user(ADULT)
+    create_credential(db_session, adult, "active@example.com")
+
+    response = client.get("/api/users", headers=auth(adult))
+
+    body = {entry["id"]: entry for entry in response.json()}
+    assert body[str(adult.id)]["activation_status"] == "ACTIVE"
+
+
+def test_user_without_credentials_is_reported_as_pending(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+
+    response = client.get("/api/users", headers=auth(adult))
+
+    body = {entry["id"]: entry for entry in response.json()}
+    assert body[str(child.id)]["activation_status"] == "PENDING"
+
+
+def test_activation_status_never_exposes_email_or_token_fields(
+    client: TestClient, make_user: Callable[..., User], db_session: Session
+) -> None:
+    adult = make_user(ADULT)
+    create_credential(db_session, adult, "active@example.com")
+    child = make_user(CHILD)
+    create_activation(child)
+
+    response = client.get("/api/users", headers=auth(adult))
+
+    for entry in response.json():
+        assert set(entry.keys()) == {"id", "name", "role", "activation_status"}
+
+
+# =========================================================================================
+# Activation regeneration: POST /api/users/{id}/activation (Issue #16)
+# =========================================================================================
+
+
+def test_adult_can_regenerate_activation_for_a_pending_user(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    create_activation(child)
+
+    response = client.post(f"/api/users/{child.id}/activation", headers=auth(adult))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert isinstance(body["activation_token"], str)
+    assert body["activation_token"]
+    assert "expires_at" in body
+
+
+def test_regenerated_token_hash_matches_response_and_reuses_the_existing_row(
+    client: TestClient, make_user: Callable[..., User], db_session: Session
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    create_activation(child)
+    existing = db_session.scalar(select(UserActivation).where(UserActivation.user_id == child.id))
+    assert existing is not None
+    existing_id = existing.id
+
+    response = client.post(f"/api/users/{child.id}/activation", headers=auth(adult))
+
+    row_count = db_session.scalar(
+        select(func.count()).select_from(UserActivation).where(UserActivation.user_id == child.id)
+    )
+    assert row_count == 1
+    activation = db_session.scalar(select(UserActivation).where(UserActivation.user_id == child.id))
+    assert activation is not None
+    assert activation.id == existing_id  # same row reused, not a new one
+    assert activation.token_hash == hash_token(response.json()["activation_token"])
+
+
+def test_new_token_activates_and_previous_token_no_longer_works(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    old_token = create_activation(child)
+
+    response = client.post(f"/api/users/{child.id}/activation", headers=auth(adult))
+    new_token = response.json()["activation_token"]
+
+    old_attempt = client.post(
+        "/api/auth/activate",
+        json={"token": old_token, "email": "kid@example.com", "password": PASSWORD},
+    )
+    assert old_attempt.status_code == 400
+    assert old_attempt.json()["error"]["code"] == "INVALID_ACTIVATION_TOKEN"
+
+    new_attempt = client.post(
+        "/api/auth/activate",
+        json={"token": new_token, "email": "kid@example.com", "password": PASSWORD},
+    )
+    assert new_attempt.status_code == 200
+    assert new_attempt.json()["id"] == str(child.id)
+
+
+def test_new_expiration_is_approximately_72_hours_from_regeneration(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    create_activation(child, expires_in=timedelta(hours=1))  # about to expire
+
+    before = utcnow()
+    response = client.post(f"/api/users/{child.id}/activation", headers=auth(adult))
+    after = utcnow()
+
+    expires_at = datetime.fromisoformat(response.json()["expires_at"])
+    assert before + timedelta(hours=72) - timedelta(seconds=5) <= expires_at
+    assert expires_at <= after + timedelta(hours=72) + timedelta(seconds=5)
+
+
+def test_regenerating_resets_used_at_to_null(
+    client: TestClient, make_user: Callable[..., User], db_session: Session
+) -> None:
+    """A pending (credential-less) User can never actually reach a real
+    used_at-is-set state through the API (that only happens together with
+    credential creation, which would make them ACTIVE, not PENDING) -- this
+    directly manipulates the row to prove regenerate() unconditionally
+    clears used_at, matching its documented contract.
+    """
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    create_activation(child)
+    activation = db_session.scalar(select(UserActivation).where(UserActivation.user_id == child.id))
+    assert activation is not None
+    activation.used_at = utcnow()
+    db_session.commit()
+
+    client.post(f"/api/users/{child.id}/activation", headers=auth(adult))
+
+    db_session.refresh(activation)
+    assert activation.used_at is None
+
+
+def test_regenerating_an_active_user_returns_409(
+    client: TestClient, make_user: Callable[..., User], db_session: Session
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    create_credential(db_session, child, "kid@example.com")
+
+    response = client.post(f"/api/users/{child.id}/activation", headers=auth(adult))
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "USER_ALREADY_ACTIVATED"
+
+
+def test_regenerating_an_active_user_does_not_touch_their_credentials(
+    client: TestClient, make_user: Callable[..., User], db_session: Session
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    credential = create_credential(db_session, child, "kid@example.com")
+
+    client.post(f"/api/users/{child.id}/activation", headers=auth(adult))
+
+    db_session.refresh(credential)
+    assert credential.email == "kid@example.com"
+
+
+def test_regenerating_an_unknown_user_returns_404(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+
+    response = client.post(f"/api/users/{uuid.uuid4()}/activation", headers=auth(adult))
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "USER_NOT_FOUND"
+
+
+def test_child_cannot_regenerate_activation(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    child = make_user(CHILD)
+    other_child = make_user(CHILD, "Other Child")
+    create_activation(other_child)
+
+    response = client.post(f"/api/users/{other_child.id}/activation", headers=auth(child))
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+def test_unauthenticated_cannot_regenerate_activation(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    child = make_user(CHILD)
+    create_activation(child)
+
+    response = client.post(f"/api/users/{child.id}/activation")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHENTICATED"
+
+
+def test_regeneration_does_not_create_a_second_activation_row(
+    client: TestClient, make_user: Callable[..., User], db_session: Session
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    create_activation(child)
+
+    client.post(f"/api/users/{child.id}/activation", headers=auth(adult))
+    client.post(f"/api/users/{child.id}/activation", headers=auth(adult))
+    client.post(f"/api/users/{child.id}/activation", headers=auth(adult))
+
+    row_count = db_session.scalar(
+        select(func.count()).select_from(UserActivation).where(UserActivation.user_id == child.id)
+    )
+    assert row_count == 1
+
+
+def test_activating_then_regenerating_is_rejected_because_the_user_is_now_active(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    token = create_activation(child)
+    client.post(
+        "/api/auth/activate",
+        json={"token": token, "email": "kid@example.com", "password": PASSWORD},
+    )
+
+    response = client.post(f"/api/users/{child.id}/activation", headers=auth(adult))
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "USER_ALREADY_ACTIVATED"
+
+
+# --- Concurrency ---------------------------------------------------------------------------
+
+
+def test_concurrent_regeneration_leaves_exactly_one_row_and_one_current_token() -> None:
+    """Exercises two genuinely independent, concurrently-committing sessions
+    (not the shared savepoint-isolated db_session/client fixtures) against
+    the same pending User's activation row -- mirrors the redemption
+    concurrency test pattern (Issue #6/#12). A plain UPDATE-by-unique-key on
+    the same row is expected to serialize safely under Postgres's normal
+    row-level locking; this proves no second row is created and the row
+    left behind matches exactly one of the two returned tokens.
+    """
+    setup_session = SessionLocal()
+    adult = User(name="Concurrent Adult", role=ADULT)
+    setup_session.add(adult)
+    setup_session.commit()
+    setup_session.refresh(adult)
+
+    child = User(name="Concurrent Child", role=CHILD)
+    setup_session.add(child)
+    setup_session.commit()
+    setup_session.refresh(child)
+
+    setup_session.add(
+        UserActivation(
+            user_id=child.id,
+            token_hash=hash_token("initial-token"),
+            expires_at=utcnow() + timedelta(hours=72),
+        )
+    )
+    setup_session.commit()
+
+    auth_headers = real_session_headers(setup_session, adult.id)
+
+    try:
+        results: list[tuple[int, str | None]] = []
+        barrier = threading.Barrier(2)
+
+        def attempt_regenerate() -> None:
+            barrier.wait()
+            with TestClient(app) as thread_client:
+                response = thread_client.post(
+                    f"/api/users/{child.id}/activation", headers=auth_headers
+                )
+            token = response.json().get("activation_token") if response.status_code == 200 else None
+            results.append((response.status_code, token))
+
+        threads = [threading.Thread(target=attempt_regenerate) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert [status for status, _ in results] == [200, 200]
+
+        row_count = setup_session.scalar(
+            select(func.count())
+            .select_from(UserActivation)
+            .where(UserActivation.user_id == child.id)
+        )
+        assert row_count == 1
+
+        final_activation = setup_session.scalar(
+            select(UserActivation).where(UserActivation.user_id == child.id)
+        )
+        assert final_activation is not None
+        returned_tokens = {token for _, token in results if token is not None}
+        matching = [t for t in returned_tokens if hash_token(t) == final_activation.token_hash]
+        assert len(matching) == 1
+    finally:
+        setup_session.rollback()
+        setup_session.query(UserSession).filter_by(user_id=adult.id).delete()
+        setup_session.query(UserActivation).filter_by(user_id=child.id).delete()
+        setup_session.query(User).filter_by(id=child.id).delete()
+        setup_session.query(User).filter_by(id=adult.id).delete()
+        setup_session.commit()
+        setup_session.close()

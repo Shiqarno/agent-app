@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from 'react'
-import { createUser, type UserRole } from '../api/users'
+import { activationUrlFor, createUser, type UserRole } from '../api/users'
 import { useRouter } from '../router'
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -9,12 +9,6 @@ function errorMessage(error: unknown, fallback: string): string {
 type CreatedUser = {
   name: string
   activationUrl: string
-}
-
-function activationUrlFor(token: string): string {
-  // The backend returns the raw token only, never a frontend-specific URL;
-  // the link is constructed here from the current origin (Issue #11 §14).
-  return `${window.location.origin}/activate?activation_token=${encodeURIComponent(token)}`
 }
 
 function NewUserPage() {

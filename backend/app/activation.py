@@ -20,3 +20,16 @@ def create_activation(db: Session, user_id: uuid.UUID) -> str:
         )
     )
     return raw_token
+
+
+def regenerate_activation(activation: UserActivation) -> str:
+    """Replaces `activation`'s token in place (uncommitted) and returns the new
+    raw token. Reuses the existing row rather than creating a second one --
+    the old token's hash is overwritten, so it stops matching anything as
+    soon as this commits.
+    """
+    raw_token = generate_session_token()
+    activation.token_hash = hash_token(raw_token)
+    activation.expires_at = utcnow() + ACTIVATION_TOKEN_TTL
+    activation.used_at = None
+    return raw_token

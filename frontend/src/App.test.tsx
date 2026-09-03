@@ -423,6 +423,40 @@ describe('App', () => {
     })
   })
 
+  it('Adult routing to /users renders the real User Management screen with activation status', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(200, ADULT_USER)
+      }
+      if (url.endsWith('/api/users')) {
+        return jsonResponse(200, [
+          { id: 'u1', name: 'Active Alice', role: 'adult', activation_status: 'ACTIVE' },
+          { id: 'u2', name: 'Pending Pat', role: 'child', activation_status: 'PENDING' },
+        ])
+      }
+      const dashboard = stubDashboardData(url)
+      if (dashboard) return dashboard
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^dashboard$/i })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('link', { name: 'Users' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^users$/i })).toBeInTheDocument()
+    })
+    expect(window.location.pathname).toBe('/users')
+    expect(screen.getByText('Active Alice')).toBeInTheDocument()
+    expect(screen.getByText('Pending Pat')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /generate activation link/i })).toBeInTheDocument()
+  })
+
   it('Create task from the Dashboard Quick Action reaches NewTaskPage and returns to /dashboard', async () => {
     const fetchMock = vi.fn((url: string) => {
       if (url.endsWith('/api/auth/me')) {

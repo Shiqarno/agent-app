@@ -37,6 +37,11 @@ class RewardNotFoundError(AppError):
         super().__init__(status_code=404, code="REWARD_NOT_FOUND", message="Reward not found")
 
 
+class UserNotFoundError(AppError):
+    def __init__(self) -> None:
+        super().__init__(status_code=404, code="USER_NOT_FOUND", message="User not found")
+
+
 class InsufficientPointsError(AppError):
     def __init__(self) -> None:
         super().__init__(

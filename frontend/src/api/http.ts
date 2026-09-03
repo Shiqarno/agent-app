@@ -11,16 +11,32 @@ type ApiErrorBody = {
   }
 }
 
-async function extractErrorMessage(response: Response): Promise<string> {
+// Extends Error (not a parallel error type) so every existing `error
+// instanceof Error && error.message` check across the app keeps working
+// unchanged. `code` is additive, for the rare caller that needs to branch on
+// the backend's error code rather than just display the message.
+export class ApiError extends Error {
+  code: string | null
+
+  constructor(message: string, code: string | null) {
+    super(message)
+    this.code = code
+  }
+}
+
+async function extractError(response: Response): Promise<{ message: string; code: string | null }> {
   try {
     const body = (await response.json()) as ApiErrorBody
     if (typeof body?.error?.message === 'string' && body.error.message) {
-      return body.error.message
+      return {
+        message: body.error.message,
+        code: typeof body.error.code === 'string' ? body.error.code : null,
+      }
     }
   } catch {
     // response body was not JSON, or did not match the expected error shape
   }
-  return `Request failed with status ${response.status}`
+  return { message: `Request failed with status ${response.status}`, code: null }
 }
 
 function readCookie(name: string): string | null {
@@ -55,7 +71,8 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
 
   if (!response.ok) {
-    throw new Error(await extractErrorMessage(response))
+    const { message, code } = await extractError(response)
+    throw new ApiError(message, code)
   }
 
   if (response.status === 204) {

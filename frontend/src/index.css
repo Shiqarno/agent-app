@@ -114,3 +114,23 @@ body {
 .transaction-amount {
   font-weight: bold;
 }
+
+.user-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.user-card {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 0.75rem;
+  overflow-wrap: break-word;
+}
+
+.user-card-title {
+  font-weight: bold;
+}

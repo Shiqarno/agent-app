@@ -1,9 +1,15 @@
 import uuid
 from datetime import datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models import PointTransactionReason, TaskStatus, UserRole
+
+
+class ActivationStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    PENDING = "PENDING"
 
 
 class ProjectBase(BaseModel):
@@ -72,6 +78,13 @@ class UserResponse(BaseModel):
     id: uuid.UUID
     name: str
     role: UserRole
+
+
+class UserListItemResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    role: UserRole
+    activation_status: ActivationStatus
 
 
 class UserCreate(BaseModel):
@@ -188,3 +201,8 @@ class ActivateRequest(BaseModel):
     token: str
     email: str
     password: str = Field(min_length=12)
+
+
+class ActivationRegenerateResponse(BaseModel):
+    activation_token: str
+    expires_at: datetime

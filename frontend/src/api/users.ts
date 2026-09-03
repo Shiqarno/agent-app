@@ -1,11 +1,16 @@
-import { request } from './http'
+import { ApiError, request } from './http'
+
+export { ApiError }
 
 export type UserRole = 'adult' | 'child'
+
+export type ActivationStatus = 'ACTIVE' | 'PENDING'
 
 export type UserSummary = {
   id: string
   name: string
   role: UserRole
+  activation_status: ActivationStatus
 }
 
 export type CreatedUser = {
@@ -25,6 +30,11 @@ export type UserInput = {
   role: UserRole
 }
 
+export type ActivationRegenerateResponse = {
+  activation_token: string
+  expires_at: string
+}
+
 export function getUsers(): Promise<UserSummary[]> {
   return request<UserSummary[]>('/api/users')
 }
@@ -34,4 +44,18 @@ export function createUser(input: UserInput): Promise<CreatedUser> {
     method: 'POST',
     body: JSON.stringify(input),
   })
+}
+
+export function regenerateActivation(userId: string): Promise<ActivationRegenerateResponse> {
+  return request<ActivationRegenerateResponse>(`/api/users/${userId}/activation`, {
+    method: 'POST',
+  })
+}
+
+// The backend returns the raw token only, never a frontend-specific URL
+// (Issue #11 §14, reaffirmed by Issue #16); the link is constructed here
+// from the current origin so both the Add User and the Users-page "generate
+// link" flows build it identically.
+export function activationUrlFor(token: string): string {
+  return `${window.location.origin}/activate?activation_token=${encodeURIComponent(token)}`
 }
