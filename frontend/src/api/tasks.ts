@@ -32,6 +32,14 @@ export function createTask(input: TaskInput): Promise<Task> {
   })
 }
 
+export function startTask(id: string): Promise<Task> {
+  return request<Task>(`/api/tasks/${id}/start`, { method: 'POST' })
+}
+
+export function readyTask(id: string): Promise<Task> {
+  return request<Task>(`/api/tasks/${id}/ready`, { method: 'POST' })
+}
+
 export function confirmTask(id: string): Promise<Task> {
   return request<Task>(`/api/tasks/${id}/confirm`, { method: 'POST' })
 }

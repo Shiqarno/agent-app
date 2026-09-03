@@ -57,7 +57,10 @@ function NewTaskPage() {
         assigned_to: assignedTo,
         reward_points: points,
       })
-      navigate('/dashboard')
+      // /tasks/new is shared by the Dashboard's "Create task" Quick Action
+      // and the Tasks page's own creation entry point; Issue #12 makes
+      // /tasks the working screen for Tasks, so creation now returns there.
+      navigate('/tasks')
     } catch (err) {
       setError(errorMessage(err, 'Failed to create task.'))
     } finally {
