@@ -522,3 +522,111 @@ p[role='alert'] {
 .transaction-amount {
   font-weight: bold;
 }
+
+/* --- PIN authentication (Issue #22) -------------------------------- */
+
+.auth-page {
+  max-width: 420px;
+  margin-inline: auto;
+  padding: var(--space-5) var(--space-4);
+}
+
+.profile-grid {
+  list-style: none;
+  margin: var(--space-4) 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--space-3);
+}
+
+.profile-card {
+  width: 100%;
+  min-height: var(--tap-min);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-2);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.profile-card:hover {
+  border-color: var(--color-primary);
+}
+
+.profile-card-name {
+  font-size: var(--text-body-size);
+  font-weight: 600;
+  color: var(--color-text);
+  text-align: center;
+}
+
+.pin-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.pin-entry-name {
+  font-size: var(--text-section-title-size);
+  font-weight: var(--text-section-title-weight);
+}
+
+.pin-dots {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.pin-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--color-border);
+  background: transparent;
+}
+
+.pin-dot-filled {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.pin-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 320px;
+}
+
+.pin-pad-key {
+  min-height: 64px;
+  min-width: var(--tap-min);
+  font-size: var(--text-page-title-size);
+  font-weight: 600;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+}
+
+.pin-pad-key:hover {
+  border-color: var(--color-primary);
+}
+
+.pin-pad-key:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (min-width: 768px) {
+  .auth-page {
+    padding-top: var(--space-7);
+  }
+}

@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import datetime
 from enum import StrEnum
@@ -5,6 +6,14 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models import AvatarId, PointTransactionReason, TaskExecutionStatus, UserRole
+
+_PIN_PATTERN = re.compile(r"^[0-9]{4}$")
+
+
+def _validate_pin_format(value: str) -> str:
+    if not _PIN_PATTERN.fullmatch(value):
+        raise ValueError("pin must be exactly 4 digits")
+    return value
 
 
 class ActivationStatus(StrEnum):
@@ -111,6 +120,11 @@ class UserResponse(BaseModel):
     name: str
     role: UserRole
     avatar_id: AvatarId
+    # Derived from UserCredential.pin_hash (a separate table -- User carries
+    # no credential fields of its own), so every endpoint returning this
+    # must build it explicitly rather than relying on from_attributes to
+    # pull it off a bare User object (Issue #22).
+    pin_configured: bool
 
 
 class UserListItemResponse(BaseModel):
@@ -225,7 +239,8 @@ class LoginRequest(BaseModel):
 class SetupRequest(BaseModel):
     name: str
     email: str
-    password: str = Field(min_length=12)
+    pin: str
+    password: str | None = Field(default=None, min_length=12)
 
     @field_validator("name")
     @classmethod
@@ -235,13 +250,51 @@ class SetupRequest(BaseModel):
             raise ValueError("name must not be empty or whitespace-only")
         return stripped
 
+    @field_validator("pin")
+    @classmethod
+    def pin_must_be_four_digits(cls, value: str) -> str:
+        return _validate_pin_format(value)
+
 
 class ActivateRequest(BaseModel):
     token: str
     email: str
-    password: str = Field(min_length=12)
+    pin: str
+    password: str | None = Field(default=None, min_length=12)
+
+    @field_validator("pin")
+    @classmethod
+    def pin_must_be_four_digits(cls, value: str) -> str:
+        return _validate_pin_format(value)
 
 
 class ActivationRegenerateResponse(BaseModel):
     activation_token: str
     expires_at: datetime
+
+
+class ProfileResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    avatar_id: AvatarId
+
+
+class PinLoginRequest(BaseModel):
+    user_id: uuid.UUID
+    pin: str
+
+    @field_validator("pin")
+    @classmethod
+    def pin_must_be_four_digits(cls, value: str) -> str:
+        return _validate_pin_format(value)
+
+
+class PinSetupRequest(BaseModel):
+    pin: str
+
+    @field_validator("pin")
+    @classmethod
+    def pin_must_be_four_digits(cls, value: str) -> str:
+        return _validate_pin_format(value)

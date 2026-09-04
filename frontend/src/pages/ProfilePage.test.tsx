@@ -16,6 +16,7 @@ const CURRENT_USER = {
   name: 'Alice',
   role: 'adult' as const,
   avatar_id: 'avatar_01',
+  pin_configured: true,
 }
 
 afterEach(() => {

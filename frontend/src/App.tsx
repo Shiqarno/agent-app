@@ -1,13 +1,17 @@
-import { type ComponentType, type FormEvent, useEffect, useState } from 'react'
-import { activate, login, logout, me, type CurrentUser } from './api/auth'
+import { type ComponentType, useCallback, useEffect, useState } from 'react'
+import { logout, me, type CurrentUser } from './api/auth'
 import AppShell from './AppShell'
+import ActivationPage from './pages/ActivationPage'
 import DashboardPage from './pages/DashboardPage'
 import EditRewardPage from './pages/EditRewardPage'
 import EditTaskPage from './pages/EditTaskPage'
 import NewRewardPage from './pages/NewRewardPage'
 import NewTaskPage from './pages/NewTaskPage'
 import NewUserPage from './pages/NewUserPage'
+import PasswordLoginPage from './pages/PasswordLoginPage'
+import PinSetupRequiredPage from './pages/PinSetupRequiredPage'
 import PointsPage from './pages/PointsPage'
+import ProfileLoginPage from './pages/ProfileLoginPage'
 import ProfilePage from './pages/ProfilePage'
 import RewardsPage from './pages/RewardsPage'
 import TaskDetailsPage from './pages/TaskDetailsPage'
@@ -18,117 +22,8 @@ import { RouterProvider, useRouter } from './router'
 type AuthState =
   | { phase: 'loading' }
   | { phase: 'anonymous' }
+  | { phase: 'pin-setup-required'; user: CurrentUser }
   | { phase: 'authenticated'; user: CurrentUser }
-
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback
-}
-
-function LoginForm({ onLogin }: { onLogin: (user: CurrentUser) => void }) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setError(null)
-    setSubmitting(true)
-
-    try {
-      const user = await login(email, password)
-      onLogin(user)
-    } catch (err) {
-      setError(errorMessage(err, 'Login failed.'))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit}>
-      <h1>Sign in</h1>
-      <div>
-        <label htmlFor="email">Email</label>
-        <input
-          id="email"
-          type="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-        />
-      </div>
-      <div>
-        <label htmlFor="password">Password</label>
-        <input
-          id="password"
-          type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-        />
-      </div>
-      {error && <p role="alert">{error}</p>}
-      <button type="submit" disabled={submitting}>
-        Sign in
-      </button>
-    </form>
-  )
-}
-
-function ActivationForm({
-  token,
-  onActivated,
-}: {
-  token: string
-  onActivated: (user: CurrentUser) => void
-}) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setError(null)
-    setSubmitting(true)
-
-    try {
-      const user = await activate(token, email, password)
-      onActivated(user)
-    } catch (err) {
-      setError(errorMessage(err, 'Activation failed.'))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit}>
-      <h1>Activate your account</h1>
-      <div>
-        <label htmlFor="activation-email">Email</label>
-        <input
-          id="activation-email"
-          type="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-        />
-      </div>
-      <div>
-        <label htmlFor="activation-password">Password</label>
-        <input
-          id="activation-password"
-          type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-        />
-      </div>
-      {error && <p role="alert">{error}</p>}
-      <button type="submit" disabled={submitting}>
-        Activate
-      </button>
-    </form>
-  )
-}
 
 // Adult-only routes. Static paths only -- no nested/dynamic segments are
 // needed, so a plain lookup table is enough (see router.tsx).
@@ -220,6 +115,20 @@ function AuthenticatedApp({
   )
 }
 
+// The default pre-auth screen (Issue #22) is profile/PIN selection; the
+// password form is a secondary route at /login/password. This needs its own
+// path-based dispatch, so it gets its own RouterProvider -- independent of,
+// and never mounted at the same time as, the authenticated tree's -- rather
+// than a new routing library.
+function AnonymousRouter({ onAuthenticated }: { onAuthenticated: (user: CurrentUser) => void }) {
+  const { path } = useRouter()
+
+  if (path === '/login/password') {
+    return <PasswordLoginPage onLogin={onAuthenticated} />
+  }
+  return <ProfileLoginPage onLogin={onAuthenticated} />
+}
+
 function App() {
   const [auth, setAuth] = useState<AuthState>({ phase: 'loading' })
   // The activation link (POST /api/users creates this token server-side, out
@@ -232,14 +141,42 @@ function App() {
       : null,
   )
 
+  // Shared by every auth-completing action (password login, PIN login,
+  // activation, PIN setup, and the initial session check): an existing
+  // session whose user has never configured a PIN (Issue #22 -- only
+  // reachable today via password login, or by reloading with such a session
+  // still valid) is routed into mandatory PIN setup rather than the app,
+  // regardless of which action produced it. Only the interactive
+  // completion flows (login/pin-login/activate/pin-setup) also redirect to
+  // the role's landing page -- the initial session-restore check below
+  // deliberately does NOT reuse this for that part, since a reload/deep
+  // link must keep whatever URL the user was already on, exactly like
+  // before PIN login existed.
+  const handleAuthSuccess = useCallback((user: CurrentUser) => {
+    if (!user.pin_configured) {
+      setAuth({ phase: 'pin-setup-required', user })
+      return
+    }
+    // Dashboard is the landing page after a successful Adult login; Tasks
+    // is the landing page for a Child.
+    const landingPath = user.role === 'adult' ? '/dashboard' : '/tasks'
+    if (window.location.pathname !== landingPath) {
+      window.history.pushState({}, '', landingPath)
+    }
+    setAuth({ phase: 'authenticated', user })
+  }, [])
+
   useEffect(() => {
     let cancelled = false
 
     me()
       .then((user) => {
-        if (!cancelled) {
-          setAuth({ phase: 'authenticated', user })
+        if (cancelled) return
+        if (!user.pin_configured) {
+          setAuth({ phase: 'pin-setup-required', user })
+          return
         }
+        setAuth({ phase: 'authenticated', user })
       })
       .catch(() => {
         if (!cancelled) {
@@ -260,16 +197,6 @@ function App() {
     }
   }
 
-  function handleAuthenticated(user: CurrentUser) {
-    // Dashboard is the landing page after a successful Adult login; Tasks
-    // is the landing page for a Child.
-    const landingPath = user.role === 'adult' ? '/dashboard' : '/tasks'
-    if (window.location.pathname !== landingPath) {
-      window.history.pushState({}, '', landingPath)
-    }
-    setAuth({ phase: 'authenticated', user })
-  }
-
   function handleUserUpdated(user: CurrentUser) {
     setAuth({ phase: 'authenticated', user })
   }
@@ -280,9 +207,23 @@ function App() {
 
   if (auth.phase === 'anonymous') {
     if (activationToken) {
-      return <ActivationForm token={activationToken} onActivated={handleAuthenticated} />
+      return <ActivationPage token={activationToken} onActivated={handleAuthSuccess} />
     }
-    return <LoginForm onLogin={handleAuthenticated} />
+    return (
+      <RouterProvider>
+        <AnonymousRouter onAuthenticated={handleAuthSuccess} />
+      </RouterProvider>
+    )
+  }
+
+  if (auth.phase === 'pin-setup-required') {
+    return (
+      <PinSetupRequiredPage
+        user={auth.user}
+        onComplete={handleAuthSuccess}
+        onLogout={handleLogout}
+      />
+    )
   }
 
   return (

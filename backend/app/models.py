@@ -235,6 +235,15 @@ class RewardRedemption(Base):
 
 
 class UserCredential(Base):
+    """(Issue #22) `password_hash` and `pin_hash` are each independently
+    optional: a freshly-activated user always has a PIN but may have no
+    password, while a user who predates PIN login has a password but
+    `pin_hash IS NULL` until they complete mandatory PIN setup. At least one
+    of the two is always non-null in practice (activation requires a PIN,
+    and the original password-only setup/activation paths are gone), but
+    that isn't enforced at the DB level -- both columns are simply nullable.
+    """
+
     __tablename__ = "user_credentials"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -242,7 +251,12 @@ class UserCredential(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), unique=True, nullable=False
     )
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
-    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    pin_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    pin_failed_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    pin_locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

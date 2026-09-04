@@ -75,7 +75,7 @@ def update_my_avatar(
     payload: UserAvatarUpdate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> User:
+) -> UserResponse:
     """Self-only avatar change (Issue #20): the target is always the
     authenticated user, never a request-supplied id, and no other User
     field is touched. Both Adult and Child may call this -- unlike every
@@ -85,7 +85,16 @@ def update_my_avatar(
     user.updated_at = utcnow()
     db.commit()
     db.refresh(user)
-    return user
+    # See app.routers.auth.me() for why this is a plain lookup with a safe
+    # default rather than an invariant assert.
+    credential = db.scalar(select(UserCredential).where(UserCredential.user_id == user.id))
+    return UserResponse(
+        id=user.id,
+        name=user.name,
+        role=user.role,
+        avatar_id=user.avatar_id,
+        pin_configured=credential is not None and credential.pin_hash is not None,
+    )
 
 
 @router.post("/{user_id}/activation", response_model=ActivationRegenerateResponse)

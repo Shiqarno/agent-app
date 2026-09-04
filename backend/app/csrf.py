@@ -11,13 +11,17 @@ CSRF_HEADER_NAME = "x-csrf-token"
 
 _STATE_CHANGING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
-# /login, /setup, and /activate establish a *new* session rather than acting
-# within an existing one, so they must not be gated by a stale/unrelated
-# session cookie that happens to still be present in the browser (e.g.
-# logging in again from an already-logged-in tab). /logout is deliberately
-# NOT exempted: it mutates the current session and gets the same protection
-# as any other mutation.
-_CSRF_EXEMPT_PATHS = frozenset({"/api/auth/login", "/api/auth/setup", "/api/auth/activate"})
+# /login, /pin-login, /setup, and /activate establish a *new* session rather
+# than acting within an existing one, so they must not be gated by a
+# stale/unrelated session cookie that happens to still be present in the
+# browser (e.g. logging in again from an already-logged-in tab). /logout is
+# deliberately NOT exempted: it mutates the current session and gets the
+# same protection as any other mutation. /pin (PIN setup) is likewise NOT
+# exempted -- it's an authenticated mutation on an existing session, exactly
+# like any other PATCH, not a login endpoint (Issue #22).
+_CSRF_EXEMPT_PATHS = frozenset(
+    {"/api/auth/login", "/api/auth/pin-login", "/api/auth/setup", "/api/auth/activate"}
+)
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):

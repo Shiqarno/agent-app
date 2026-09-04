@@ -56,6 +56,7 @@ def test_valid_credentials_authenticate_successfully(
         "name": "Alice",
         "role": "adult",
         "avatar_id": adult.avatar_id.value,
+        "pin_configured": False,
     }
 
 
@@ -110,7 +111,7 @@ def test_password_is_never_returned(
         "/api/auth/login", json={"email": "alice@example.com", "password": PASSWORD}
     )
 
-    assert set(response.json().keys()) == {"id", "name", "role", "avatar_id"}
+    assert set(response.json().keys()) == {"id", "name", "role", "avatar_id", "pin_configured"}
 
 
 def test_password_hash_is_never_returned(
@@ -341,6 +342,7 @@ def test_me_returns_authenticated_user(
         "name": "Bob",
         "role": "adult",
         "avatar_id": adult.avatar_id.value,
+        "pin_configured": False,
     }
 
 
@@ -358,7 +360,7 @@ def test_me_response_contains_only_public_user_fields(
 
     response = client.get("/api/auth/me", headers=auth(adult))
 
-    assert set(response.json().keys()) == {"id", "name", "role", "avatar_id"}
+    assert set(response.json().keys()) == {"id", "name", "role", "avatar_id", "pin_configured"}
 
 
 # --- Setup ------------------------------------------------------------------------------
@@ -371,7 +373,12 @@ def test_first_setup_creates_adult_and_credentials(
 
     response = client.post(
         "/api/auth/setup",
-        json={"name": "Initial Adult", "email": "admin@example.com", "password": PASSWORD},
+        json={
+            "name": "Initial Adult",
+            "email": "admin@example.com",
+            "pin": "1234",
+            "password": PASSWORD,
+        },
         headers={"X-Setup-Token": "setup-secret-1"},
     )
 
@@ -398,7 +405,12 @@ def test_setup_creates_an_authenticated_session(
 
     setup_response = client.post(
         "/api/auth/setup",
-        json={"name": "Initial Adult", "email": "admin2@example.com", "password": PASSWORD},
+        json={
+            "name": "Initial Adult",
+            "email": "admin2@example.com",
+            "pin": "1234",
+            "password": PASSWORD,
+        },
         headers={"X-Setup-Token": "setup-secret-2"},
     )
     assert SESSION_COOKIE_NAME in setup_response.cookies
@@ -419,7 +431,12 @@ def test_setup_cannot_run_when_users_already_exist(
 
     response = client.post(
         "/api/auth/setup",
-        json={"name": "Second Adult", "email": "second@example.com", "password": PASSWORD},
+        json={
+            "name": "Second Adult",
+            "email": "second@example.com",
+            "pin": "1234",
+            "password": PASSWORD,
+        },
         headers={"X-Setup-Token": "setup-secret-3"},
     )
 
@@ -434,14 +451,24 @@ def test_setup_cannot_create_a_second_user(
 
     first = client.post(
         "/api/auth/setup",
-        json={"name": "First Adult", "email": "first@example.com", "password": PASSWORD},
+        json={
+            "name": "First Adult",
+            "email": "first@example.com",
+            "pin": "1234",
+            "password": PASSWORD,
+        },
         headers={"X-Setup-Token": "setup-secret-4"},
     )
     assert first.status_code == 201
 
     second = client.post(
         "/api/auth/setup",
-        json={"name": "Second Adult", "email": "second@example.com", "password": PASSWORD},
+        json={
+            "name": "Second Adult",
+            "email": "second@example.com",
+            "pin": "1234",
+            "password": PASSWORD,
+        },
         headers={"X-Setup-Token": "setup-secret-4"},
     )
 
@@ -456,7 +483,7 @@ def test_missing_setup_token_is_rejected(
 
     response = client.post(
         "/api/auth/setup",
-        json={"name": "Adult", "email": "admin@example.com", "password": PASSWORD},
+        json={"name": "Adult", "email": "admin@example.com", "pin": "1234", "password": PASSWORD},
     )
 
     assert response.status_code == 401
@@ -471,7 +498,7 @@ def test_incorrect_setup_token_is_rejected(
 
     response = client.post(
         "/api/auth/setup",
-        json={"name": "Adult", "email": "admin@example.com", "password": PASSWORD},
+        json={"name": "Adult", "email": "admin@example.com", "pin": "1234", "password": PASSWORD},
         headers={"X-Setup-Token": "a-wrong-guess"},
     )
 
@@ -487,7 +514,7 @@ def test_missing_initial_setup_token_configuration_fails_safely(
 
     response = client.post(
         "/api/auth/setup",
-        json={"name": "Adult", "email": "admin@example.com", "password": PASSWORD},
+        json={"name": "Adult", "email": "admin@example.com", "pin": "1234", "password": PASSWORD},
         headers={"X-Setup-Token": "anything-at-all"},
     )
 

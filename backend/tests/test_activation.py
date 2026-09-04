@@ -32,7 +32,7 @@ def test_valid_activation_creates_credentials_and_logs_in(
 
     response = client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "kid@example.com", "password": PASSWORD},
+        json={"token": token, "email": "kid@example.com", "pin": "1234", "password": PASSWORD},
     )
 
     assert response.status_code == 200
@@ -41,6 +41,7 @@ def test_valid_activation_creates_credentials_and_logs_in(
         "name": "Kid",
         "role": "child",
         "avatar_id": child.avatar_id.value,
+        "pin_configured": True,
     }
 
     credential = db_session.scalar(select(UserCredential).where(UserCredential.user_id == child.id))
@@ -56,7 +57,7 @@ def test_activation_marks_the_token_used(
 
     client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "kid2@example.com", "password": PASSWORD},
+        json={"token": token, "email": "kid2@example.com", "pin": "1234", "password": PASSWORD},
     )
 
     activation = db_session.scalar(
@@ -74,7 +75,7 @@ def test_activation_creates_an_authenticated_session(
 
     response = client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "kid3@example.com", "password": PASSWORD},
+        json={"token": token, "email": "kid3@example.com", "pin": "1234", "password": PASSWORD},
     )
 
     assert SESSION_COOKIE_NAME in response.cookies
@@ -93,10 +94,10 @@ def test_activation_response_never_contains_the_raw_token(
 
     response = client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "kid4@example.com", "password": PASSWORD},
+        json={"token": token, "email": "kid4@example.com", "pin": "1234", "password": PASSWORD},
     )
 
-    assert set(response.json().keys()) == {"id", "name", "role", "avatar_id"}
+    assert set(response.json().keys()) == {"id", "name", "role", "avatar_id", "pin_configured"}
     assert token not in response.text
 
 
@@ -108,7 +109,7 @@ def test_activation_email_is_normalized(
 
     response = client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "  Kid5@Example.com  ", "password": PASSWORD},
+        json={"token": token, "email": "  Kid5@Example.com  ", "pin": "1234", "password": PASSWORD},
     )
 
     assert response.status_code == 200
@@ -124,7 +125,7 @@ def test_activated_user_can_log_in_with_new_credentials(
     token = create_activation(child)
     client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "kid6@example.com", "password": PASSWORD},
+        json={"token": token, "email": "kid6@example.com", "pin": "1234", "password": PASSWORD},
     )
 
     response = client.post(
@@ -141,7 +142,12 @@ def test_activated_user_can_log_in_with_new_credentials(
 def test_nonexistent_token_returns_generic_400(client: TestClient) -> None:
     response = client.post(
         "/api/auth/activate",
-        json={"token": "not-a-real-token", "email": "nobody@example.com", "password": PASSWORD},
+        json={
+            "token": "not-a-real-token",
+            "email": "nobody@example.com",
+            "pin": "1234",
+            "password": PASSWORD,
+        },
     )
 
     assert response.status_code == 400
@@ -156,7 +162,7 @@ def test_expired_token_returns_the_same_generic_400(
 
     response = client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "expired@example.com", "password": PASSWORD},
+        json={"token": token, "email": "expired@example.com", "pin": "1234", "password": PASSWORD},
     )
 
     assert response.status_code == 400
@@ -170,12 +176,17 @@ def test_already_used_token_returns_the_same_generic_400(
     token = create_activation(child)
     client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "used@example.com", "password": PASSWORD},
+        json={"token": token, "email": "used@example.com", "pin": "1234", "password": PASSWORD},
     )
 
     response = client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "used-again@example.com", "password": PASSWORD},
+        json={
+            "token": token,
+            "email": "used-again@example.com",
+            "pin": "1234",
+            "password": PASSWORD,
+        },
     )
 
     assert response.status_code == 400
@@ -191,20 +202,25 @@ def test_invalid_and_expired_and_used_tokens_share_identical_error_bodies(
     used_token = create_activation(child_b)
     client.post(
         "/api/auth/activate",
-        json={"token": used_token, "email": "b@example.com", "password": PASSWORD},
+        json={"token": used_token, "email": "b@example.com", "pin": "1234", "password": PASSWORD},
     )
 
     nonexistent = client.post(
         "/api/auth/activate",
-        json={"token": "garbage", "email": "x@example.com", "password": PASSWORD},
+        json={"token": "garbage", "email": "x@example.com", "pin": "1234", "password": PASSWORD},
     )
     expired = client.post(
         "/api/auth/activate",
-        json={"token": expired_token, "email": "y@example.com", "password": PASSWORD},
+        json={
+            "token": expired_token,
+            "email": "y@example.com",
+            "pin": "1234",
+            "password": PASSWORD,
+        },
     )
     used = client.post(
         "/api/auth/activate",
-        json={"token": used_token, "email": "z@example.com", "password": PASSWORD},
+        json={"token": used_token, "email": "z@example.com", "pin": "1234", "password": PASSWORD},
     )
 
     assert nonexistent.json() == expired.json() == used.json()
@@ -231,7 +247,7 @@ def test_email_already_in_use_by_another_user_returns_409(
 
     response = client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "taken@example.com", "password": PASSWORD},
+        json={"token": token, "email": "taken@example.com", "pin": "1234", "password": PASSWORD},
     )
 
     assert response.status_code == 409
@@ -255,7 +271,7 @@ def test_email_conflict_does_not_modify_the_existing_credential(
     token = create_activation(child)
     client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "taken2@example.com", "password": PASSWORD},
+        json={"token": token, "email": "taken2@example.com", "pin": "1234", "password": PASSWORD},
     )
 
     credential = db_session.scalar(
@@ -283,7 +299,7 @@ def test_email_conflict_leaves_the_activation_token_unused(
     token = create_activation(child)
     client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "taken3@example.com", "password": PASSWORD},
+        json={"token": token, "email": "taken3@example.com", "pin": "1234", "password": PASSWORD},
     )
 
     activation = db_session.scalar(
@@ -294,7 +310,12 @@ def test_email_conflict_leaves_the_activation_token_unused(
 
     retry = client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "not-taken@example.com", "password": PASSWORD},
+        json={
+            "token": token,
+            "email": "not-taken@example.com",
+            "pin": "1234",
+            "password": PASSWORD,
+        },
     )
     assert retry.status_code == 200
 
@@ -317,7 +338,12 @@ def test_reactivating_an_already_activated_user_returns_409(
 
     response = client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "new-email@example.com", "password": PASSWORD},
+        json={
+            "token": token,
+            "email": "new-email@example.com",
+            "pin": "1234",
+            "password": PASSWORD,
+        },
     )
 
     assert response.status_code == 409
@@ -341,7 +367,7 @@ def test_already_activated_conflict_does_not_overwrite_credentials(
 
     client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "hijack@example.com", "password": PASSWORD},
+        json={"token": token, "email": "hijack@example.com", "pin": "1234", "password": PASSWORD},
     )
 
     credential = db_session.scalar(select(UserCredential).where(UserCredential.user_id == child.id))
@@ -360,7 +386,7 @@ def test_password_shorter_than_minimum_returns_422(
 
     response = client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "short@example.com", "password": "too-short"},
+        json={"token": token, "email": "short@example.com", "pin": "1234", "password": "too-short"},
     )
 
     assert response.status_code == 422
@@ -370,7 +396,9 @@ def test_missing_email_returns_422(client: TestClient, make_user: Callable[..., 
     child = make_user(CHILD)
     token = create_activation(child)
 
-    response = client.post("/api/auth/activate", json={"token": token, "password": PASSWORD})
+    response = client.post(
+        "/api/auth/activate", json={"token": token, "pin": "1234", "password": PASSWORD}
+    )
 
     assert response.status_code == 422
 
@@ -405,7 +433,7 @@ def test_password_is_never_returned(client: TestClient, make_user: Callable[...,
 
     response = client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "sec@example.com", "password": PASSWORD},
+        json={"token": token, "email": "sec@example.com", "pin": "1234", "password": PASSWORD},
     )
 
     assert "password_hash" not in response.text
@@ -424,6 +452,7 @@ def test_client_supplied_user_id_is_never_trusted(
         json={
             "token": token,
             "email": "trust@example.com",
+            "pin": "1234",
             "password": PASSWORD,
             "user_id": str(other.id),
         },
@@ -446,7 +475,7 @@ def test_activate_is_exempt_from_csrf_even_with_a_stale_session_cookie(
 
     response = client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "csrf@example.com", "password": PASSWORD},
+        json={"token": token, "email": "csrf@example.com", "pin": "1234", "password": PASSWORD},
         headers={"Cookie": stale_session_cookie},
     )
 
@@ -550,6 +579,7 @@ def test_the_created_users_activation_token_actually_activates_them(
         json={
             "token": created["activation_token"],
             "email": "newkid@example.com",
+            "pin": "1234",
             "password": PASSWORD,
         },
     )
@@ -602,6 +632,7 @@ def test_concurrent_activation_with_the_same_token_succeeds_exactly_once() -> No
                     json={
                         "token": raw_token,
                         "email": "race@example.com",
+                        "pin": "1234",
                         "password": PASSWORD,
                     },
                 )

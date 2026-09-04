@@ -635,14 +635,14 @@ def test_new_token_activates_and_previous_token_no_longer_works(
 
     old_attempt = client.post(
         "/api/auth/activate",
-        json={"token": old_token, "email": "kid@example.com", "password": PASSWORD},
+        json={"token": old_token, "email": "kid@example.com", "pin": "1234", "password": PASSWORD},
     )
     assert old_attempt.status_code == 400
     assert old_attempt.json()["error"]["code"] == "INVALID_ACTIVATION_TOKEN"
 
     new_attempt = client.post(
         "/api/auth/activate",
-        json={"token": new_token, "email": "kid@example.com", "password": PASSWORD},
+        json={"token": new_token, "email": "kid@example.com", "pin": "1234", "password": PASSWORD},
     )
     assert new_attempt.status_code == 200
     assert new_attempt.json()["id"] == str(child.id)
@@ -774,7 +774,7 @@ def test_activating_then_regenerating_is_rejected_because_the_user_is_now_active
     token = create_activation(child)
     client.post(
         "/api/auth/activate",
-        json={"token": token, "email": "kid@example.com", "password": PASSWORD},
+        json={"token": token, "email": "kid@example.com", "pin": "1234", "password": PASSWORD},
     )
 
     response = client.post(f"/api/users/{child.id}/activation", headers=auth(adult))
@@ -967,7 +967,7 @@ def test_avatar_update_does_not_modify_other_user_fields(
     assert body["id"] == str(adult.id)
     assert body["name"] == "Original Name"
     assert body["role"] == "adult"
-    assert set(body.keys()) == {"id", "name", "role", "avatar_id"}
+    assert set(body.keys()) == {"id", "name", "role", "avatar_id", "pin_configured"}
 
 
 def test_avatar_update_has_no_mechanism_to_target_another_user(

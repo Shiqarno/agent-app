@@ -16,13 +16,16 @@ const ADULT_USER = {
   name: 'Alice',
   role: 'adult',
   avatar_id: 'avatar_01',
+  pin_configured: true,
 }
 const CHILD_USER = {
   id: '22222222-2222-2222-2222-222222222222',
   name: 'Kiddo',
   role: 'child',
   avatar_id: 'avatar_02',
+  pin_configured: true,
 }
+const ADULT_PROFILE = { id: ADULT_USER.id, name: ADULT_USER.name, avatar_id: ADULT_USER.avatar_id }
 
 // A default stub for the Dashboard's own data requests, reused by every test
 // that reaches the authenticated Adult shell.
@@ -92,23 +95,35 @@ describe('App', () => {
     expect(screen.getByText(/loading/i)).toBeInTheDocument()
   })
 
-  it('shows the login form when there is no session', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => jsonResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'nope' } })),
-    )
+  it('shows the profile picker (default login screen) when there is no session', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'nope' } })
+      }
+      if (url.endsWith('/api/auth/profiles')) {
+        return jsonResponse(200, [ADULT_PROFILE])
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
 
     render(<App />)
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: /choose your profile/i })).toBeInTheDocument()
+    })
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /alice/i })).toBeInTheDocument()
     })
   })
 
-  it('logs in as an Adult and lands on the Dashboard', async () => {
+  it('logs in as an Adult via the password fallback and lands on the Dashboard', async () => {
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
       if (url.endsWith('/api/auth/me')) {
         return jsonResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'nope' } })
+      }
+      if (url.endsWith('/api/auth/profiles')) {
+        return jsonResponse(200, [ADULT_PROFILE])
       }
       if (url.endsWith('/api/auth/login')) {
         return jsonResponse(200, ADULT_USER)
@@ -120,6 +135,11 @@ describe('App', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /email and password/i })).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('link', { name: /email and password/i }))
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument()
@@ -136,10 +156,13 @@ describe('App', () => {
     expect(window.location.pathname).toBe('/dashboard')
   })
 
-  it('logs in as a Child and lands on Tasks', async () => {
+  it('logs in as a Child via the password fallback and lands on Tasks', async () => {
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
       if (url.endsWith('/api/auth/me')) {
         return jsonResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'nope' } })
+      }
+      if (url.endsWith('/api/auth/profiles')) {
+        return jsonResponse(200, [ADULT_PROFILE])
       }
       if (url.endsWith('/api/auth/login')) {
         return jsonResponse(200, CHILD_USER)
@@ -151,6 +174,11 @@ describe('App', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /email and password/i })).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('link', { name: /email and password/i }))
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument()
@@ -167,10 +195,13 @@ describe('App', () => {
     expect(window.location.pathname).toBe('/tasks')
   })
 
-  it('shows a login error on invalid credentials', async () => {
+  it('shows a login error on invalid credentials via the password fallback', async () => {
     const fetchMock = vi.fn((url: string) => {
       if (url.endsWith('/api/auth/me')) {
         return jsonResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'nope' } })
+      }
+      if (url.endsWith('/api/auth/profiles')) {
+        return jsonResponse(200, [ADULT_PROFILE])
       }
       if (url.endsWith('/api/auth/login')) {
         return jsonResponse(401, {
@@ -184,6 +215,11 @@ describe('App', () => {
     render(<App />)
 
     await waitFor(() => {
+      expect(screen.getByRole('link', { name: /email and password/i })).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('link', { name: /email and password/i }))
+
+    await waitFor(() => {
       expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument()
     })
 
@@ -193,6 +229,108 @@ describe('App', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Invalid credentials')).toBeInTheDocument()
+    })
+  })
+
+  it('logs in via PIN from the default profile picker and lands on the Dashboard', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'nope' } })
+      }
+      if (url.endsWith('/api/auth/profiles')) {
+        return jsonResponse(200, [ADULT_PROFILE])
+      }
+      if (url.endsWith('/api/auth/pin-login')) {
+        return jsonResponse(200, ADULT_USER)
+      }
+      const dashboard = stubDashboardData(url)
+      if (dashboard) return dashboard
+      throw new Error(`Unexpected request: ${url} ${String(init?.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /alice/i })).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /alice/i }))
+
+    for (const digit of ['1', '2', '3', '4']) {
+      fireEvent.click(screen.getByRole('button', { name: `Digit ${digit}` }))
+    }
+
+    await waitFor(() => {
+      expect(screen.getByText(/signed in as alice/i)).toBeInTheDocument()
+    })
+    expect(screen.getByRole('heading', { name: /^dashboard$/i })).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/dashboard')
+  })
+
+  it('an existing user without a PIN is routed to mandatory PIN setup after password login, then to the app', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'nope' } })
+      }
+      if (url.endsWith('/api/auth/profiles')) {
+        return jsonResponse(200, [])
+      }
+      if (url.endsWith('/api/auth/login')) {
+        return jsonResponse(200, { ...ADULT_USER, pin_configured: false })
+      }
+      if (url.endsWith('/api/auth/pin') && init?.method === 'PATCH') {
+        return jsonResponse(200, ADULT_USER)
+      }
+      const dashboard = stubDashboardData(url)
+      if (dashboard) return dashboard
+      throw new Error(`Unexpected request: ${url} ${String(init?.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /email and password/i })).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('link', { name: /email and password/i }))
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument()
+    })
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'alice@example.com' } })
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'a-password-1' } })
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /set up your pin/i })).toBeInTheDocument()
+    })
+    expect(
+      screen.queryByRole('link', { name: /skip/i }) ?? screen.queryByRole('button', { name: /skip/i }),
+    ).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText(/choose a 4-digit pin/i), { target: { value: '1234' } })
+    fireEvent.change(screen.getByLabelText(/confirm your pin/i), { target: { value: '1234' } })
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/signed in as alice/i)).toBeInTheDocument()
+    })
+    expect(screen.getByRole('heading', { name: /^dashboard$/i })).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/dashboard')
+  })
+
+  it('a session without a configured PIN reloads into mandatory PIN setup, not the app', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(200, { ...ADULT_USER, pin_configured: false })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /set up your pin/i })).toBeInTheDocument()
     })
   })
 
@@ -331,15 +469,21 @@ describe('App', () => {
 
   it('navigating directly to an Adult route while unauthenticated shows Login, not the route', async () => {
     window.history.pushState({}, '', '/tasks')
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => jsonResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'nope' } })),
-    )
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'nope' } })
+      }
+      if (url.endsWith('/api/auth/profiles')) {
+        return jsonResponse(200, [ADULT_PROFILE])
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
 
     render(<App />)
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: /choose your profile/i })).toBeInTheDocument()
     })
   })
 
@@ -366,7 +510,12 @@ describe('App', () => {
     })
 
     fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'kid@example.com' } })
-    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'a-password-1' } })
+    fireEvent.change(screen.getByLabelText(/^pin$/i), { target: { value: '1234' } })
+    fireEvent.change(screen.getByLabelText(/confirm pin/i), { target: { value: '1234' } })
+    fireEvent.change(screen.getByLabelText(/^password/i), { target: { value: 'a-password-1' } })
+    fireEvent.change(screen.getByLabelText(/confirm password/i), {
+      target: { value: 'a-password-1' },
+    })
     fireEvent.click(screen.getByRole('button', { name: /activate/i }))
 
     await waitFor(() => {
@@ -379,17 +528,62 @@ describe('App', () => {
     expect(JSON.parse(activateInit.body as string)).toEqual({
       token: 'a-real-token',
       email: 'kid@example.com',
+      pin: '1234',
       password: 'a-password-1',
     })
   })
 
-  it('logs out and returns to the login form', async () => {
+  it('activation succeeds with a PIN only, leaving password out of the request entirely', async () => {
+    window.history.pushState({}, '', '/activate?activation_token=a-real-token')
+
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'nope' } })
+      }
+      if (url.endsWith('/api/auth/activate')) {
+        return jsonResponse(200, ADULT_USER)
+      }
+      const dashboard = stubDashboardData(url)
+      if (dashboard) return dashboard
+      throw new Error(`Unexpected request: ${url} ${String(init?.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /activate your account/i })).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'kid@example.com' } })
+    fireEvent.change(screen.getByLabelText(/^pin$/i), { target: { value: '1234' } })
+    fireEvent.change(screen.getByLabelText(/confirm pin/i), { target: { value: '1234' } })
+    fireEvent.click(screen.getByRole('button', { name: /activate/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/signed in as alice/i)).toBeInTheDocument()
+    })
+
+    const [, activateInit] = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith('/api/auth/activate'),
+    ) as [string, RequestInit]
+    expect(JSON.parse(activateInit.body as string)).toEqual({
+      token: 'a-real-token',
+      email: 'kid@example.com',
+      pin: '1234',
+    })
+  })
+
+  it('logs out and returns to the default profile picker', async () => {
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
       if (url.endsWith('/api/auth/me')) {
         return jsonResponse(200, ADULT_USER)
       }
       if (url.endsWith('/api/auth/logout')) {
         return jsonResponse(204, undefined)
+      }
+      if (url.endsWith('/api/auth/profiles')) {
+        return jsonResponse(200, [ADULT_PROFILE])
       }
       const dashboard = stubDashboardData(url)
       if (dashboard) return dashboard
@@ -406,7 +600,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /log out/i }))
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: /choose your profile/i })).toBeInTheDocument()
     })
   })
 

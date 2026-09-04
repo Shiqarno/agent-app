@@ -92,6 +92,15 @@ class InvalidCredentialsError(AppError):
         super().__init__(status_code=401, code="INVALID_CREDENTIALS", message="Invalid credentials")
 
 
+class PinLockedError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=429,
+            code="TOO_MANY_ATTEMPTS",
+            message="Too many incorrect attempts. Try again later.",
+        )
+
+
 class InvalidSetupTokenError(AppError):
     def __init__(self) -> None:
         super().__init__(status_code=401, code="INVALID_SETUP_TOKEN", message="Invalid setup token")
