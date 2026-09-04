@@ -135,7 +135,7 @@ describe('UsersPage', () => {
     renderUsersPage()
 
     await waitFor(() => {
-      expect(screen.getByText(/^status: active$/i)).toBeInTheDocument()
+      expect(screen.getByText('Active')).toBeInTheDocument()
     })
     // Raw enum value is never shown on its own.
     expect(screen.queryByText('ACTIVE')).not.toBeInTheDocument()
@@ -150,7 +150,7 @@ describe('UsersPage', () => {
     renderUsersPage()
 
     await waitFor(() => {
-      expect(screen.getByText(/status: pending activation/i)).toBeInTheDocument()
+      expect(screen.getByText('Pending activation')).toBeInTheDocument()
     })
     expect(screen.queryByText('PENDING')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /generate activation link/i })).toBeInTheDocument()
@@ -363,7 +363,7 @@ describe('UsersPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /generate activation link/i }))
 
     await waitFor(() => {
-      expect(screen.getByText(/status: active/i)).toBeInTheDocument()
+      expect(screen.getByText('Active')).toBeInTheDocument()
     })
     expect(
       screen.queryByRole('button', { name: /generate activation link/i }),

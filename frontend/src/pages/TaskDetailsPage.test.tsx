@@ -380,7 +380,7 @@ describe('TaskDetailsPage', () => {
     renderDetails()
 
     await waitFor(() => {
-      expect(screen.getByText(/status: completed/i)).toBeInTheDocument()
+      expect(screen.getByText('Completed')).toBeInTheDocument()
     })
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
@@ -440,7 +440,7 @@ describe('TaskDetailsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }))
 
     await waitFor(() => {
-      expect(screen.getByText(/status: completed/i)).toBeInTheDocument()
+      expect(screen.getByText('Completed')).toBeInTheDocument()
     })
     expect(executionCallCount).toBe(2)
     expect(balanceCallCount).toBe(1)
@@ -625,7 +625,7 @@ describe('TaskDetailsPage', () => {
 
     resolveCancel(undefined)
     await waitFor(() => {
-      expect(screen.getByText(/status: cancelled/i)).toBeInTheDocument()
+      expect(screen.getByText('Cancelled')).toBeInTheDocument()
     })
   })
 
@@ -657,7 +657,7 @@ describe('TaskDetailsPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Cannot cancel this task')).toBeInTheDocument()
     })
-    expect(screen.getByText(/status: assigned/i)).toBeInTheDocument()
+    expect(screen.getByText('Assigned')).toBeInTheDocument()
   })
 
   // --- Child: own execution / claim -------------------------------------------
@@ -718,7 +718,7 @@ describe('TaskDetailsPage', () => {
     renderDetails()
 
     await waitFor(() => {
-      expect(screen.getByText(/your status: awaiting confirmation/i)).toBeInTheDocument()
+      expect(screen.getByText('Awaiting confirmation')).toBeInTheDocument()
     })
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })

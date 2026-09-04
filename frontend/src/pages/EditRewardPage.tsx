@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getReward, RewardNotFoundError, updateReward, type Reward } from '../api/rewards'
+import ErrorState from '../components/ErrorState'
+import LoadingState from '../components/LoadingState'
 import RewardForm, { type RewardFormSubmitValues } from '../components/RewardForm'
 import { Link, useRouter } from '../router'
 
@@ -57,17 +59,17 @@ function EditRewardPage() {
   return (
     <div>
       <h1>Edit reward</h1>
-      {state.phase === 'loading' && <p>Loading reward...</p>}
+      {state.phase === 'loading' && <LoadingState label="Loading reward..." />}
       {state.phase === 'not-found' && (
         <p role="alert">
           Reward not found. <Link to="/rewards">Back to rewards</Link>
         </p>
       )}
       {state.phase === 'error' && (
-        <p role="alert">
-          {state.message} <button onClick={load}>Retry</button>{' '}
+        <>
+          <ErrorState message={state.message} onRetry={load} />
           <Link to="/rewards">Back to rewards</Link>
-        </p>
+        </>
       )}
       {state.phase === 'loaded' && (
         <RewardForm

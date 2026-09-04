@@ -319,7 +319,7 @@ describe('TasksPage', () => {
         expect(screen.getByRole('heading', { name: /my tasks/i })).toBeInTheDocument()
       })
       expect(screen.getByText('Tidy the room')).toBeInTheDocument()
-      expect(screen.getByText(/status: assigned/i)).toBeInTheDocument()
+      expect(screen.getByText('Assigned')).toBeInTheDocument()
     })
 
     it('lists active unclaimed tasks under Available Tasks with a Claim button', async () => {
@@ -543,7 +543,7 @@ describe('TasksPage', () => {
       renderTasksPage()
 
       await waitFor(() => {
-        expect(screen.getByText(/status: awaiting confirmation/i)).toBeInTheDocument()
+        expect(screen.getByText('Awaiting confirmation')).toBeInTheDocument()
       })
       expect(screen.queryByRole('button', { name: /^confirm$/i })).not.toBeInTheDocument()
     })
@@ -622,7 +622,7 @@ describe('TasksPage', () => {
       fireEvent.click(screen.getByRole('button', { name: /^start$/i }))
 
       await waitFor(() => {
-        expect(screen.getByText(/status: in progress/i)).toBeInTheDocument()
+        expect(screen.getByText('In progress')).toBeInTheDocument()
       })
       expect(executionsCallCount).toBe(2)
     })
@@ -653,7 +653,7 @@ describe('TasksPage', () => {
       fireEvent.click(screen.getByRole('button', { name: /mark ready/i }))
 
       await waitFor(() => {
-        expect(screen.getByText(/status: awaiting confirmation/i)).toBeInTheDocument()
+        expect(screen.getByText('Awaiting confirmation')).toBeInTheDocument()
       })
       expect(executionsCallCount).toBe(2)
     })
@@ -686,7 +686,7 @@ describe('TasksPage', () => {
       await waitFor(() => {
         expect(screen.getByText(/no tasks available to claim/i)).toBeInTheDocument()
       })
-      expect(screen.getByText(/status: assigned/i)).toBeInTheDocument()
+      expect(screen.getByText('Assigned')).toBeInTheDocument()
     })
 
     it('disables the action button while the mutation is in flight', async () => {
@@ -728,7 +728,7 @@ describe('TasksPage', () => {
       resolveStart()
 
       await waitFor(() => {
-        expect(screen.getByText(/status: in progress/i)).toBeInTheDocument()
+        expect(screen.getByText('In progress')).toBeInTheDocument()
       })
     })
 
@@ -761,7 +761,7 @@ describe('TasksPage', () => {
         expect(screen.getByText('Cannot start this task')).toBeInTheDocument()
       })
       // State is unchanged -- still ASSIGNED, Start button still present (retry).
-      expect(screen.getByText(/status: assigned/i)).toBeInTheDocument()
+      expect(screen.getByText('Assigned')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /^start$/i })).toBeEnabled()
     })
   })

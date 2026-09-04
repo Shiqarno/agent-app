@@ -3,6 +3,9 @@ import { getBalance } from '../api/points'
 import { confirmTaskExecution, getTaskExecutions, getTasks, type Task, type TaskExecution } from '../api/tasks'
 import { getUsers, type UserSummary } from '../api/users'
 import Avatar from '../components/Avatar'
+import ErrorState from '../components/ErrorState'
+import LoadingState from '../components/LoadingState'
+import PageHeader from '../components/PageHeader'
 import { Link } from '../router'
 
 type SectionState<T> =
@@ -105,14 +108,6 @@ function sortRecent(executions: TaskExecution[]): TaskExecution[] {
   })
 }
 
-function ErrorRetry({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <p role="alert">
-      {message} <button onClick={onRetry}>Retry</button>
-    </p>
-  )
-}
-
 function PendingTasksSection({
   executionsState,
   reloadExecutions,
@@ -157,9 +152,9 @@ function PendingTasksSection({
   return (
     <section aria-labelledby="pending-tasks-heading">
       <h2 id="pending-tasks-heading">Tasks requiring attention</h2>
-      {executionsState.phase === 'loading' && <p>Loading...</p>}
+      {executionsState.phase === 'loading' && <LoadingState />}
       {executionsState.phase === 'error' && (
-        <ErrorRetry message={executionsState.message} onRetry={reloadExecutions} />
+        <ErrorState message={executionsState.message} onRetry={reloadExecutions} />
       )}
       {executionsState.phase === 'loaded' &&
         (() => {
@@ -208,9 +203,9 @@ function RecentTasksSection({
   return (
     <section aria-labelledby="recent-tasks-heading">
       <h2 id="recent-tasks-heading">Recent Tasks</h2>
-      {executionsState.phase === 'loading' && <p>Loading...</p>}
+      {executionsState.phase === 'loading' && <LoadingState />}
       {executionsState.phase === 'error' && (
-        <ErrorRetry message={executionsState.message} onRetry={reloadExecutions} />
+        <ErrorState message={executionsState.message} onRetry={reloadExecutions} />
       )}
       {executionsState.phase === 'loaded' &&
         (executionsState.data.length === 0 ? (
@@ -244,9 +239,9 @@ function PointsSummary({
   return (
     <section aria-labelledby="points-heading">
       <h2 id="points-heading">Your points</h2>
-      {balanceState.phase === 'loading' && <p>Loading...</p>}
+      {balanceState.phase === 'loading' && <LoadingState />}
       {balanceState.phase === 'error' && (
-        <ErrorRetry message={balanceState.message} onRetry={reloadBalance} />
+        <ErrorState message={balanceState.message} onRetry={reloadBalance} />
       )}
       {balanceState.phase === 'loaded' && <p>{balanceState.data}</p>}
       <Link to="/points">View history →</Link>
@@ -273,7 +268,7 @@ function DashboardPage() {
 
   return (
     <div>
-      <h1>Dashboard</h1>
+      <PageHeader title="Dashboard" />
       <div className="dashboard-grid">
         <PendingTasksSection
           executionsState={executions.state}

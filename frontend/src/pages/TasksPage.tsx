@@ -10,6 +10,11 @@ import {
   type TaskExecution,
   type TaskExecutionStatus,
 } from '../api/tasks'
+import Badge from '../components/Badge'
+import EmptyState from '../components/EmptyState'
+import ErrorState from '../components/ErrorState'
+import LoadingState from '../components/LoadingState'
+import PageHeader from '../components/PageHeader'
 import { Link } from '../router'
 
 type ListState =
@@ -31,6 +36,14 @@ const STATUS_LABELS: Record<TaskExecutionStatus, string> = {
   AWAITING_CONFIRMATION: 'Awaiting confirmation',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
+}
+
+const STATUS_TONES: Record<TaskExecutionStatus, 'neutral' | 'info' | 'warning' | 'success' | 'error'> = {
+  ASSIGNED: 'neutral',
+  IN_PROGRESS: 'info',
+  AWAITING_CONFIRMATION: 'warning',
+  COMPLETED: 'success',
+  CANCELLED: 'error',
 }
 
 const EXECUTION_ACTION_LABELS: Record<'start' | 'ready', { idle: string; busy: string }> = {
@@ -91,12 +104,14 @@ function AdultTaskList({ tasks }: { tasks: Task[] }) {
       </div>
 
       {tasks.length === 0 && (
-        <div>
-          <p>No tasks yet.</p>
-          <Link to="/tasks/new?from=tasks">Create your first task</Link>
-        </div>
+        <EmptyState
+          message="No tasks yet."
+          action={<Link to="/tasks/new?from=tasks">Create your first task</Link>}
+        />
       )}
-      {tasks.length > 0 && visibleTasks.length === 0 && <p>No tasks match this filter.</p>}
+      {tasks.length > 0 && visibleTasks.length === 0 && (
+        <EmptyState message="No tasks match this filter." />
+      )}
       {visibleTasks.length > 0 && (
         <ul className="task-list">
           {visibleTasks.map((task) => (
@@ -104,7 +119,11 @@ function AdultTaskList({ tasks }: { tasks: Task[] }) {
               <p className="task-card-title">{task.title}</p>
               {task.description && <p>{task.description}</p>}
               <p>Reward points: {task.reward_points}</p>
-              <p>{task.is_active ? 'Active' : 'Inactive'}</p>
+              <p>
+                <Badge tone={task.is_active ? 'success' : 'neutral'}>
+                  {task.is_active ? 'Active' : 'Inactive'}
+                </Badge>
+              </p>
               <p>Created: {new Date(task.created_at).toLocaleString()}</p>
               <Link to={`/tasks/${task.id}`}>Details</Link>
             </li>
@@ -183,7 +202,7 @@ function ChildTaskLists({
     <div>
       <section aria-labelledby="my-tasks-heading">
         <h2 id="my-tasks-heading">My Tasks</h2>
-        {myExecutions.length === 0 && <p>You haven&apos;t claimed any tasks yet.</p>}
+        {myExecutions.length === 0 && <EmptyState message="You haven't claimed any tasks yet." />}
         {myExecutions.length > 0 && (
           <ul className="task-list">
             {myExecutions.map((execution) => {
@@ -198,7 +217,12 @@ function ChildTaskLists({
                 <li key={execution.id} className="task-card">
                   <p className="task-card-title">{task?.title ?? execution.task_id}</p>
                   <p>Points: {execution.reward_points}</p>
-                  <p>Status: {STATUS_LABELS[execution.status]}</p>
+                  <p>
+                    Status:{' '}
+                    <Badge tone={STATUS_TONES[execution.status]}>
+                      {STATUS_LABELS[execution.status]}
+                    </Badge>
+                  </p>
                   <p>Created: {new Date(execution.created_at).toLocaleString()}</p>
                   <Link to={`/tasks/${execution.task_id}`}>Details</Link>
                   {action && (
@@ -221,7 +245,9 @@ function ChildTaskLists({
 
       <section aria-labelledby="available-tasks-heading">
         <h2 id="available-tasks-heading">Available Tasks</h2>
-        {availableTasks.length === 0 && <p>No tasks available to claim right now.</p>}
+        {availableTasks.length === 0 && (
+          <EmptyState message="No tasks available to claim right now." />
+        )}
         {availableTasks.length > 0 && (
           <ul className="task-list">
             {availableTasks.map((task) => (
@@ -272,15 +298,15 @@ function TasksPage() {
 
   return (
     <div>
-      <h1>Tasks</h1>
-      {currentUser?.role === 'adult' && <Link to="/tasks/new?from=tasks">+ Create task</Link>}
+      <PageHeader
+        title="Tasks"
+        action={
+          currentUser?.role === 'adult' && <Link to="/tasks/new?from=tasks">+ Create task</Link>
+        }
+      />
 
-      {state.phase === 'loading' && <p>Loading tasks...</p>}
-      {state.phase === 'error' && (
-        <p role="alert">
-          {state.message} <button onClick={loadTasks}>Retry</button>
-        </p>
-      )}
+      {state.phase === 'loading' && <LoadingState label="Loading tasks..." />}
+      {state.phase === 'error' && <ErrorState message={state.message} onRetry={loadTasks} />}
       {state.phase === 'loaded' && currentUser?.role === 'adult' && (
         <AdultTaskList tasks={state.tasks} />
       )}

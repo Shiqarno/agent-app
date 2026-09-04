@@ -18,6 +18,10 @@ import {
 } from '../api/tasks'
 import { getUsers, type UserSummary } from '../api/users'
 import Avatar from '../components/Avatar'
+import Badge from '../components/Badge'
+import EmptyState from '../components/EmptyState'
+import ErrorState from '../components/ErrorState'
+import LoadingState from '../components/LoadingState'
 import { Link } from '../router'
 
 type TaskState =
@@ -34,6 +38,14 @@ const STATUS_LABELS: Record<TaskExecutionStatus, string> = {
   AWAITING_CONFIRMATION: 'Awaiting confirmation',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
+}
+
+const STATUS_TONES: Record<TaskExecutionStatus, 'neutral' | 'info' | 'warning' | 'success' | 'error'> = {
+  ASSIGNED: 'neutral',
+  IN_PROGRESS: 'info',
+  AWAITING_CONFIRMATION: 'warning',
+  COMPLETED: 'success',
+  CANCELLED: 'error',
 }
 
 // A terminal (COMPLETED/CANCELLED) execution of this Task must never block
@@ -151,7 +163,9 @@ function ExecutionRow({
       <p>
         Assignee: <UserIdentity usersById={usersById} userId={execution.user_id} />
       </p>
-      <p>Status: {STATUS_LABELS[execution.status]}</p>
+      <p>
+        Status: <Badge tone={STATUS_TONES[execution.status]}>{STATUS_LABELS[execution.status]}</Badge>
+      </p>
       <p>Points: {execution.reward_points}</p>
       <p>Created: {new Date(execution.created_at).toLocaleString()}</p>
 
@@ -350,16 +364,14 @@ function TaskDetailsPage() {
       <Link to="/tasks">&larr; Back to tasks</Link>
       <h1>Task Details</h1>
 
-      {taskState.phase === 'loading' && <p>Loading task...</p>}
+      {taskState.phase === 'loading' && <LoadingState label="Loading task..." />}
       {taskState.phase === 'not-found' && (
         <p role="alert">
           Task not found. <Link to="/tasks">Back to tasks</Link>
         </p>
       )}
       {taskState.phase === 'error' && (
-        <p role="alert">
-          {taskState.message} <button onClick={loadTask}>Retry</button>
-        </p>
+        <ErrorState message={taskState.message} onRetry={loadTask} />
       )}
 
       {taskState.phase === 'loaded' &&
@@ -372,11 +384,13 @@ function TaskDetailsPage() {
               {task.description && <p>{task.description}</p>}
               <p>Reward points: {task.reward_points}</p>
               <p>
-                {task.is_active
-                  ? 'Available for claim'
-                  : isCreator
-                    ? 'Not currently available for claim'
-                    : 'Not currently available'}
+                <Badge tone={task.is_active ? 'success' : 'neutral'}>
+                  {task.is_active
+                    ? 'Available for claim'
+                    : isCreator
+                      ? 'Not currently available for claim'
+                      : 'Not currently available'}
+                </Badge>
               </p>
               <p>
                 Creator: <UserIdentity usersById={usersById} userId={task.created_by} />
@@ -398,7 +412,9 @@ function TaskDetailsPage() {
                   )}
 
                   <h3>Executions</h3>
-                  {executions.length === 0 && <p>No one has claimed this task yet.</p>}
+                  {executions.length === 0 && (
+                    <EmptyState message="No one has claimed this task yet." />
+                  )}
                   {executions.length > 0 && (
                     <ul>
                       {executions.map((execution) => (
@@ -418,7 +434,12 @@ function TaskDetailsPage() {
                 <div>
                   {ownExecution && (
                     <div>
-                      <p>Your status: {STATUS_LABELS[ownExecution.status]}</p>
+                      <p>
+                        Your status:{' '}
+                        <Badge tone={STATUS_TONES[ownExecution.status]}>
+                          {STATUS_LABELS[ownExecution.status]}
+                        </Badge>
+                      </p>
                       {ownExecution.status === 'ASSIGNED' && (
                         <button
                           onClick={() => handleOwnAction(ownExecution.id, 'start')}

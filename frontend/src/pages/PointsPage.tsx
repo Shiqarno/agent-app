@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getBalance, getHistory, type PointTransaction } from '../api/points'
 import { getTaskExecutions, getTasks, type Task } from '../api/tasks'
+import EmptyState from '../components/EmptyState'
+import ErrorState from '../components/ErrorState'
+import LoadingState from '../components/LoadingState'
+import PageHeader from '../components/PageHeader'
 
 type BalanceState =
   | { phase: 'loading' }
@@ -91,29 +95,25 @@ function PointsPage() {
 
   return (
     <div>
-      <h1>Points</h1>
+      <PageHeader title="Points" />
 
       <section aria-labelledby="balance-heading">
         <h2 id="balance-heading">Current balance</h2>
-        {balanceState.phase === 'loading' && <p>Loading balance...</p>}
+        {balanceState.phase === 'loading' && <LoadingState label="Loading balance..." />}
         {balanceState.phase === 'error' && (
-          <p role="alert">
-            {balanceState.message} <button onClick={loadBalance}>Retry</button>
-          </p>
+          <ErrorState message={balanceState.message} onRetry={loadBalance} />
         )}
         {balanceState.phase === 'loaded' && <p>{balanceState.balance} points</p>}
       </section>
 
       <section aria-labelledby="history-heading">
         <h2 id="history-heading">History</h2>
-        {historyState.phase === 'loading' && <p>Loading history...</p>}
+        {historyState.phase === 'loading' && <LoadingState label="Loading history..." />}
         {historyState.phase === 'error' && (
-          <p role="alert">
-            {historyState.message} <button onClick={loadHistory}>Retry</button>
-          </p>
+          <ErrorState message={historyState.message} onRetry={loadHistory} />
         )}
         {historyState.phase === 'loaded' && historyState.transactions.length === 0 && (
-          <p>No points history yet.</p>
+          <EmptyState message="No points history yet." />
         )}
         {historyState.phase === 'loaded' && historyState.transactions.length > 0 && (
           // The backend already orders history by created_at desc, id desc

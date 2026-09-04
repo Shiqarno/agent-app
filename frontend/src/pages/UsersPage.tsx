@@ -8,6 +8,11 @@ import {
   type UserSummary,
 } from '../api/users'
 import Avatar from '../components/Avatar'
+import Badge from '../components/Badge'
+import EmptyState from '../components/EmptyState'
+import ErrorState from '../components/ErrorState'
+import LoadingState from '../components/LoadingState'
+import PageHeader from '../components/PageHeader'
 import { Link } from '../router'
 
 type ListState =
@@ -94,16 +99,13 @@ function UsersPage() {
 
   return (
     <div>
-      <h1>Users</h1>
-      <Link to="/users/new">Add user</Link>
+      <PageHeader title="Users" action={<Link to="/users/new">Add user</Link>} />
 
-      {state.phase === 'loading' && <p>Loading users...</p>}
-      {state.phase === 'error' && (
-        <p role="alert">
-          {state.message} <button onClick={loadUsers}>Retry</button>
-        </p>
+      {state.phase === 'loading' && <LoadingState label="Loading users..." />}
+      {state.phase === 'error' && <ErrorState message={state.message} onRetry={loadUsers} />}
+      {state.phase === 'loaded' && state.users.length === 0 && (
+        <EmptyState message="No users yet." />
       )}
-      {state.phase === 'loaded' && state.users.length === 0 && <p>No users yet.</p>}
       {state.phase === 'loaded' && state.users.length > 0 && (
         <ul className="user-list">
           {state.users.map((user) => {
@@ -113,7 +115,12 @@ function UsersPage() {
                 <Avatar avatar_id={user.avatar_id} size="sm" alt={`${user.name}'s avatar`} />
                 <p className="user-card-title">{user.name}</p>
                 <p>Role: {user.role}</p>
-                <p>Status: {ACTIVATION_STATUS_LABELS[user.activation_status]}</p>
+                <p>
+                  Status:{' '}
+                  <Badge tone={user.activation_status === 'ACTIVE' ? 'success' : 'warning'}>
+                    {ACTIVATION_STATUS_LABELS[user.activation_status]}
+                  </Badge>
+                </p>
 
                 {user.activation_status === 'PENDING' && (
                   <div>

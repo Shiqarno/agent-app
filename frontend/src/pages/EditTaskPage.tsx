@@ -1,5 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { ApiError, getTask, updateTask, type Task, type TaskUpdateInput } from '../api/tasks'
+import ErrorState from '../components/ErrorState'
+import LoadingState from '../components/LoadingState'
 import { Link, useRouter } from '../router'
 
 type LoadState =
@@ -95,17 +97,13 @@ function EditTaskPage() {
     <div>
       <h1>Edit task</h1>
 
-      {state.phase === 'loading' && <p>Loading task...</p>}
+      {state.phase === 'loading' && <LoadingState label="Loading task..." />}
       {state.phase === 'not-found' && (
         <p role="alert">
           Task not found. <Link to="/tasks">Back to tasks</Link>
         </p>
       )}
-      {state.phase === 'error' && (
-        <p role="alert">
-          {state.message} <button onClick={load}>Retry</button>
-        </p>
-      )}
+      {state.phase === 'error' && <ErrorState message={state.message} onRetry={load} />}
       {state.phase === 'loaded' && (
         <form onSubmit={handleSubmit}>
           <div>

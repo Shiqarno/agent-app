@@ -2,6 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { me } from '../api/auth'
 import { getBalance, getHistory } from '../api/points'
 import { getRewards, redeemReward, type Reward } from '../api/rewards'
+import EmptyState from '../components/EmptyState'
+import ErrorState from '../components/ErrorState'
+import LoadingState from '../components/LoadingState'
+import PageHeader from '../components/PageHeader'
 import { Link } from '../router'
 
 type ListState<T> =
@@ -103,33 +107,32 @@ function RewardsPage() {
 
   return (
     <div>
-      <h1>Rewards</h1>
+      <PageHeader
+        title="Rewards"
+        action={currentRole === 'adult' && <Link to="/rewards/new">+ Create reward</Link>}
+      >
+        {balanceState.phase !== 'error' && (
+          <p className="reward-balance">
+            {balanceState.phase === 'loading' && 'Loading balance...'}
+            {balanceState.phase === 'loaded' && `Your balance: ${balanceState.data} points`}
+          </p>
+        )}
+        {balanceState.phase === 'error' && (
+          <ErrorState message={balanceState.message} onRetry={loadBalance} />
+        )}
+      </PageHeader>
 
-      {balanceState.phase !== 'error' && (
-        <p className="reward-balance">
-          {balanceState.phase === 'loading' && 'Loading balance...'}
-          {balanceState.phase === 'loaded' && `Your balance: ${balanceState.data} points`}
-        </p>
-      )}
-      {balanceState.phase === 'error' && (
-        <p className="reward-balance" role="alert">
-          {balanceState.message} <button onClick={loadBalance}>Retry</button>
-        </p>
-      )}
-
-      {currentRole === 'adult' && <Link to="/rewards/new">+ Create reward</Link>}
-
-      {rewardsState.phase === 'loading' && <p>Loading rewards...</p>}
+      {rewardsState.phase === 'loading' && <LoadingState label="Loading rewards..." />}
       {rewardsState.phase === 'error' && (
-        <p role="alert">
-          {rewardsState.message} <button onClick={loadRewards}>Retry</button>
-        </p>
+        <ErrorState message={rewardsState.message} onRetry={loadRewards} />
       )}
       {rewardsState.phase === 'loaded' && rewardsState.data.length === 0 && (
-        <div>
-          <p>No rewards yet.</p>
-          {currentRole === 'adult' && <Link to="/rewards/new">Create your first reward</Link>}
-        </div>
+        <EmptyState
+          message="No rewards yet."
+          action={
+            currentRole === 'adult' && <Link to="/rewards/new">Create your first reward</Link>
+          }
+        />
       )}
       {rewardsState.phase === 'loaded' && rewardsState.data.length > 0 && (
         // Rendered in the order the backend returns (name asc, id asc,

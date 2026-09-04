@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { CurrentUser } from './api/auth'
 import Avatar from './components/Avatar'
+import Button from './components/Button'
 import { Link, useRouter } from './router'
 
 const ADULT_NAV_ITEMS: { to: string; label: string }[] = [
@@ -34,6 +35,17 @@ function AppShell({
   return (
     <div>
       <header>
+        <div className="app-identity">
+          <Link to="/profile" aria-label="Your profile" className="app-identity-avatar-link">
+            <Avatar avatar_id={user.avatar_id} size="sm" alt="Your avatar" />
+          </Link>
+          <span className="app-identity-name">
+            Signed in as {user.name} ({user.role})
+          </span>
+          <Button variant="ghost" onClick={onLogout}>
+            Log out
+          </Button>
+        </div>
         <nav className="app-nav" aria-label="Primary">
           <ul>
             {navItems.map((item) => (
@@ -45,13 +57,6 @@ function AppShell({
             ))}
           </ul>
         </nav>
-        <p>
-          <Link to="/profile" aria-label="Your profile">
-            <Avatar avatar_id={user.avatar_id} size="sm" alt="Your avatar" />
-          </Link>
-          Signed in as {user.name} ({user.role})
-          <button onClick={onLogout}>Log out</button>
-        </p>
       </header>
       <main className="app-main">{children}</main>
     </div>

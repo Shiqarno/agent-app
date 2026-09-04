@@ -758,6 +758,53 @@ describe('App', () => {
     )
   })
 
+  it('marks the current destination as the active navigation link', async () => {
+    window.history.pushState({}, '', '/dashboard')
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(200, ADULT_USER)
+      }
+      const dashboard = stubDashboardData(url)
+      if (dashboard) return dashboard
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute(
+        'aria-current',
+        'page',
+      )
+    })
+    expect(screen.getByRole('link', { name: 'Tasks' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('renders the primary navigation with the responsive nav treatment', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(200, ADULT_USER)
+      }
+      const dashboard = stubDashboardData(url)
+      if (dashboard) return dashboard
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('navigation')).toBeInTheDocument()
+    })
+    // The single nav landmark carries the class that switches between a
+    // fixed bottom tab bar (phone) and a horizontal top bar (tablet+) via
+    // CSS media queries -- jsdom does not compute real layout/visibility,
+    // so this asserts the responsive hook is present rather than actual
+    // rendered position at a given viewport size.
+    expect(screen.getByRole('navigation')).toHaveClass('app-nav')
+  })
+
   it('navigating to /profile for an Adult renders ProfilePage', async () => {
     const fetchMock = vi.fn((url: string) => {
       if (url.endsWith('/api/auth/me')) {
