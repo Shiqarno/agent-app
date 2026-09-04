@@ -379,6 +379,117 @@ describe('TasksPage', () => {
       })
     })
 
+    // --- Reclaiming after a terminal execution (regression) --------------
+    //
+    // A Child's own COMPLETED/CANCELLED execution of a Task must never hide
+    // that Task from Available Tasks once it's active again -- only an
+    // *open* execution of theirs does. See TasksPage.tsx's
+    // OPEN_EXECUTION_STATUSES.
+
+    it('an active task with a COMPLETED execution for this Child is available again', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string) => {
+          if (url.endsWith('/api/tasks')) return jsonResponse(200, [task()])
+          return (
+            baseHandlers(url, CHILD, [execution({ status: 'COMPLETED' })]) ??
+            Promise.reject(new Error(`Unexpected request: ${url}`))
+          )
+        }),
+      )
+
+      renderTasksPage()
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /available tasks/i })).toBeInTheDocument()
+      })
+      const availableSection = screen
+        .getByRole('heading', { name: /available tasks/i })
+        .closest('section') as HTMLElement
+      expect(within(availableSection).getByText('Tidy the room')).toBeInTheDocument()
+      expect(within(availableSection).getByRole('button', { name: /^claim$/i })).toBeInTheDocument()
+    })
+
+    it('an active task with a CANCELLED execution for this Child is available again', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string) => {
+          if (url.endsWith('/api/tasks')) return jsonResponse(200, [task()])
+          return (
+            baseHandlers(url, CHILD, [execution({ status: 'CANCELLED' })]) ??
+            Promise.reject(new Error(`Unexpected request: ${url}`))
+          )
+        }),
+      )
+
+      renderTasksPage()
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /available tasks/i })).toBeInTheDocument()
+      })
+      const availableSection = screen
+        .getByRole('heading', { name: /available tasks/i })
+        .closest('section') as HTMLElement
+      expect(within(availableSection).getByText('Tidy the room')).toBeInTheDocument()
+      expect(within(availableSection).getByRole('button', { name: /^claim$/i })).toBeInTheDocument()
+    })
+
+    it('an active task with an IN_PROGRESS execution for this Child is not available', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string) => {
+          if (url.endsWith('/api/tasks')) return jsonResponse(200, [task()])
+          return (
+            baseHandlers(url, CHILD, [execution({ status: 'IN_PROGRESS' })]) ??
+            Promise.reject(new Error(`Unexpected request: ${url}`))
+          )
+        }),
+      )
+
+      renderTasksPage()
+
+      await waitFor(() => {
+        expect(screen.getByText(/no tasks available to claim/i)).toBeInTheDocument()
+      })
+    })
+
+    it('reclaim regression: claim, complete, reactivate, see it available, claim again', async () => {
+      // Models the full reported scenario end to end: after the Task is
+      // reactivated, the Child's prior COMPLETED execution must not stop
+      // them from seeing and using the Claim button again.
+      let claimCallCount = 0
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string, init?: RequestInit) => {
+          if (url.endsWith('/api/tasks')) return jsonResponse(200, [task({ is_active: true })])
+          if (url.endsWith('/api/tasks/task-1/claim') && init?.method === 'POST') {
+            claimCallCount += 1
+            return jsonResponse(201, execution({ id: 'exec-2', status: 'ASSIGNED' }))
+          }
+          return (
+            baseHandlers(url, CHILD, [execution({ status: 'COMPLETED' })]) ??
+            Promise.reject(new Error(`Unexpected request: ${url}`))
+          )
+        }),
+      )
+
+      renderTasksPage()
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /available tasks/i })).toBeInTheDocument()
+      })
+      const availableSection = screen
+        .getByRole('heading', { name: /available tasks/i })
+        .closest('section') as HTMLElement
+      const claimButton = within(availableSection).getByRole('button', { name: /^claim$/i })
+
+      fireEvent.click(claimButton)
+
+      await waitFor(() => {
+        expect(claimCallCount).toBe(1)
+      })
+    })
+
     it('shows Start only for an ASSIGNED execution', async () => {
       vi.stubGlobal(
         'fetch',
@@ -438,6 +549,11 @@ describe('TasksPage', () => {
     })
 
     it('completed executions have no lifecycle action', async () => {
+      // A COMPLETED execution's Task stays active (Issue #19: a terminal
+      // execution never blocks reclaiming), so "Tidy the room" legitimately
+      // appears twice on the page -- once as history under My Tasks, once
+      // as claimable again under Available Tasks. This test only asserts
+      // on the My Tasks card, scoped via the My Tasks section.
       vi.stubGlobal(
         'fetch',
         vi.fn((url: string) => {
@@ -452,9 +568,12 @@ describe('TasksPage', () => {
       renderTasksPage()
 
       await waitFor(() => {
-        expect(screen.getByText('Tidy the room')).toBeInTheDocument()
+        expect(screen.getByRole('heading', { name: /my tasks/i })).toBeInTheDocument()
       })
-      const item = screen.getByText('Tidy the room').closest('li') as HTMLElement
+      const myTasksSection = screen.getByRole('heading', { name: /my tasks/i }).closest('section')
+      const item = within(myTasksSection as HTMLElement)
+        .getByText('Tidy the room')
+        .closest('li') as HTMLElement
       expect(within(item).queryByRole('button')).not.toBeInTheDocument()
     })
 

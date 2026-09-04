@@ -744,6 +744,26 @@ describe('TaskDetailsPage', () => {
     })
   })
 
+  it('Child with only a COMPLETED execution on a reactivated task sees a Claim button, not a stale status', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.endsWith('/api/tasks/task-1')) return jsonResponse(200, task({ is_active: true }))
+        return (
+          baseHandlers(url, CHILD, [execution({ status: 'COMPLETED', user_id: CHILD.id })]) ??
+          Promise.reject(new Error(`Unexpected: ${url}`))
+        )
+      }),
+    )
+
+    renderDetails()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /claim task/i })).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/your status/i)).not.toBeInTheDocument()
+  })
+
   it('Child with no execution on an inactive task sees no Claim button', async () => {
     vi.stubGlobal(
       'fetch',

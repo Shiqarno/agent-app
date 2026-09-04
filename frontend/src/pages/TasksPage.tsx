@@ -38,6 +38,17 @@ const EXECUTION_ACTION_LABELS: Record<'start' | 'ready', { idle: string; busy: s
   ready: { idle: 'Mark ready', busy: 'Marking ready...' },
 }
 
+// A Task with only terminal (COMPLETED/CANCELLED) executions for this Child
+// is still claimable -- the backend allows unlimited historical executions
+// per (task, user) and only blocks a new claim while one of these open
+// statuses already exists (the same set the DB's partial unique index
+// protects). Only an *open* execution should hide a Task from Available.
+const OPEN_EXECUTION_STATUSES: ReadonlySet<TaskExecutionStatus> = new Set([
+  'ASSIGNED',
+  'IN_PROGRESS',
+  'AWAITING_CONFIRMATION',
+])
+
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
@@ -117,9 +128,13 @@ function ChildTaskLists({
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const tasksById = Object.fromEntries(tasks.map((task) => [task.id, task]))
-  const claimedTaskIds = new Set(executions.map((execution) => execution.task_id))
+  const openExecutionTaskIds = new Set(
+    executions
+      .filter((execution) => OPEN_EXECUTION_STATUSES.has(execution.status))
+      .map((execution) => execution.task_id),
+  )
   const availableTasks = sortNewestFirst(
-    tasks.filter((task) => task.is_active && !claimedTaskIds.has(task.id)),
+    tasks.filter((task) => task.is_active && !openExecutionTaskIds.has(task.id)),
   )
   const myExecutions = sortNewestFirst(executions)
 

@@ -35,6 +35,16 @@ const STATUS_LABELS: Record<TaskExecutionStatus, string> = {
   CANCELLED: 'Cancelled',
 }
 
+// A terminal (COMPLETED/CANCELLED) execution of this Task must never block
+// the Child from claiming it again once it's active -- only a currently
+// open execution (the same set the DB's partial unique index protects)
+// means they already have a claim in flight.
+const OPEN_EXECUTION_STATUSES: ReadonlySet<TaskExecutionStatus> = new Set([
+  'ASSIGNED',
+  'IN_PROGRESS',
+  'AWAITING_CONFIRMATION',
+])
+
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
@@ -307,7 +317,11 @@ function TaskDetailsPage() {
     taskState.task.created_by === currentUser.id
   const ownExecution =
     currentUser !== null
-      ? (executions.find((execution) => execution.user_id === currentUser.id) ?? null)
+      ? (executions.find(
+          (execution) =>
+            execution.user_id === currentUser.id &&
+            OPEN_EXECUTION_STATUSES.has(execution.status),
+        ) ?? null)
       : null
 
   return (
