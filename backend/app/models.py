@@ -2,7 +2,17 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -60,6 +70,17 @@ class Task(Base):
     """A reusable task *definition* (Issue #18). Carries no executor and no
     lifecycle status of its own -- those belong to TaskExecution, of which a
     Task may have any number (including zero).
+
+    `is_active` (Issue #19) is a single self-claim *slot*, not a general
+    "is this task usable" flag: `True` means exactly one Child may currently
+    self-claim this Task; a successful claim atomically flips it back to
+    `False`, so at most one self-claim can ever be in flight for a Task at a
+    time. It is otherwise independent of any TaskExecution's own lifecycle
+    -- reactivating a Task never touches existing executions, and an Adult
+    may reactivate it while an earlier execution is still in progress, which
+    is exactly how the same Task becomes claimable by another Child (or the
+    same Child again, once their prior execution has gone terminal) without
+    ever mutating that earlier execution.
     """
 
     __tablename__ = "tasks"
@@ -81,11 +102,27 @@ class TaskExecution(Base):
     that used to live directly on Task, plus an immutable reward_points
     snapshot taken from the Task at creation time -- later changes to
     Task.reward_points never affect an existing execution.
+
+    Invariant (Issue #19): at most one *non-terminal* execution may exist
+    per (task_id, user_id) at a time, enforced by the partial unique index
+    below rather than a plain UniqueConstraint. A User may accumulate any
+    number of COMPLETED/CANCELLED (terminal) executions of the same Task
+    over time -- each self-claim, or reassignment, of a Task they've
+    already finished (or been taken off of) starts a brand new execution
+    row rather than reopening the old one -- but can never hold two
+    open (ASSIGNED/IN_PROGRESS/AWAITING_CONFIRMATION) executions of the
+    same Task simultaneously.
     """
 
     __tablename__ = "task_executions"
     __table_args__ = (
-        UniqueConstraint("task_id", "user_id", name="uq_task_executions_task_id_user_id"),
+        Index(
+            "uq_task_executions_task_id_user_id_open",
+            "task_id",
+            "user_id",
+            unique=True,
+            postgresql_where=text("status IN ('ASSIGNED', 'IN_PROGRESS', 'AWAITING_CONFIRMATION')"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

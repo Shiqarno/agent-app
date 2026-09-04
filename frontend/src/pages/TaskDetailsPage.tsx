@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { me } from '../api/auth'
 import { getBalance } from '../api/points'
 import {
+  activateTask,
   ApiError,
   cancelTaskExecution,
   claimTask,
@@ -203,6 +204,8 @@ function TaskDetailsPage() {
   const [ownActionError, setOwnActionError] = useState<string | null>(null)
   const [claimPending, setClaimPending] = useState(false)
   const [claimError, setClaimError] = useState<string | null>(null)
+  const [activatePending, setActivatePending] = useState(false)
+  const [activateError, setActivateError] = useState<string | null>(null)
 
   const loadTask = useCallback(() => {
     setTaskState({ phase: 'loading' })
@@ -268,6 +271,19 @@ function TaskDetailsPage() {
     }
   }
 
+  async function handleActivate() {
+    setActivatePending(true)
+    setActivateError(null)
+    try {
+      await activateTask(taskId)
+      refreshAfterMutation()
+    } catch (error) {
+      setActivateError(errorMessage(error, 'Could not activate this task.'))
+    } finally {
+      setActivatePending(false)
+    }
+  }
+
   async function handleOwnAction(executionId: string, action: 'start' | 'ready') {
     setOwnActionPending(true)
     setOwnActionError(null)
@@ -320,7 +336,13 @@ function TaskDetailsPage() {
               <h2>{task.title}</h2>
               {task.description && <p>{task.description}</p>}
               <p>Reward points: {task.reward_points}</p>
-              <p>{task.is_active ? 'Active' : 'Inactive'}</p>
+              <p>
+                {task.is_active
+                  ? 'Available for claim'
+                  : isCreator
+                    ? 'Not currently available for claim'
+                    : 'Not currently available'}
+              </p>
               <p>Creator: {userLabel(usersById, task.created_by)}</p>
               <p>Created: {new Date(task.created_at).toLocaleString()}</p>
               <p>Updated: {new Date(task.updated_at).toLocaleString()}</p>
@@ -328,6 +350,15 @@ function TaskDetailsPage() {
               {isCreator && (
                 <div>
                   <Link to={`/tasks/${task.id}/edit`}>Edit</Link>
+
+                  {!task.is_active && (
+                    <div>
+                      <button onClick={handleActivate} disabled={activatePending}>
+                        {activatePending ? 'Activating...' : 'Activate'}
+                      </button>
+                      {activateError && <p role="alert">{activateError}</p>}
+                    </div>
+                  )}
 
                   <h3>Executions</h3>
                   {executions.length === 0 && <p>No one has claimed this task yet.</p>}

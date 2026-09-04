@@ -406,9 +406,14 @@ def test_reassign_to_a_user_who_already_has_an_execution_is_rejected(
     child = make_user(CHILD)
     other_child = make_user(CHILD, "Other Child")
     execution = create_execution(client, adult, child)
-    # other_child claims the same task independently, so they already have
-    # an execution for it -- reassigning `execution` onto them would violate
-    # the UNIQUE(task_id, user_id) constraint.
+    # Direct assignment leaves the Task inactive (its one self-claim slot was
+    # filled at creation), so it must be reactivated before other_child can
+    # independently claim it and already have a non-terminal execution of
+    # their own -- reassigning `execution` onto them would then violate the
+    # "at most one non-terminal execution per (task, user)" constraint.
+    client.patch(
+        f"/api/tasks/{execution['task_id']}", json={"is_active": True}, headers=auth(adult)
+    )
     client.post(f"/api/tasks/{execution['task_id']}/claim", headers=auth(other_child))
 
     response = client.post(
@@ -688,6 +693,9 @@ def test_two_children_completing_the_same_task_produce_two_independent_transacti
         "/api/tasks", json={"title": "Shared task", "reward_points": 12}, headers=auth(adult)
     ).json()
     execution_a = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child_a)).json()
+    # Claiming closes the Task's one self-claim slot; it must be reopened by
+    # the creator before a second Child can independently claim it too.
+    client.post(f"/api/tasks/{task['id']}/activate", headers=auth(adult))
     execution_b = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child_b)).json()
 
     for execution, child in ((execution_a, child_a), (execution_b, child_b)):

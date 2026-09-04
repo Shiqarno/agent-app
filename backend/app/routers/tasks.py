@@ -85,7 +85,10 @@ def create_task(
         title=payload.title,
         description=payload.description,
         reward_points=payload.reward_points,
-        is_active=True,
+        # A directly-assigned Task's one self-claim slot is filled by the
+        # execution created below, so it must not also be open for a Child
+        # to self-claim it (Issue #19's single-slot invariant).
+        is_active=payload.assigned_to is None,
         created_by=user.id,
     )
     db.add(task)
@@ -139,6 +142,14 @@ def update_task(
 def claim_task(
     task_id: uuid.UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> TaskExecution:
+    """`is_active` is a single self-claim slot (Issue #19): a successful
+    claim creates the TaskExecution *and* closes the slot (`is_active =
+    False`) atomically, in the same transaction, while still holding the
+    Task row lock acquired below -- so no other claim can observe the slot
+    as open once this one has consumed it. The slot stays closed until an
+    Adult explicitly reactivates the Task; that reactivation, and this
+    claim, never touch any other TaskExecution the Task may already have.
+    """
     if user.role != UserRole.CHILD:
         raise ForbiddenError("Only a Child can claim a task")
 
@@ -150,6 +161,8 @@ def claim_task(
 
     execution = TaskExecution(task_id=task.id, user_id=user.id, reward_points=task.reward_points)
     db.add(execution)
+    task.is_active = False
+    task.updated_at = utcnow()
     try:
         db.commit()
     except IntegrityError as exc:
@@ -157,3 +170,27 @@ def claim_task(
         raise TaskAlreadyClaimedError() from exc
     db.refresh(execution)
     return execution
+
+
+@router.post("/{task_id}/activate", response_model=TaskResponse)
+def activate_task(
+    task_id: uuid.UUID, user: User = Depends(require_adult), db: Session = Depends(get_db)
+) -> Task:
+    """Reopens the Task's self-claim slot. Creator-only, like every other
+    Task-definition mutation; idempotent (activating an already-active Task
+    is a no-op success, matching PATCH's existing is_active behavior --
+    there is no separate error state for "already active"). Never creates
+    or otherwise touches any TaskExecution.
+    """
+    task = db.get(Task, task_id)
+    if task is None:
+        raise TaskNotFoundError()
+    if task.created_by != user.id:
+        raise ForbiddenError("You do not own this task")
+
+    task.is_active = True
+    task.updated_at = utcnow()
+
+    db.commit()
+    db.refresh(task)
+    return task

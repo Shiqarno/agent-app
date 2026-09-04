@@ -84,6 +84,9 @@ def test_adult_creates_a_task_directly_assigned_to_a_child(
     task = create_assigned_task(client, adult, child, title="Clean room")
 
     assert task["title"] == "Clean room"
+    # The one self-claim slot is filled by this direct assignment, so it
+    # must not also be open for another Child to self-claim (Issue #19).
+    assert task["is_active"] is False
     execution = execution_for(client, adult, task["id"], str(child.id))
     assert execution["status"] == "ASSIGNED"
     assert execution["reward_points"] == 5
@@ -110,6 +113,20 @@ def test_adult_creates_a_task_directly_assigned_to_self(
 
     execution = execution_for(client, adult, task["id"], str(adult.id))
     assert execution["status"] == "ASSIGNED"
+
+
+def test_directly_assigned_task_cannot_be_self_claimed_by_another_child(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    other_child = make_user(CHILD, "Other Child")
+    task = create_assigned_task(client, adult, child)
+
+    response = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(other_child))
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "TASK_INACTIVE"
 
 
 def test_child_cannot_create_task(client: TestClient, make_user: Callable[..., User]) -> None:
@@ -583,9 +600,27 @@ def test_claim_an_inactive_task_is_rejected(
     assert response.json()["error"]["code"] == "TASK_INACTIVE"
 
 
-def test_child_cannot_claim_the_same_task_twice(
+def test_claiming_flips_the_task_to_inactive(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    task = create_task(client, adult)
+
+    client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child))
+
+    refreshed = client.get(f"/api/tasks/{task['id']}", headers=auth(adult)).json()
+    assert refreshed["is_active"] is False
+
+
+def test_second_claim_attempt_on_an_already_claimed_task_is_rejected_as_inactive(
     client: TestClient, make_user: Callable[..., User], db_session: Session
 ) -> None:
+    """Once claimed, the Task's single self-claim slot is closed -- a second
+    attempt (by the same Child or a different one) is rejected because the
+    Task is now inactive, not because of the (now-relaxed) per-user
+    uniqueness rule.
+    """
     adult = make_user(ADULT)
     child = make_user(CHILD)
     task = create_task(client, adult)
@@ -594,7 +629,7 @@ def test_child_cannot_claim_the_same_task_twice(
     response = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child))
 
     assert response.status_code == 409
-    assert response.json()["error"]["code"] == "TASK_ALREADY_CLAIMED"
+    assert response.json()["error"]["code"] == "TASK_INACTIVE"
     count = db_session.scalar(
         select(func.count())
         .select_from(TaskExecution)
@@ -603,22 +638,93 @@ def test_child_cannot_claim_the_same_task_twice(
     assert count == 1
 
 
-def test_two_different_children_can_independently_claim_the_same_task(
+def test_two_different_children_can_claim_the_same_task_over_time(
     client: TestClient, make_user: Callable[..., User]
 ) -> None:
+    """The single-slot model: Child A claims (slot closes), Child B's
+    attempt is rejected while the slot is closed, the creator reactivates,
+    and only then can Child B claim too -- leaving two independent
+    executions with independent lifecycles.
+    """
     adult = make_user(ADULT)
     child_a = make_user(CHILD, "Child A")
     child_b = make_user(CHILD, "Child B")
     task = create_task(client, adult)
 
     response_a = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child_a))
+    assert response_a.status_code == 201
+
+    blocked = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child_b))
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["code"] == "TASK_INACTIVE"
+
+    reactivated = client.post(f"/api/tasks/{task['id']}/activate", headers=auth(adult))
+    assert reactivated.json()["is_active"] is True
+
     response_b = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child_b))
 
-    assert response_a.status_code == 201
     assert response_b.status_code == 201
     assert response_a.json()["id"] != response_b.json()["id"]
     assert response_a.json()["status"] == "ASSIGNED"
     assert response_b.json()["status"] == "ASSIGNED"
+
+    # Reactivating and Child B claiming never touched Child A's execution.
+    execution_a = client.get(
+        f"/api/task-executions/{response_a.json()['id']}", headers=auth(adult)
+    ).json()
+    assert execution_a["status"] == "ASSIGNED"
+    assert execution_a["user_id"] == str(child_a.id)
+
+
+def test_same_child_can_claim_the_same_task_again_after_reactivation(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    """A Task is reusable over time: once a Child's execution goes terminal
+    and the creator reactivates the Task, that same Child may claim it
+    again, producing a second, independent execution and (once completed) a
+    second, independent PointTransaction.
+    """
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    task = create_task(client, adult, reward_points=15)
+
+    first = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child)).json()
+    client.post(f"/api/task-executions/{first['id']}/start", headers=auth(child))
+    client.post(f"/api/task-executions/{first['id']}/ready", headers=auth(child))
+    client.post(f"/api/task-executions/{first['id']}/confirm", headers=auth(adult))
+
+    client.post(f"/api/tasks/{task['id']}/activate", headers=auth(adult))
+    second = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child))
+
+    assert second.status_code == 201
+    assert second.json()["id"] != first["id"]
+    assert second.json()["status"] == "ASSIGNED"
+
+    first_state = client.get(f"/api/task-executions/{first['id']}", headers=auth(adult)).json()
+    assert first_state["status"] == "COMPLETED"
+
+
+def test_child_cannot_reclaim_while_their_own_execution_is_still_open(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    """Reactivating a Task never touches an existing execution (Issue #19),
+    so it's possible for a Child to still have a non-terminal execution of
+    a Task the creator has reopened. That Child claiming again must still
+    be rejected -- now via the "at most one open execution per (task,
+    user)" constraint rather than the Task's is_active flag, since the flag
+    alone would otherwise allow it.
+    """
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    task = create_task(client, adult)
+    execution = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child)).json()
+    client.post(f"/api/task-executions/{execution['id']}/start", headers=auth(child))
+
+    client.post(f"/api/tasks/{task['id']}/activate", headers=auth(adult))
+    response = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child))
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "TASK_ALREADY_CLAIMED"
 
 
 def test_unauthenticated_cannot_claim(client: TestClient, make_user: Callable[..., User]) -> None:
@@ -626,6 +732,117 @@ def test_unauthenticated_cannot_claim(client: TestClient, make_user: Callable[..
     task = create_task(client, adult)
 
     response = client.post(f"/api/tasks/{task['id']}/claim")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHENTICATED"
+
+
+# =========================================================================================
+# Activation: POST /api/tasks/{id}/activate
+# =========================================================================================
+
+
+def test_creator_can_activate_a_deactivated_task(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    task = create_task(client, adult)
+    client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child))  # closes the slot
+
+    response = client.post(f"/api/tasks/{task['id']}/activate", headers=auth(adult))
+
+    assert response.status_code == 200
+    assert response.json()["is_active"] is True
+
+
+def test_activating_an_already_active_task_is_idempotent(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    task = create_task(client, adult)
+
+    response = client.post(f"/api/tasks/{task['id']}/activate", headers=auth(adult))
+
+    assert response.status_code == 200
+    assert response.json()["is_active"] is True
+
+
+def test_non_creator_adult_cannot_activate(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    other_adult = make_user(ADULT, "Other Adult")
+    child = make_user(CHILD)
+    task = create_task(client, adult)
+    client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child))
+
+    response = client.post(f"/api/tasks/{task['id']}/activate", headers=auth(other_adult))
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+    unchanged = client.get(f"/api/tasks/{task['id']}", headers=auth(adult)).json()
+    assert unchanged["is_active"] is False
+
+
+def test_child_cannot_activate(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    task = create_task(client, adult)
+    client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child))
+
+    response = client.post(f"/api/tasks/{task['id']}/activate", headers=auth(child))
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+def test_activate_nonexistent_task_returns_404(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+
+    response = client.post(f"/api/tasks/{uuid.uuid4()}/activate", headers=auth(adult))
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "TASK_NOT_FOUND"
+
+
+def test_activation_does_not_create_an_execution(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    task = create_task(client, adult)
+
+    client.post(f"/api/tasks/{task['id']}/activate", headers=auth(adult))
+
+    executions = client.get("/api/task-executions", headers=auth(adult)).json()
+    assert executions == []
+
+
+def test_activation_does_not_modify_an_existing_execution(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    task = create_task(client, adult)
+    execution = client.post(f"/api/tasks/{task['id']}/claim", headers=auth(child)).json()
+    client.post(f"/api/task-executions/{execution['id']}/start", headers=auth(child))
+
+    client.post(f"/api/tasks/{task['id']}/activate", headers=auth(adult))
+
+    unchanged = client.get(f"/api/task-executions/{execution['id']}", headers=auth(adult)).json()
+    assert unchanged["status"] == "IN_PROGRESS"
+    assert unchanged["id"] == execution["id"]
+
+
+def test_unauthenticated_cannot_activate(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    task = create_task(client, adult)
+
+    response = client.post(f"/api/tasks/{task['id']}/activate")
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "UNAUTHENTICATED"
@@ -658,58 +875,78 @@ def real_session_headers(session: Session, user_id: uuid.UUID) -> dict[str, str]
     }
 
 
-def test_concurrent_claim_by_the_same_child_succeeds_exactly_once() -> None:
-    """MVP rule: one User can have at most one TaskExecution per Task,
-    enforced at the DB level via UNIQUE(task_id, user_id). Two concurrent
-    claim requests from the same child on the same task must yield exactly
-    one success and one conflict, and exactly one TaskExecution row.
+def test_concurrent_claims_by_two_different_children_succeed_exactly_once() -> None:
+    """Issue #19's single-slot rule: `is_active` represents exactly one
+    self-claim slot, closed atomically by whichever claim wins the Task
+    row's lock first. Two Children racing to claim the same active Task
+    must yield exactly one success and one TASK_INACTIVE conflict (not
+    TASK_ALREADY_CLAIMED -- these are two different Children, so the old
+    per-user uniqueness rule was never in play), exactly one TaskExecution,
+    and a final `is_active = False`. This is deterministic (not a matter of
+    thread-scheduling luck) because Postgres's row lock, taken by every
+    claim via `_get_task_for_update`, totally orders any two transactions
+    that contend for it: the loser always re-reads the winner's committed
+    result before deciding.
     """
     setup_session = SessionLocal()
     adult = User(name="Concurrent Adult", role=ADULT)
-    child = User(name="Concurrent Child", role=CHILD)
-    setup_session.add_all([adult, child])
+    child_a = User(name="Concurrent Child A", role=CHILD)
+    child_b = User(name="Concurrent Child B", role=CHILD)
+    setup_session.add_all([adult, child_a, child_b])
     setup_session.commit()
     setup_session.refresh(adult)
-    setup_session.refresh(child)
+    setup_session.refresh(child_a)
+    setup_session.refresh(child_b)
 
     task = Task(title="Claim race", reward_points=10, created_by=adult.id)
     setup_session.add(task)
     setup_session.commit()
     setup_session.refresh(task)
 
-    auth_headers = real_session_headers(setup_session, child.id)
+    headers_a = real_session_headers(setup_session, child_a.id)
+    headers_b = real_session_headers(setup_session, child_b.id)
 
     try:
-        results: list[int] = []
+        results: list[tuple[int, dict[str, object]]] = []
         barrier = threading.Barrier(2)
 
-        def attempt_claim() -> None:
+        def attempt_claim(headers: dict[str, str]) -> None:
             barrier.wait()
             with TestClient(app) as thread_client:
-                response = thread_client.post(f"/api/tasks/{task.id}/claim", headers=auth_headers)
-            results.append(response.status_code)
+                response = thread_client.post(f"/api/tasks/{task.id}/claim", headers=headers)
+            results.append((response.status_code, response.json()))
 
-        threads = [threading.Thread(target=attempt_claim) for _ in range(2)]
+        threads = [
+            threading.Thread(target=attempt_claim, args=(headers_a,)),
+            threading.Thread(target=attempt_claim, args=(headers_b,)),
+        ]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
 
-        assert sorted(results) == [201, 409]
+        statuses = sorted(status for status, _ in results)
+        assert statuses == [201, 409]
+        conflict_body = next(body for status, body in results if status == 409)
+        assert conflict_body["error"]["code"] == "TASK_INACTIVE"
 
         setup_session.expire_all()
         execution_count = setup_session.scalar(
-            select(func.count())
-            .select_from(TaskExecution)
-            .where(TaskExecution.task_id == task.id, TaskExecution.user_id == child.id)
+            select(func.count()).select_from(TaskExecution).where(TaskExecution.task_id == task.id)
         )
         assert execution_count == 1
+
+        refreshed_task = setup_session.get(Task, task.id)
+        assert refreshed_task is not None
+        assert refreshed_task.is_active is False
     finally:
         setup_session.rollback()
-        setup_session.query(UserSession).filter_by(user_id=child.id).delete()
+        setup_session.query(UserSession).filter_by(user_id=child_a.id).delete()
+        setup_session.query(UserSession).filter_by(user_id=child_b.id).delete()
         setup_session.query(TaskExecution).filter_by(task_id=task.id).delete()
         setup_session.query(Task).filter_by(id=task.id).delete()
-        setup_session.query(User).filter_by(id=child.id).delete()
+        setup_session.query(User).filter_by(id=child_a.id).delete()
+        setup_session.query(User).filter_by(id=child_b.id).delete()
         setup_session.query(User).filter_by(id=adult.id).delete()
         setup_session.commit()
         setup_session.close()

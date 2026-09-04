@@ -70,6 +70,10 @@ export function claimTask(id: string): Promise<TaskExecution> {
   return request<TaskExecution>(`/api/tasks/${id}/claim`, { method: 'POST' })
 }
 
+export function activateTask(id: string): Promise<Task> {
+  return request<Task>(`/api/tasks/${id}/activate`, { method: 'POST' })
+}
+
 export function getTaskExecutions(): Promise<TaskExecution[]> {
   return request<TaskExecution[]>('/api/task-executions')
 }

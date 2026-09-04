@@ -104,11 +104,11 @@ describe('TaskDetailsPage', () => {
     })
     expect(screen.getByText('Make it spotless')).toBeInTheDocument()
     expect(screen.getByText(/reward points: 20/i)).toBeInTheDocument()
-    expect(screen.getByText(/^active$/i)).toBeInTheDocument()
+    expect(screen.getByText(/^available for claim$/i)).toBeInTheDocument()
     expect(screen.getByText(/creator: alice \(adult\)/i)).toBeInTheDocument()
   })
 
-  it('displays an Inactive badge for a deactivated task', async () => {
+  it('displays a not-available status for a deactivated task', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string) => {
@@ -120,7 +120,7 @@ describe('TaskDetailsPage', () => {
     renderDetails()
 
     await waitFor(() => {
-      expect(screen.getByText(/^inactive$/i)).toBeInTheDocument()
+      expect(screen.getByText(/^not currently available for claim$/i)).toBeInTheDocument()
     })
   })
 
@@ -194,6 +194,93 @@ describe('TaskDetailsPage', () => {
       )
     })
     expect(screen.getByText(/no one has claimed this task yet/i)).toBeInTheDocument()
+  })
+
+  it('creator sees no Activate button on an active task', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.endsWith('/api/tasks/task-1')) return jsonResponse(200, task())
+        return baseHandlers(url, ADULT, []) ?? Promise.reject(new Error(`Unexpected: ${url}`))
+      }),
+    )
+
+    renderDetails()
+
+    await waitFor(() => {
+      expect(screen.getByText(/^available for claim$/i)).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('button', { name: /^activate$/i })).not.toBeInTheDocument()
+  })
+
+  it('creator can activate an inactive task; the button is disabled while pending and there is no optimistic update', async () => {
+    let resolveActivate: (value: unknown) => void = () => {}
+    let taskCallCount = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url.endsWith('/api/tasks/task-1') && (init?.method ?? 'GET') === 'GET') {
+          taskCallCount += 1
+          return jsonResponse(200, task({ is_active: taskCallCount > 1 }))
+        }
+        if (url.endsWith('/api/tasks/task-1/activate')) {
+          expect(init?.method).toBe('POST')
+          return new Promise((resolve) => {
+            resolveActivate = resolve
+          }).then(() => jsonResponse(200, task({ is_active: true })))
+        }
+        return baseHandlers(url, ADULT, []) ?? Promise.reject(new Error(`Unexpected: ${url}`))
+      }),
+    )
+
+    renderDetails()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^activate$/i })).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^activate$/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /activating/i })).toBeDisabled()
+    })
+    // Still shows the pre-activation status -- the page never flips
+    // is_active locally before the request resolves.
+    expect(screen.getByText(/^not currently available for claim$/i)).toBeInTheDocument()
+    expect(taskCallCount).toBe(1)
+
+    resolveActivate(undefined)
+
+    await waitFor(() => {
+      expect(screen.getByText(/^available for claim$/i)).toBeInTheDocument()
+    })
+    expect(taskCallCount).toBe(2)
+  })
+
+  it('activation errors are displayed and the task remains inactive', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url.endsWith('/api/tasks/task-1') && (init?.method ?? 'GET') === 'GET') {
+          return jsonResponse(200, task({ is_active: false }))
+        }
+        if (url.endsWith('/api/tasks/task-1/activate')) {
+          return jsonResponse(403, { error: { code: 'FORBIDDEN', message: 'You do not own this task' } })
+        }
+        return baseHandlers(url, ADULT, []) ?? Promise.reject(new Error(`Unexpected: ${url}`))
+      }),
+    )
+
+    renderDetails()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^activate$/i })).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^activate$/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText('You do not own this task')).toBeInTheDocument()
+    })
+    expect(screen.getByText(/^not currently available for claim$/i)).toBeInTheDocument()
   })
 
   it('creator sees Reassign and Cancel task on an ASSIGNED execution', async () => {
@@ -669,7 +756,7 @@ describe('TaskDetailsPage', () => {
     renderDetails()
 
     await waitFor(() => {
-      expect(screen.getByText(/^inactive$/i)).toBeInTheDocument()
+      expect(screen.getByText(/^not currently available$/i)).toBeInTheDocument()
     })
     expect(screen.queryByRole('button', { name: /claim task/i })).not.toBeInTheDocument()
   })
