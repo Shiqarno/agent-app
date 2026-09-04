@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { CurrentUser } from './api/auth'
+import Avatar from './components/Avatar'
 import { Link, useRouter } from './router'
 
 const ADULT_NAV_ITEMS: { to: string; label: string }[] = [
@@ -45,6 +46,9 @@ function AppShell({
           </ul>
         </nav>
         <p>
+          <Link to="/profile" aria-label="Your profile">
+            <Avatar avatar_id={user.avatar_id} size="sm" alt="Your avatar" />
+          </Link>
           Signed in as {user.name} ({user.role})
           <button onClick={onLogout}>Log out</button>
         </p>

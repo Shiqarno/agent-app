@@ -1,3 +1,4 @@
+import random
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -45,6 +46,28 @@ def _enum_values(enum_cls: type[StrEnum]) -> list[str]:
     return [member.value for member in enum_cls]
 
 
+class AvatarId(StrEnum):
+    """The fixed catalog of 10 selectable avatars (Issue #20). A stable
+    identifier, not a filesystem path or URL -- the frontend owns mapping
+    each id to its bundled image asset.
+    """
+
+    AVATAR_01 = "avatar_01"
+    AVATAR_02 = "avatar_02"
+    AVATAR_03 = "avatar_03"
+    AVATAR_04 = "avatar_04"
+    AVATAR_05 = "avatar_05"
+    AVATAR_06 = "avatar_06"
+    AVATAR_07 = "avatar_07"
+    AVATAR_08 = "avatar_08"
+    AVATAR_09 = "avatar_09"
+    AVATAR_10 = "avatar_10"
+
+
+def _random_avatar_id() -> AvatarId:
+    return random.choice(list(AvatarId))
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -53,6 +76,16 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(
         SAEnum(UserRole, native_enum=False, length=16, values_callable=_enum_values),
         nullable=False,
+    )
+    # Assigned at insert time by this column default -- not by router code --
+    # so every path that creates a User (POST /api/users, /api/auth/setup,
+    # test helpers that construct User(...) directly) gets a random initial
+    # avatar automatically, with no way for request input to override it
+    # (Issue #20: the client never supplies avatar_id at creation).
+    avatar_id: Mapped[AvatarId] = mapped_column(
+        SAEnum(AvatarId, native_enum=False, length=16, values_callable=_enum_values),
+        nullable=False,
+        default=_random_avatar_id,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

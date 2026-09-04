@@ -4,6 +4,7 @@ export type CurrentUser = {
   id: string
   name: string
   role: 'adult' | 'child'
+  avatar_id: string
 }
 
 export function login(email: string, password: string): Promise<CurrentUser> {

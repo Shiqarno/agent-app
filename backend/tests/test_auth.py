@@ -51,7 +51,12 @@ def test_valid_credentials_authenticate_successfully(
     )
 
     assert response.status_code == 200
-    assert response.json() == {"id": str(adult.id), "name": "Alice", "role": "adult"}
+    assert response.json() == {
+        "id": str(adult.id),
+        "name": "Alice",
+        "role": "adult",
+        "avatar_id": adult.avatar_id.value,
+    }
 
 
 def test_invalid_password_returns_401(
@@ -105,7 +110,7 @@ def test_password_is_never_returned(
         "/api/auth/login", json={"email": "alice@example.com", "password": PASSWORD}
     )
 
-    assert set(response.json().keys()) == {"id", "name", "role"}
+    assert set(response.json().keys()) == {"id", "name", "role", "avatar_id"}
 
 
 def test_password_hash_is_never_returned(
@@ -331,7 +336,12 @@ def test_me_returns_authenticated_user(
     response = client.get("/api/auth/me", headers=auth(adult))
 
     assert response.status_code == 200
-    assert response.json() == {"id": str(adult.id), "name": "Bob", "role": "adult"}
+    assert response.json() == {
+        "id": str(adult.id),
+        "name": "Bob",
+        "role": "adult",
+        "avatar_id": adult.avatar_id.value,
+    }
 
 
 def test_me_unauthenticated_returns_401(client: TestClient) -> None:
@@ -348,7 +358,7 @@ def test_me_response_contains_only_public_user_fields(
 
     response = client.get("/api/auth/me", headers=auth(adult))
 
-    assert set(response.json().keys()) == {"id", "name", "role"}
+    assert set(response.json().keys()) == {"id", "name", "role", "avatar_id"}
 
 
 # --- Setup ------------------------------------------------------------------------------

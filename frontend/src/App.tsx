@@ -8,6 +8,7 @@ import NewRewardPage from './pages/NewRewardPage'
 import NewTaskPage from './pages/NewTaskPage'
 import NewUserPage from './pages/NewUserPage'
 import PointsPage from './pages/PointsPage'
+import ProfilePage from './pages/ProfilePage'
 import RewardsPage from './pages/RewardsPage'
 import TaskDetailsPage from './pages/TaskDetailsPage'
 import TasksPage from './pages/TasksPage'
@@ -184,8 +185,32 @@ function resolveChildPage(path: string): ComponentType {
   return TasksPage
 }
 
-function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () => void }) {
+// /profile is available to both roles and, unlike every other route, needs
+// props (the current user, and a way to hand a successful avatar change
+// back up to `App`'s own auth state) that the generic <Page /> dispatch
+// below has no mechanism to pass -- so it's special-cased ahead of that
+// dispatch rather than added to ADULT_ROUTES/CHILD_ROUTES.
+const PROFILE_PATH = '/profile'
+
+function AuthenticatedApp({
+  user,
+  onLogout,
+  onUserUpdated,
+}: {
+  user: CurrentUser
+  onLogout: () => void
+  onUserUpdated: (user: CurrentUser) => void
+}) {
   const { path } = useRouter()
+
+  if (path === PROFILE_PATH) {
+    return (
+      <AppShell user={user} onLogout={onLogout}>
+        <ProfilePage currentUser={user} onUpdated={onUserUpdated} />
+      </AppShell>
+    )
+  }
+
   const Page = user.role === 'adult' ? resolveAdultPage(path) : resolveChildPage(path)
 
   return (
@@ -245,6 +270,10 @@ function App() {
     setAuth({ phase: 'authenticated', user })
   }
 
+  function handleUserUpdated(user: CurrentUser) {
+    setAuth({ phase: 'authenticated', user })
+  }
+
   if (auth.phase === 'loading') {
     return <p>Loading...</p>
   }
@@ -258,7 +287,11 @@ function App() {
 
   return (
     <RouterProvider>
-      <AuthenticatedApp user={auth.user} onLogout={handleLogout} />
+      <AuthenticatedApp
+        user={auth.user}
+        onLogout={handleLogout}
+        onUserUpdated={handleUserUpdated}
+      />
     </RouterProvider>
   )
 }

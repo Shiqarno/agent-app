@@ -4,7 +4,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models import PointTransactionReason, TaskExecutionStatus, UserRole
+from app.models import AvatarId, PointTransactionReason, TaskExecutionStatus, UserRole
 
 
 class ActivationStatus(StrEnum):
@@ -110,12 +110,14 @@ class UserResponse(BaseModel):
     id: uuid.UUID
     name: str
     role: UserRole
+    avatar_id: AvatarId
 
 
 class UserListItemResponse(BaseModel):
     id: uuid.UUID
     name: str
     role: UserRole
+    avatar_id: AvatarId
     activation_status: ActivationStatus
 
 
@@ -138,9 +140,14 @@ class UserCreateResponse(BaseModel):
     id: uuid.UUID
     name: str
     role: UserRole
+    avatar_id: AvatarId
     created_at: datetime
     updated_at: datetime
     activation_token: str
+
+
+class UserAvatarUpdate(BaseModel):
+    avatar_id: AvatarId
 
 
 class RewardCreate(BaseModel):

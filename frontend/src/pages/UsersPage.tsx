@@ -7,6 +7,7 @@ import {
   type ActivationStatus,
   type UserSummary,
 } from '../api/users'
+import Avatar from '../components/Avatar'
 import { Link } from '../router'
 
 type ListState =
@@ -109,6 +110,7 @@ function UsersPage() {
             const regeneration = regenerations[user.id] ?? { phase: 'idle' }
             return (
               <li key={user.id} className="user-card">
+                <Avatar avatar_id={user.avatar_id} size="sm" alt={`${user.name}'s avatar`} />
                 <p className="user-card-title">{user.name}</p>
                 <p>Role: {user.role}</p>
                 <p>Status: {ACTIVATION_STATUS_LABELS[user.activation_status]}</p>

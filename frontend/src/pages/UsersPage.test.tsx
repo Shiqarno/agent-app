@@ -17,6 +17,7 @@ function user(
     id: string
     name: string
     role: string
+    avatar_id: string
     activation_status: string
   }> = {},
 ) {
@@ -24,6 +25,7 @@ function user(
     id: 'user-1',
     name: 'Alice',
     role: 'adult',
+    avatar_id: 'avatar_04',
     activation_status: 'ACTIVE',
     ...overrides,
   }
@@ -67,6 +69,21 @@ describe('UsersPage', () => {
       expect(screen.getByText('Alice')).toBeInTheDocument()
     })
     expect(screen.getByText(/role: adult/i)).toBeInTheDocument()
+  })
+
+  it('renders an avatar for each user in the list', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => jsonResponse(200, [user({ avatar_id: 'avatar_07' })])),
+    )
+
+    renderUsersPage()
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice')).toBeInTheDocument()
+    })
+    const card = screen.getByText('Alice').closest('li') as HTMLElement
+    expect(within(card).getByRole('img')).toHaveAttribute('src', expect.stringContaining('avatar-07'))
   })
 
   it('shows the empty state when there are no users', async () => {

@@ -7,14 +7,16 @@ from sqlalchemy.orm import Session
 from app.activation import create_activation, regenerate_activation
 from app.db import get_db
 from app.errors import UserAlreadyActivatedError, UserNotFoundError
-from app.identity import require_adult
-from app.models import User, UserActivation, UserCredential
+from app.identity import get_current_user, require_adult
+from app.models import User, UserActivation, UserCredential, utcnow
 from app.schemas import (
     ActivationRegenerateResponse,
     ActivationStatus,
+    UserAvatarUpdate,
     UserCreate,
     UserCreateResponse,
     UserListItemResponse,
+    UserResponse,
 )
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -37,6 +39,7 @@ def list_users(
             id=u.id,
             name=u.name,
             role=u.role,
+            avatar_id=u.avatar_id,
             activation_status=(
                 ActivationStatus.ACTIVE if u.id in activated_ids else ActivationStatus.PENDING
             ),
@@ -60,10 +63,29 @@ def create_user(
         id=new_user.id,
         name=new_user.name,
         role=new_user.role,
+        avatar_id=new_user.avatar_id,
         created_at=new_user.created_at,
         updated_at=new_user.updated_at,
         activation_token=raw_activation_token,
     )
+
+
+@router.patch("/me", response_model=UserResponse)
+def update_my_avatar(
+    payload: UserAvatarUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Self-only avatar change (Issue #20): the target is always the
+    authenticated user, never a request-supplied id, and no other User
+    field is touched. Both Adult and Child may call this -- unlike every
+    other endpoint in this router, it is not Adult-only.
+    """
+    user.avatar_id = payload.avatar_id
+    user.updated_at = utcnow()
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 @router.post("/{user_id}/activation", response_model=ActivationRegenerateResponse)

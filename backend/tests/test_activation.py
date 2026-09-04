@@ -36,7 +36,12 @@ def test_valid_activation_creates_credentials_and_logs_in(
     )
 
     assert response.status_code == 200
-    assert response.json() == {"id": str(child.id), "name": "Kid", "role": "child"}
+    assert response.json() == {
+        "id": str(child.id),
+        "name": "Kid",
+        "role": "child",
+        "avatar_id": child.avatar_id.value,
+    }
 
     credential = db_session.scalar(select(UserCredential).where(UserCredential.user_id == child.id))
     assert credential is not None
@@ -91,7 +96,7 @@ def test_activation_response_never_contains_the_raw_token(
         json={"token": token, "email": "kid4@example.com", "password": PASSWORD},
     )
 
-    assert set(response.json().keys()) == {"id", "name", "role"}
+    assert set(response.json().keys()) == {"id", "name", "role", "avatar_id"}
     assert token not in response.text
 
 
@@ -501,7 +506,15 @@ def test_user_creation_response_includes_the_raw_activation_token(
 
     assert response.status_code == 201
     body = response.json()
-    expected_keys = {"id", "name", "role", "created_at", "updated_at", "activation_token"}
+    expected_keys = {
+        "id",
+        "name",
+        "role",
+        "avatar_id",
+        "created_at",
+        "updated_at",
+        "activation_token",
+    }
     assert set(body.keys()) == expected_keys
     assert isinstance(body["activation_token"], str)
     assert body["activation_token"]

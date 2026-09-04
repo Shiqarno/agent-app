@@ -1,3 +1,4 @@
+import type { CurrentUser } from './auth'
 import { ApiError, request } from './http'
 
 export { ApiError }
@@ -10,6 +11,7 @@ export type UserSummary = {
   id: string
   name: string
   role: UserRole
+  avatar_id: string
   activation_status: ActivationStatus
 }
 
@@ -17,6 +19,7 @@ export type CreatedUser = {
   id: string
   name: string
   role: UserRole
+  avatar_id: string
   created_at: string
   updated_at: string
   // Returned once, at creation time, so the creating Adult can hand it to
@@ -43,6 +46,13 @@ export function createUser(input: UserInput): Promise<CreatedUser> {
   return request<CreatedUser>('/api/users', {
     method: 'POST',
     body: JSON.stringify(input),
+  })
+}
+
+export function updateMyAvatar(avatarId: string): Promise<CurrentUser> {
+  return request<CurrentUser>('/api/users/me', {
+    method: 'PATCH',
+    body: JSON.stringify({ avatar_id: avatarId }),
   })
 }
 

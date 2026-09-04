@@ -17,6 +17,7 @@ import {
   type TaskExecutionStatus,
 } from '../api/tasks'
 import { getUsers, type UserSummary } from '../api/users'
+import Avatar from '../components/Avatar'
 import { Link } from '../router'
 
 type TaskState =
@@ -59,6 +60,24 @@ function taskIdFromPath(): string {
 function userLabel(usersById: Record<string, UserSummary>, userId: string): string {
   const user = usersById[userId]
   return user ? `${user.name} (${user.role})` : userId
+}
+
+// Pairs a user's avatar with their existing text label wherever an
+// assignee/creator identity is already shown -- a minimal integration
+// point, not a redesign of how this page presents that identity.
+function UserIdentity({
+  usersById,
+  userId,
+}: {
+  usersById: Record<string, UserSummary>
+  userId: string
+}) {
+  const user = usersById[userId]
+  return (
+    <>
+      {user && <Avatar avatar_id={user.avatar_id} size="sm" alt="" />} {userLabel(usersById, userId)}
+    </>
+  )
 }
 
 // One row in the creator's execution list. Each execution has its own
@@ -129,7 +148,9 @@ function ExecutionRow({
 
   return (
     <li className="execution-card">
-      <p>Assignee: {userLabel(usersById, execution.user_id)}</p>
+      <p>
+        Assignee: <UserIdentity usersById={usersById} userId={execution.user_id} />
+      </p>
       <p>Status: {STATUS_LABELS[execution.status]}</p>
       <p>Points: {execution.reward_points}</p>
       <p>Created: {new Date(execution.created_at).toLocaleString()}</p>
@@ -357,7 +378,9 @@ function TaskDetailsPage() {
                     ? 'Not currently available for claim'
                     : 'Not currently available'}
               </p>
-              <p>Creator: {userLabel(usersById, task.created_by)}</p>
+              <p>
+                Creator: <UserIdentity usersById={usersById} userId={task.created_by} />
+              </p>
               <p>Created: {new Date(task.created_at).toLocaleString()}</p>
               <p>Updated: {new Date(task.updated_at).toLocaleString()}</p>
 

@@ -12,10 +12,10 @@ function jsonResponse(status: number, body: unknown) {
   })
 }
 
-const ADULT = { id: 'adult-1', name: 'Alice', role: 'adult' }
-const OTHER_ADULT = { id: 'adult-2', name: 'Bob', role: 'adult' }
-const CHILD = { id: 'child-1', name: 'Kiddo', role: 'child' }
-const OTHER_CHILD = { id: 'child-2', name: 'Junior', role: 'child' }
+const ADULT = { id: 'adult-1', name: 'Alice', role: 'adult', avatar_id: 'avatar_02' }
+const OTHER_ADULT = { id: 'adult-2', name: 'Bob', role: 'adult', avatar_id: 'avatar_03' }
+const CHILD = { id: 'child-1', name: 'Kiddo', role: 'child', avatar_id: 'avatar_05' }
+const OTHER_CHILD = { id: 'child-2', name: 'Junior', role: 'child', avatar_id: 'avatar_06' }
 const USERS = [ADULT, OTHER_ADULT, CHILD, OTHER_CHILD]
 
 function task(overrides: Record<string, unknown> = {}) {
@@ -106,6 +106,25 @@ describe('TaskDetailsPage', () => {
     expect(screen.getByText(/reward points: 20/i)).toBeInTheDocument()
     expect(screen.getByText(/^available for claim$/i)).toBeInTheDocument()
     expect(screen.getByText(/creator: alice \(adult\)/i)).toBeInTheDocument()
+  })
+
+  it('shows the creator\'s avatar next to their identity', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.endsWith('/api/tasks/task-1')) return jsonResponse(200, task())
+        return baseHandlers(url) ?? Promise.reject(new Error(`Unexpected: ${url}`))
+      }),
+    )
+
+    renderDetails()
+
+    await waitFor(() => {
+      expect(screen.getByText(/creator: alice \(adult\)/i)).toBeInTheDocument()
+    })
+    const creatorLine = screen.getByText(/creator:/i)
+    const avatarImg = creatorLine.querySelector('img')
+    expect(avatarImg).toHaveAttribute('src', expect.stringContaining('avatar-02'))
   })
 
   it('displays a not-available status for a deactivated task', async () => {

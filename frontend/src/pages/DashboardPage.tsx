@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { getBalance } from '../api/points'
 import { confirmTaskExecution, getTaskExecutions, getTasks, type Task, type TaskExecution } from '../api/tasks'
 import { getUsers, type UserSummary } from '../api/users'
+import Avatar from '../components/Avatar'
 import { Link } from '../router'
 
 type SectionState<T> =
@@ -173,6 +174,9 @@ function PendingTasksSection({
               {pending.map((execution) => (
                 <li key={execution.id}>
                   {taskTitle(tasksById, execution.task_id)} —{' '}
+                  {usersById[execution.user_id] && (
+                    <Avatar avatar_id={usersById[execution.user_id].avatar_id} size="sm" alt="" />
+                  )}{' '}
                   {assigneeLabel(usersById, execution.user_id)} ({execution.reward_points} pts)
                   <button
                     onClick={() => handleConfirm(execution.id)}
@@ -218,6 +222,9 @@ function RecentTasksSection({
               .map((execution) => (
                 <li key={execution.id}>
                   {taskTitle(tasksById, execution.task_id)} —{' '}
+                  {usersById[execution.user_id] && (
+                    <Avatar avatar_id={usersById[execution.user_id].avatar_id} size="sm" alt="" />
+                  )}{' '}
                   {assigneeLabel(usersById, execution.user_id)} — {execution.status}
                 </li>
               ))}

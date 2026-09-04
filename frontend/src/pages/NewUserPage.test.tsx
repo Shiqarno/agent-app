@@ -128,6 +128,13 @@ describe('NewUserPage', () => {
     expect(window.location.pathname).toBe('/dashboard')
   })
 
+  it('does not offer any avatar selection', () => {
+    renderPage()
+
+    expect(screen.queryByRole('group', { name: /avatar/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/avatar/i)).not.toBeInTheDocument()
+  })
+
   it('requires a name before submitting', () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)

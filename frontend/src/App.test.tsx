@@ -11,8 +11,18 @@ function jsonResponse(status: number, body: unknown) {
   })
 }
 
-const ADULT_USER = { id: '11111111-1111-1111-1111-111111111111', name: 'Alice', role: 'adult' }
-const CHILD_USER = { id: '22222222-2222-2222-2222-222222222222', name: 'Kiddo', role: 'child' }
+const ADULT_USER = {
+  id: '11111111-1111-1111-1111-111111111111',
+  name: 'Alice',
+  role: 'adult',
+  avatar_id: 'avatar_01',
+}
+const CHILD_USER = {
+  id: '22222222-2222-2222-2222-222222222222',
+  name: 'Kiddo',
+  role: 'child',
+  avatar_id: 'avatar_02',
+}
 
 // A default stub for the Dashboard's own data requests, reused by every test
 // that reaches the authenticated Adult shell.
@@ -721,6 +731,121 @@ describe('App', () => {
     render(<App />)
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /^tasks$/i })).toBeInTheDocument()
+    })
+  })
+
+  // --- Avatars (Issue #20) -------------------------------------------------
+
+  it('AppShell displays the current Adult\'s avatar', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(200, ADULT_USER)
+      }
+      const dashboard = stubDashboardData(url)
+      if (dashboard) return dashboard
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/signed in as alice/i)).toBeInTheDocument()
+    })
+    expect(screen.getByAltText(/your avatar/i)).toHaveAttribute(
+      'src',
+      expect.stringContaining('avatar-01'),
+    )
+  })
+
+  it('navigating to /profile for an Adult renders ProfilePage', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(200, ADULT_USER)
+      }
+      const dashboard = stubDashboardData(url)
+      if (dashboard) return dashboard
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/signed in as alice/i)).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('link', { name: /your profile/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^profile$/i })).toBeInTheDocument()
+    })
+    expect(window.location.pathname).toBe('/profile')
+  })
+
+  it('navigating to /profile for a Child renders ProfilePage too', async () => {
+    window.history.pushState({}, '', '/profile')
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(200, CHILD_USER)
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^profile$/i })).toBeInTheDocument()
+    })
+  })
+
+  it('saving a new avatar on the Profile page updates the avatar AppShell displays, with no optimistic update beforehand', async () => {
+    let resolvePatch: (value: unknown) => void = () => {}
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(200, ADULT_USER)
+      }
+      if (url.endsWith('/api/users/me') && init?.method === 'PATCH') {
+        expect(JSON.parse(init.body as string)).toEqual({ avatar_id: 'avatar_05' })
+        return new Promise((resolve) => {
+          resolvePatch = resolve
+        }).then(() => jsonResponse(200, { ...ADULT_USER, avatar_id: 'avatar_05' }))
+      }
+      const dashboard = stubDashboardData(url)
+      if (dashboard) return dashboard
+      throw new Error(`Unexpected request: ${url} ${String(init?.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/signed in as alice/i)).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('link', { name: /your profile/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^profile$/i })).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /avatar option avatar_05/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /saving/i })).toBeDisabled()
+    })
+    // Still the pre-save avatar in the header -- no optimistic update.
+    expect(screen.getByAltText(/your avatar/i)).toHaveAttribute(
+      'src',
+      expect.stringContaining('avatar-01'),
+    )
+
+    resolvePatch(undefined)
+
+    await waitFor(() => {
+      expect(screen.getByAltText(/your avatar/i)).toHaveAttribute(
+        'src',
+        expect.stringContaining('avatar-05'),
+      )
     })
   })
 })

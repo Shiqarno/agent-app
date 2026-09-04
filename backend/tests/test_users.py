@@ -16,7 +16,7 @@ from app.csrf import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
 from app.db import SessionLocal
 from app.identity import SESSION_COOKIE_NAME
 from app.main import app
-from app.models import User, UserActivation, UserCredential, UserRole, UserSession, utcnow
+from app.models import AvatarId, User, UserActivation, UserCredential, UserRole, UserSession, utcnow
 from app.security import hash_password, hash_token
 
 ADULT = UserRole.ADULT
@@ -78,24 +78,28 @@ def test_adult_can_discover_all_users(client: TestClient, make_user: Callable[..
         "id": str(adult_a.id),
         "name": "Adult A",
         "role": "adult",
+        "avatar_id": adult_a.avatar_id.value,
         "activation_status": "PENDING",
     }
     assert by_id[str(adult_b.id)] == {
         "id": str(adult_b.id),
         "name": "Adult B",
         "role": "adult",
+        "avatar_id": adult_b.avatar_id.value,
         "activation_status": "PENDING",
     }
     assert by_id[str(child_a.id)] == {
         "id": str(child_a.id),
         "name": "Child A",
         "role": "child",
+        "avatar_id": child_a.avatar_id.value,
         "activation_status": "PENDING",
     }
     assert by_id[str(child_b.id)] == {
         "id": str(child_b.id),
         "name": "Child B",
         "role": "child",
+        "avatar_id": child_b.avatar_id.value,
         "activation_status": "PENDING",
     }
 
@@ -573,7 +577,7 @@ def test_activation_status_never_exposes_email_or_token_fields(
     response = client.get("/api/users", headers=auth(adult))
 
     for entry in response.json():
-        assert set(entry.keys()) == {"id", "name", "role", "activation_status"}
+        assert set(entry.keys()) == {"id", "name", "role", "avatar_id", "activation_status"}
 
 
 # =========================================================================================
@@ -856,3 +860,131 @@ def test_concurrent_regeneration_leaves_exactly_one_row_and_one_current_token() 
         setup_session.query(User).filter_by(id=adult.id).delete()
         setup_session.commit()
         setup_session.close()
+
+
+# =========================================================================================
+# Avatars (Issue #20)
+# =========================================================================================
+
+
+def test_created_user_has_a_valid_avatar_id(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+
+    response = client.post(
+        "/api/users", json={"name": "New Kid", "role": "child"}, headers=auth(adult)
+    )
+
+    assert response.status_code == 201
+    avatar_id = response.json()["avatar_id"]
+    assert avatar_id in {member.value for member in AvatarId}
+
+
+def test_repeated_user_creation_only_produces_supported_avatar_ids(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    valid_ids = {member.value for member in AvatarId}
+
+    for i in range(15):
+        response = client.post(
+            "/api/users", json={"name": f"Kid {i}", "role": "child"}, headers=auth(adult)
+        )
+        assert response.json()["avatar_id"] in valid_ids
+
+
+def test_client_supplied_avatar_id_does_not_override_the_random_selection(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+
+    response = client.post(
+        "/api/users",
+        json={"name": "New Kid", "role": "child", "avatar_id": "avatar_07"},
+        headers=auth(adult),
+    )
+
+    # The request is otherwise accepted as normal -- an unrecognized field is
+    # simply ignored, not rejected -- but the resulting avatar is still one
+    # the backend chose, which this alone can't prove or disprove; the real
+    # guarantee is structural: UserCreate has no avatar_id field for a value
+    # to flow through even if the server wanted to honor it.
+    assert response.status_code == 201
+    assert response.json()["avatar_id"] in {member.value for member in AvatarId}
+
+
+def test_adult_can_update_their_own_avatar(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT)
+    new_avatar = "avatar_02" if adult.avatar_id != AvatarId.AVATAR_02 else "avatar_03"
+
+    response = client.patch("/api/users/me", json={"avatar_id": new_avatar}, headers=auth(adult))
+
+    assert response.status_code == 200
+    assert response.json()["avatar_id"] == new_avatar
+
+
+def test_child_can_update_their_own_avatar(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    child = make_user(CHILD)
+    new_avatar = "avatar_02" if child.avatar_id != AvatarId.AVATAR_02 else "avatar_03"
+
+    response = client.patch("/api/users/me", json={"avatar_id": new_avatar}, headers=auth(child))
+
+    assert response.status_code == 200
+    assert response.json()["avatar_id"] == new_avatar
+
+
+def test_invalid_avatar_id_is_rejected(client: TestClient, make_user: Callable[..., User]) -> None:
+    adult = make_user(ADULT)
+
+    response = client.patch(
+        "/api/users/me", json={"avatar_id": "not_a_real_avatar"}, headers=auth(adult)
+    )
+
+    assert response.status_code == 422
+
+
+def test_avatar_update_requires_authentication(client: TestClient) -> None:
+    response = client.patch("/api/users/me", json={"avatar_id": "avatar_02"})
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHENTICATED"
+
+
+def test_avatar_update_does_not_modify_other_user_fields(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    adult = make_user(ADULT, "Original Name")
+    new_avatar = "avatar_02" if adult.avatar_id != AvatarId.AVATAR_02 else "avatar_03"
+
+    response = client.patch("/api/users/me", json={"avatar_id": new_avatar}, headers=auth(adult))
+
+    body = response.json()
+    assert body["id"] == str(adult.id)
+    assert body["name"] == "Original Name"
+    assert body["role"] == "adult"
+    assert set(body.keys()) == {"id", "name", "role", "avatar_id"}
+
+
+def test_avatar_update_has_no_mechanism_to_target_another_user(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    """The endpoint takes no user id from the request at all -- the target is
+    always derived from the session -- so there is no field to smuggle
+    another user's id through even if a caller tries.
+    """
+    adult = make_user(ADULT)
+    other_adult = make_user(ADULT, "Other Adult")
+
+    response = client.patch(
+        "/api/users/me",
+        json={"avatar_id": "avatar_05", "user_id": str(other_adult.id), "id": str(other_adult.id)},
+        headers=auth(adult),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(adult.id)
