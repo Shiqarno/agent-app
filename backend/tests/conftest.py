@@ -3,16 +3,79 @@ import hashlib
 import secrets
 from collections.abc import Callable, Iterator
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.orm import Session, sessionmaker
 
+from app import db as app_db
+from app.config import settings
 from app.csrf import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
-from app.db import engine, get_db
+from app.db import get_db
 from app.identity import SESSION_COOKIE_NAME
 from app.main import app
 from app.models import User, UserActivation, UserRole, UserSession, utcnow
+
+# --- Test database isolation ------------------------------------------------
+#
+# The suite must never read from or write into the same database a
+# developer's `docker compose up` stack uses: doing so makes assertions like
+# "the user list contains exactly these N users" depend on whatever real
+# data happens to already exist there, and leaves test rows behind in a
+# database people actually use day to day. `app.db.engine`/`SessionLocal`
+# are already built (against DATABASE_URL, the shared dev database) by the
+# `app.*` imports above; below, they're rebound -- process-wide, before any
+# fixture or test runs -- to a dedicated "<db>_test" sibling database on the
+# same Postgres server, which is created and migrated to head on demand.
+# Every later `from app.db import SessionLocal` (used directly by the
+# concurrency tests) resolves against the patched module attribute, since
+# that lookup happens at each test module's own import time, which is after
+# this file has already run.
+
+_test_url = make_url(settings.database_url).set(
+    database=f"{make_url(settings.database_url).database}_test"
+)
+settings.database_url = _test_url.render_as_string(hide_password=False)
+
+
+def _ensure_test_database_exists() -> None:
+    maintenance_engine = create_engine(
+        _test_url.set(database="postgres"), isolation_level="AUTOCOMMIT"
+    )
+    try:
+        with maintenance_engine.connect() as connection:
+            exists = connection.execute(
+                text("SELECT 1 FROM pg_database WHERE datname = :name"),
+                {"name": _test_url.database},
+            ).first()
+            if exists is None:
+                try:
+                    connection.execute(text(f'CREATE DATABASE "{_test_url.database}"'))
+                except ProgrammingError:
+                    pass  # created concurrently by another process -- fine
+    finally:
+        maintenance_engine.dispose()
+
+
+def _migrate_test_database() -> None:
+    backend_root = Path(__file__).resolve().parent.parent
+    alembic_cfg = Config(str(backend_root / "alembic.ini"))
+    alembic_cfg.set_main_option("script_location", str(backend_root / "migrations"))
+    command.upgrade(alembic_cfg, "head")
+
+
+_ensure_test_database_exists()
+_migrate_test_database()
+
+engine = create_engine(_test_url, future=True)
+app_db.engine = engine
+app_db.SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
 @pytest.fixture

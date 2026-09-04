@@ -20,6 +20,22 @@ from app.schemas import TaskCreate, TaskExecutionResponse, TaskResponse, TaskUpd
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
 
+def _get_task_for_update(db: Session, task_id: uuid.UUID) -> Task | None:
+    """Loads a Task with its row lock held for the rest of the transaction.
+
+    `claim` reads `is_active` then decides whether to create a TaskExecution.
+    Without a lock, a concurrent `PATCH .../deactivate` could commit between
+    that read and the execution insert, leaving an execution for a Task that
+    -- by the time either transaction is done -- is inactive. Postgres's
+    ordinary `UPDATE` (issued by `update_task` when it flips `is_active`)
+    always takes an implicit row lock, so this `SELECT ... FOR UPDATE` here
+    is enough to fully serialize the two: whichever transaction gets to this
+    Task row first makes the other wait and then see its committed result.
+    """
+    stmt = select(Task).where(Task.id == task_id).with_for_update()
+    return db.execute(stmt).scalar_one_or_none()
+
+
 def _visibility_filter(user: User) -> ColumnElement[bool]:
     """A Task is visible to `user` if any of:
 
@@ -93,7 +109,7 @@ def create_task(
 def update_task(
     task_id: uuid.UUID,
     payload: TaskUpdate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_adult),
     db: Session = Depends(get_db),
 ) -> Task:
     task = db.get(Task, task_id)
@@ -126,7 +142,7 @@ def claim_task(
     if user.role != UserRole.CHILD:
         raise ForbiddenError("Only a Child can claim a task")
 
-    task = db.get(Task, task_id)
+    task = _get_task_for_update(db, task_id)
     if task is None:
         raise TaskNotFoundError()
     if not task.is_active:

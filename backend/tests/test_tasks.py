@@ -1,6 +1,7 @@
 import hashlib
 import secrets
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from datetime import timedelta
@@ -458,6 +459,25 @@ def test_assignee_who_is_not_the_creator_cannot_edit_the_task(
     assert response.json()["error"]["code"] == "FORBIDDEN"
 
 
+def test_child_is_rejected_by_role_before_any_task_lookup(
+    client: TestClient, make_user: Callable[..., User]
+) -> None:
+    """PATCH /api/tasks/{id} is Adult-only by role, not merely "not the
+    creator": a Child must be rejected even for a Task id that doesn't
+    exist, proving the role check runs before the endpoint ever looks the
+    Task up (as opposed to happening to also reject Children only because
+    they can never be a creator).
+    """
+    child = make_user(CHILD)
+
+    response = client.patch(
+        f"/api/tasks/{uuid.uuid4()}", json={"title": "Hijacked"}, headers=auth(child)
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
 def test_edit_has_no_lifecycle_gate_even_with_an_in_progress_execution(
     client: TestClient, make_user: Callable[..., User]
 ) -> None:
@@ -685,6 +705,92 @@ def test_concurrent_claim_by_the_same_child_succeeds_exactly_once() -> None:
         )
         assert execution_count == 1
     finally:
+        setup_session.rollback()
+        setup_session.query(UserSession).filter_by(user_id=child.id).delete()
+        setup_session.query(TaskExecution).filter_by(task_id=task.id).delete()
+        setup_session.query(Task).filter_by(id=task.id).delete()
+        setup_session.query(User).filter_by(id=child.id).delete()
+        setup_session.query(User).filter_by(id=adult.id).delete()
+        setup_session.commit()
+        setup_session.close()
+
+
+def test_concurrent_claim_cannot_race_ahead_of_an_in_flight_deactivation() -> None:
+    """If a Task's deactivation has already committed before a claim obtains
+    its authoritative Task state, that claim must not create an execution.
+
+    A `threading.Barrier`-released race (like the double-claim test above)
+    isn't a reliable way to exercise this specific invariant: the window
+    between claim's `is_active` read and its INSERT is a handful of Python
+    statements wide, so two independently-scheduled threads would only hit
+    it by luck, making the test flaky in both the buggy and fixed states.
+    Instead, this deterministically forces the interleaving that would
+    expose a missing row lock: a second, real session takes and holds
+    `SELECT ... FOR UPDATE` on the Task row first (standing in for
+    `PATCH .../deactivate` reaching that same lock first), a claim request
+    is started in a background thread while that lock is held, and only
+    then is the Task deactivated and the lock released. If claim correctly
+    takes the same row lock, it blocks until this releases, re-reads the
+    now-inactive Task, and is rejected; without the lock, claim would race
+    ahead on the stale is_active=True snapshot and wrongly succeed.
+    """
+    setup_session = SessionLocal()
+    adult = User(name="Concurrent Adult", role=ADULT)
+    child = User(name="Concurrent Child", role=CHILD)
+    setup_session.add_all([adult, child])
+    setup_session.commit()
+    setup_session.refresh(adult)
+    setup_session.refresh(child)
+
+    task = Task(title="Claim vs deactivate race", reward_points=10, created_by=adult.id)
+    setup_session.add(task)
+    setup_session.commit()
+    setup_session.refresh(task)
+
+    auth_headers = real_session_headers(setup_session, child.id)
+
+    lock_session = SessionLocal()
+    try:
+        locked_task = lock_session.execute(
+            select(Task).where(Task.id == task.id).with_for_update()
+        ).scalar_one()
+
+        claim_result: dict[str, int] = {}
+
+        def attempt_claim() -> None:
+            with TestClient(app) as thread_client:
+                response = thread_client.post(f"/api/tasks/{task.id}/claim", headers=auth_headers)
+            claim_result["status"] = response.status_code
+
+        claim_thread = threading.Thread(target=attempt_claim)
+        claim_thread.start()
+        # Give the claim request time to reach and block on the row lock
+        # held above before it's released below. If it somehow doesn't
+        # block in time, the assertions below would only produce a false
+        # pass (claim just happens to run after the deactivation anyway),
+        # never mask a real bug.
+        time.sleep(0.3)
+
+        locked_task.is_active = False
+        lock_session.commit()
+
+        claim_thread.join(timeout=5)
+
+        assert claim_result.get("status") == 409
+
+        setup_session.expire_all()
+        execution_count = setup_session.scalar(
+            select(func.count())
+            .select_from(TaskExecution)
+            .where(TaskExecution.task_id == task.id, TaskExecution.user_id == child.id)
+        )
+        assert execution_count == 0
+
+        refreshed_task = setup_session.get(Task, task.id)
+        assert refreshed_task is not None
+        assert refreshed_task.is_active is False
+    finally:
+        lock_session.close()
         setup_session.rollback()
         setup_session.query(UserSession).filter_by(user_id=child.id).delete()
         setup_session.query(TaskExecution).filter_by(task_id=task.id).delete()
