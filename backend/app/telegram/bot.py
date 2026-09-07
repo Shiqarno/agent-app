@@ -17,6 +17,7 @@ from app.telegram.handlers.confirmations import (
     handle_return_execution,
     handle_view_all_confirmations,
 )
+from app.telegram.handlers.points import handle_older_points, handle_points_command
 from app.telegram.handlers.rewards import handle_get_reward, handle_rewards_command
 from app.telegram.handlers.start import handle_start
 from app.telegram.handlers.tasks import (
@@ -30,6 +31,7 @@ from app.telegram.keyboards.confirmations import (
     RETURN_CALLBACK_PREFIX,
     VIEW_ALL_CALLBACK_DATA,
 )
+from app.telegram.keyboards.points import OLDER_CALLBACK_PREFIX
 from app.telegram.keyboards.rewards import GET_CALLBACK_PREFIX as REWARD_GET_CALLBACK_PREFIX
 from app.telegram.keyboards.tasks import EXECUTION_DONE_CALLBACK_PREFIX, TASKS_CALLBACK_PREFIX
 
@@ -85,6 +87,10 @@ def build_application() -> BotApplication:
     application.add_handler(CommandHandler("rewards", handle_rewards_command))
     application.add_handler(
         CallbackQueryHandler(handle_get_reward, pattern=f"^{REWARD_GET_CALLBACK_PREFIX}")
+    )
+    application.add_handler(CommandHandler("points", handle_points_command))
+    application.add_handler(
+        CallbackQueryHandler(handle_older_points, pattern=f"^{OLDER_CALLBACK_PREFIX}")
     )
     application.add_error_handler(_on_error)
     return application
