@@ -42,5 +42,22 @@ services:
     depends_on:
       - backend
 
+  telegram-bot:
+    # Same build context/image as `backend` (Issue #23) -- same application
+    # package, same dependencies, just a different process/command. No
+    # ports: it only makes outbound long-polling requests to Telegram, never
+    # receives inbound traffic, and does not run migrations.
+    build: ./backend
+    command: ["python", "-m", "app.telegram.bot"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-app}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+    volumes:
+      - ./backend:/app
+      - /app/.venv
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   db_data:

@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
     environment: str = "development"
     initial_setup_token: str | None = None
+    # Issue #23: read by the separate telegram-bot process (app/telegram/bot.py),
+    # not by the FastAPI app itself. Never returned in any API response.
+    telegram_bot_token: str | None = None
 
     @field_validator("cors_origins", mode="before")
     @classmethod

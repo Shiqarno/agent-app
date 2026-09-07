@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.activation import InvalidActivationError, resolve_activation
 from app.config import settings
 from app.csrf import CSRF_COOKIE_NAME
 from app.db import get_db
@@ -19,7 +20,7 @@ from app.errors import (
     UserAlreadyActivatedError,
 )
 from app.identity import SESSION_COOKIE_NAME, get_current_user
-from app.models import User, UserActivation, UserCredential, UserRole, UserSession, utcnow
+from app.models import User, UserCredential, UserRole, UserSession, utcnow
 from app.schemas import (
     ActivateRequest,
     LoginRequest,
@@ -292,15 +293,10 @@ def setup(
 def activate(
     payload: ActivateRequest, response: Response, db: Session = Depends(get_db)
 ) -> UserResponse:
-    activation = db.scalar(
-        select(UserActivation).where(UserActivation.token_hash == hash_token(payload.token))
-    )
-    if activation is None or activation.used_at is not None or activation.expires_at < utcnow():
-        raise InvalidActivationTokenError()
-
-    user = db.get(User, activation.user_id)
-    if user is None:
-        raise InvalidActivationTokenError()
+    try:
+        activation, user = resolve_activation(db, payload.token)
+    except InvalidActivationError as exc:
+        raise InvalidActivationTokenError() from exc
 
     existing_credential = db.scalar(select(UserCredential).where(UserCredential.user_id == user.id))
     if existing_credential is not None:

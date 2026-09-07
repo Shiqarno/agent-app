@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -284,3 +285,24 @@ class UserActivation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
+class TelegramIdentity(Base):
+    """Connects one User to one Telegram account (Issue #23). Deliberately
+    not a generic "Identity" abstraction -- this is Telegram-specific, and
+    Web identity continues to be resolved through UserSession exactly as
+    before. Both `user_id` and `telegram_user_id` are unique: a User has at
+    most one Telegram account, and a Telegram account belongs to at most
+    one User. No `role` column -- role stays on `User`.
+    """
+
+    __tablename__ = "telegram_identities"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), unique=True, nullable=False
+    )
+    # Telegram user ids are 64-bit and can exceed Postgres's 32-bit Integer
+    # range, so this must be BigInteger, not Integer.
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
