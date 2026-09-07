@@ -2,10 +2,23 @@ import logging
 from typing import Any
 
 from telegram import Update
-from telegram.ext import Application, ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import (
+    Application,
+    ApplicationBuilder,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+)
 
 from app.config import settings
 from app.telegram.handlers.start import handle_start
+from app.telegram.handlers.tasks import (
+    handle_mark_ready,
+    handle_my_tasks_command,
+    handle_take_task,
+    handle_tasks_command,
+)
+from app.telegram.keyboards.tasks import EXECUTION_DONE_CALLBACK_PREFIX, TASKS_CALLBACK_PREFIX
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +51,14 @@ def build_application() -> BotApplication:
 
     application = ApplicationBuilder().token(settings.telegram_bot_token).build()
     application.add_handler(CommandHandler("start", handle_start))
+    application.add_handler(CommandHandler("tasks", handle_tasks_command))
+    application.add_handler(CommandHandler("mytasks", handle_my_tasks_command))
+    application.add_handler(
+        CallbackQueryHandler(handle_take_task, pattern=f"^{TASKS_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_mark_ready, pattern=f"^{EXECUTION_DONE_CALLBACK_PREFIX}")
+    )
     application.add_error_handler(_on_error)
     return application
 

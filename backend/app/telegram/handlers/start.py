@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from app.db import SessionLocal
+from app.models import UserRole
 from app.telegram_identity import (
     TelegramAccountAlreadyLinkedError,
     TelegramActivationInvalidError,
@@ -45,8 +46,14 @@ def _resolve_home(telegram_user_id: int) -> str:
         user = resolve_user_by_telegram_id(db, telegram_user_id)
         if user is None:
             return _NOT_CONNECTED_TEXT
-        # Minimal, role-aware placeholder -- Task/Reward/Points UX is out of
-        # scope for Issue #23 (identity/activation foundation only).
+        # Minimal, role-aware placeholder -- Reward/Points UX and a full
+        # Adult workflow are still out of scope (Issue #24 implements only
+        # the Child Tasks/My Tasks navigation below).
+        if user.role == UserRole.CHILD:
+            return (
+                f"Welcome back, {user.name}! Use /tasks to see available tasks, "
+                "or /mytasks to see what you're working on."
+            )
         return f"Welcome back, {user.name}! Your Telegram account is connected."
     finally:
         db.close()
