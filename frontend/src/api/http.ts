@@ -1,4 +1,10 @@
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+// Empty by default: requests target a relative path (e.g. /api/auth/me),
+// which the Vite dev server proxies to the backend (vite.config.ts) so the
+// browser sees the Web UI and the API as the same origin -- required for
+// the SameSite=Lax session cookie to be accepted and sent back at all.
+// VITE_API_URL remains available for a deployment that intentionally serves
+// the API from a separate origin.
+const API_URL = import.meta.env.VITE_API_URL ?? ''
 
 const CSRF_COOKIE_NAME = 'csrf_token'
 const CSRF_HEADER_NAME = 'X-CSRF-Token'
@@ -46,10 +52,11 @@ function readCookie(name: string): string | null {
 
 // Shared fetch wrapper for all API calls. Always sends the session cookie
 // (`credentials: 'include'`) so the backend's cookie-based auth (Issue #9)
-// works when frontend and backend are on different origins in development,
-// and attaches the CSRF header the backend's double-submit-cookie check
-// requires on state-changing requests (GET/HEAD/OPTIONS are exempt, matching
-// the backend).
+// keeps working if a deployment ever sets VITE_API_URL to a genuinely
+// separate origin -- in normal development the request is same-origin via
+// the Vite proxy, where this is a no-op. Also attaches the CSRF header the
+// backend's double-submit-cookie check requires on state-changing requests
+// (GET/HEAD/OPTIONS are exempt, matching the backend).
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? 'GET').toUpperCase()
   const headers: Record<string, string> = {

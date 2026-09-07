@@ -33,7 +33,11 @@ services:
   frontend:
     build: ./frontend
     environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+      # Empty by default: the Web UI calls same-origin /api/* URLs, which
+      # the Vite dev server proxies to `backend` (vite.config.ts). Only set
+      # this for a deployment that intentionally serves the API from a
+      # separate origin.
+      VITE_API_URL: ${VITE_API_URL:-}
     ports:
       - "5173:5173"
     volumes:
