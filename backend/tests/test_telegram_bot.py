@@ -8,6 +8,7 @@ from app.telegram.handlers.confirmations import (
     handle_return_execution,
     handle_view_all_confirmations,
 )
+from app.telegram.handlers.rewards import handle_get_reward, handle_rewards_command
 from app.telegram.handlers.start import handle_start
 from app.telegram.handlers.tasks import (
     handle_mark_ready,
@@ -29,9 +30,7 @@ def fake_token(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_build_application_registers_every_handler(fake_token: None) -> None:
     application = build_application()
 
-    callbacks = {
-        handler.callback for group in application.handlers.values() for handler in group
-    }
+    callbacks = {handler.callback for group in application.handlers.values() for handler in group}
 
     assert handle_start in callbacks
     assert handle_tasks_command in callbacks
@@ -42,6 +41,8 @@ def test_build_application_registers_every_handler(fake_token: None) -> None:
     assert handle_confirm_execution in callbacks
     assert handle_return_execution in callbacks
     assert handle_view_all_confirmations in callbacks
+    assert handle_rewards_command in callbacks
+    assert handle_get_reward in callbacks
 
 
 def test_build_application_fails_clearly_without_a_token(monkeypatch: pytest.MonkeyPatch) -> None:
