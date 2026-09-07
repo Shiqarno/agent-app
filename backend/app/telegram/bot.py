@@ -11,12 +11,23 @@ from telegram.ext import (
 )
 
 from app.config import settings
+from app.telegram.handlers.confirmations import (
+    handle_confirm_execution,
+    handle_confirmations_command,
+    handle_return_execution,
+    handle_view_all_confirmations,
+)
 from app.telegram.handlers.start import handle_start
 from app.telegram.handlers.tasks import (
     handle_mark_ready,
     handle_my_tasks_command,
     handle_take_task,
     handle_tasks_command,
+)
+from app.telegram.keyboards.confirmations import (
+    CONFIRM_CALLBACK_PREFIX,
+    RETURN_CALLBACK_PREFIX,
+    VIEW_ALL_CALLBACK_DATA,
 )
 from app.telegram.keyboards.tasks import EXECUTION_DONE_CALLBACK_PREFIX, TASKS_CALLBACK_PREFIX
 
@@ -58,6 +69,16 @@ def build_application() -> BotApplication:
     )
     application.add_handler(
         CallbackQueryHandler(handle_mark_ready, pattern=f"^{EXECUTION_DONE_CALLBACK_PREFIX}")
+    )
+    application.add_handler(CommandHandler("confirmations", handle_confirmations_command))
+    application.add_handler(
+        CallbackQueryHandler(handle_confirm_execution, pattern=f"^{CONFIRM_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_return_execution, pattern=f"^{RETURN_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_view_all_confirmations, pattern=f"^{VIEW_ALL_CALLBACK_DATA}$")
     )
     application.add_error_handler(_on_error)
     return application

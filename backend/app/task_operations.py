@@ -4,7 +4,16 @@ from sqlalchemy import exists, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import Task, TaskExecution, TaskExecutionStatus, User, UserRole, utcnow
+from app.models import (
+    PointTransaction,
+    PointTransactionReason,
+    Task,
+    TaskExecution,
+    TaskExecutionStatus,
+    User,
+    UserRole,
+    utcnow,
+)
 
 # Mirrors the frontend's OPEN_EXECUTION_STATUSES (TasksPage.tsx /
 # TaskDetailsPage.tsx): the only statuses that represent a still-open
@@ -43,6 +52,20 @@ class TaskNotClaimableError(TaskOperationError):
 class TaskExecutionNotActionableError(TaskOperationError):
     """The TaskExecution doesn't exist, doesn't belong to the current User,
     or isn't in the lifecycle state required for the requested transition.
+    """
+
+
+class NotAnAdultError(TaskOperationError):
+    """Only an Adult may perform this Task Confirmation operation."""
+
+
+class TaskExecutionNotConfirmableError(TaskOperationError):
+    """The TaskExecution doesn't exist, or isn't in AWAITING_CONFIRMATION.
+    Deliberately no ownership dimension here (Issue #25 section 9): unlike
+    `TaskExecutionNotActionableError` above (which also checks the calling
+    User owns the execution -- that rule is for a Child acting on their own
+    work), any Adult may confirm/return any awaiting execution, so this
+    error only ever means "doesn't exist" or "wrong state".
     """
 
 
@@ -182,3 +205,103 @@ def mark_execution_ready(
     task = db.get(Task, execution.task_id)
     assert task is not None  # a TaskExecution's Task is never deleted
     return execution, task
+
+
+def get_pending_confirmations(db: Session, user: User) -> list[tuple[TaskExecution, Task, User]]:
+    """Executions currently awaiting Adult confirmation (Issue #25 section
+    12), paired with their Task and Child for presentation. Deliberately no
+    ownership filter -- see confirm_execution/return_execution_to_work: any
+    Adult sees every awaiting execution, not just ones for Tasks they
+    created.
+    """
+    if user.role != UserRole.ADULT:
+        raise NotAnAdultError()
+
+    stmt = (
+        select(TaskExecution, Task, User)
+        .join(Task, Task.id == TaskExecution.task_id)
+        .join(User, User.id == TaskExecution.user_id)
+        .where(TaskExecution.status == TaskExecutionStatus.AWAITING_CONFIRMATION)
+        .order_by(TaskExecution.created_at.asc())
+    )
+    return [(execution, task, child) for execution, task, child in db.execute(stmt).all()]
+
+
+def confirm_execution(
+    db: Session, user: User, execution_id: uuid.UUID
+) -> tuple[TaskExecution, Task, User]:
+    """AWAITING_CONFIRMATION -> COMPLETED, plus exactly one TASK_COMPLETED
+    PointTransaction, atomically (Issue #25 section 5/13).
+
+    Authorization is deliberately role-only, not ownership-based (section
+    9): unlike the Web confirm endpoint (routers/task_executions.py, which
+    requires `task.created_by == user.id`), any Adult may confirm any
+    awaiting execution here -- there is no Adult<->Child ownership model.
+    This is why this function is not a thin wrapper around the Web
+    endpoint: the two have genuinely different authorization semantics, and
+    the Web endpoint's existing (tested, public) contract is left
+    untouched. What *is* reused is the shape of the underlying mechanics
+    (row lock, status check, PointTransaction creation, the
+    task_execution_id+reason unique constraint as the concurrency
+    backstop) -- the same pattern as the Web endpoint's own confirm.
+    """
+    if user.role != UserRole.ADULT:
+        raise NotAnAdultError()
+
+    execution = _get_execution_for_update(db, execution_id)
+    if execution is None or execution.status != TaskExecutionStatus.AWAITING_CONFIRMATION:
+        raise TaskExecutionNotConfirmableError()
+
+    execution.status = TaskExecutionStatus.COMPLETED
+    execution.updated_at = utcnow()
+    db.add(
+        PointTransaction(
+            user_id=execution.user_id,
+            task_execution_id=execution.id,
+            amount=execution.reward_points,
+            reason=PointTransactionReason.TASK_COMPLETED,
+        )
+    )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise TaskExecutionNotConfirmableError() from exc
+    db.refresh(execution)
+
+    task = db.get(Task, execution.task_id)
+    assert task is not None
+    child = db.get(User, execution.user_id)
+    assert child is not None
+    return execution, task, child
+
+
+def return_execution_to_work(
+    db: Session, user: User, execution_id: uuid.UUID
+) -> tuple[TaskExecution, Task, User]:
+    """AWAITING_CONFIRMATION -> IN_PROGRESS, no PointTransaction (Issue #25
+    section 7/14). Same row lock as confirm_execution, so a concurrent
+    Confirm/Return race on the same execution fully serializes: whichever
+    transaction gets the lock first commits its transition, and the other
+    re-reads the now-changed status and is rejected before mutating
+    anything -- no IntegrityError catch needed here since (unlike
+    PointTransaction) nothing about this transition is uniqueness-
+    constrained.
+    """
+    if user.role != UserRole.ADULT:
+        raise NotAnAdultError()
+
+    execution = _get_execution_for_update(db, execution_id)
+    if execution is None or execution.status != TaskExecutionStatus.AWAITING_CONFIRMATION:
+        raise TaskExecutionNotConfirmableError()
+
+    execution.status = TaskExecutionStatus.IN_PROGRESS
+    execution.updated_at = utcnow()
+    db.commit()
+    db.refresh(execution)
+
+    task = db.get(Task, execution.task_id)
+    assert task is not None
+    child = db.get(User, execution.user_id)
+    assert child is not None
+    return execution, task, child

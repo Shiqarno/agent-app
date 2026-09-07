@@ -1,10 +1,13 @@
 import asyncio
 
-from telegram import Update
+from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from app.db import SessionLocal
 from app.models import UserRole
+from app.task_operations import get_pending_confirmations
+from app.telegram.keyboards.confirmations import confirmation_summary_keyboard
+from app.telegram.views.confirmations import render_confirmation_summary
 from app.telegram_identity import (
     TelegramAccountAlreadyLinkedError,
     TelegramActivationInvalidError,
@@ -40,21 +43,31 @@ def _activate(raw_token: str, telegram_user_id: int) -> str:
         db.close()
 
 
-def _resolve_home(telegram_user_id: int) -> str:
+def _resolve_home(telegram_user_id: int) -> tuple[str, InlineKeyboardMarkup | None]:
     db = SessionLocal()
     try:
         user = resolve_user_by_telegram_id(db, telegram_user_id)
         if user is None:
-            return _NOT_CONNECTED_TEXT
-        # Minimal, role-aware placeholder -- Reward/Points UX and a full
-        # Adult workflow are still out of scope (Issue #24 implements only
-        # the Child Tasks/My Tasks navigation below).
+            return _NOT_CONNECTED_TEXT, None
+        # Minimal, role-aware placeholder -- Reward/Points UX is still out
+        # of scope (Issue #24 implements Child Tasks/My Tasks; Issue #25
+        # implements the Adult Task Confirmation queue below).
         if user.role == UserRole.CHILD:
             return (
                 f"Welcome back, {user.name}! Use /tasks to see available tasks, "
                 "or /mytasks to see what you're working on."
-            )
-        return f"Welcome back, {user.name}! Your Telegram account is connected."
+            ), None
+
+        # Adult Home leads with the Confirmation queue when there's
+        # something to act on (Issue #25 section 1) -- not a general
+        # dashboard; Pending Tasks stays out of scope.
+        items = get_pending_confirmations(db, user)
+        if items:
+            return render_confirmation_summary(items), confirmation_summary_keyboard()
+        return (
+            f"Welcome back, {user.name}! Use /confirmations to review tasks "
+            "waiting for confirmation."
+        ), None
     finally:
         db.close()
 
@@ -71,7 +84,7 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     if context.args:
         reply = await asyncio.to_thread(_activate, context.args[0], telegram_user_id)
+        await update.message.reply_text(reply)
     else:
-        reply = await asyncio.to_thread(_resolve_home, telegram_user_id)
-
-    await update.message.reply_text(reply)
+        text, keyboard = await asyncio.to_thread(_resolve_home, telegram_user_id)
+        await update.message.reply_text(text, reply_markup=keyboard)
