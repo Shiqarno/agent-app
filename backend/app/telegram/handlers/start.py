@@ -49,10 +49,11 @@ def _resolve_home(telegram_user_id: int) -> tuple[str, InlineKeyboardMarkup | No
         user = resolve_user_by_telegram_id(db, telegram_user_id)
         if user is None:
             return _NOT_CONNECTED_TEXT, None
-        # Minimal, role-aware placeholder -- Adult Points UX is still out of
-        # scope (Issue #24 implements Child Tasks/My Tasks; Issue #25
-        # implements the Adult Task Confirmation queue below; Issue #26
-        # implements Child Rewards; Issue #27 implements Child Points).
+        # Minimal, role-aware placeholder -- Adult Rewards/Points UX is
+        # still out of scope (Issue #24 implements Child Tasks/My Tasks;
+        # Issue #25 implements the Adult Task Confirmation queue below;
+        # Issue #26 implements Child Rewards; Issue #27 implements Child
+        # Points; Issue #28 implements Adult Tasks).
         if user.role == UserRole.CHILD:
             return (
                 f"Welcome back, {user.name}! Use /tasks to see available tasks, "
@@ -68,7 +69,7 @@ def _resolve_home(telegram_user_id: int) -> tuple[str, InlineKeyboardMarkup | No
             return render_confirmation_summary(items), confirmation_summary_keyboard()
         return (
             f"Welcome back, {user.name}! Use /confirmations to review tasks "
-            "waiting for confirmation."
+            "waiting for confirmation, or /tasks to manage the task catalog."
         ), None
     finally:
         db.close()

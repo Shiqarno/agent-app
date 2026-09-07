@@ -2,6 +2,19 @@ import pytest
 
 from app.config import settings
 from app.telegram.bot import build_application
+from app.telegram.handlers.adult_tasks import (
+    handle_activate_task,
+    handle_add_task,
+    handle_deactivate_task,
+    handle_edit_menu,
+    handle_edit_name,
+    handle_edit_reward,
+    handle_home,
+    handle_list_tasks,
+    handle_open_task,
+    handle_task_flow_text,
+    handle_tasks_command,
+)
 from app.telegram.handlers.confirmations import (
     handle_confirm_execution,
     handle_confirmations_command,
@@ -11,12 +24,7 @@ from app.telegram.handlers.confirmations import (
 from app.telegram.handlers.points import handle_older_points, handle_points_command
 from app.telegram.handlers.rewards import handle_get_reward, handle_rewards_command
 from app.telegram.handlers.start import handle_start
-from app.telegram.handlers.tasks import (
-    handle_mark_ready,
-    handle_my_tasks_command,
-    handle_take_task,
-    handle_tasks_command,
-)
+from app.telegram.handlers.tasks import handle_mark_ready, handle_my_tasks_command, handle_take_task
 
 
 @pytest.fixture
@@ -46,6 +54,16 @@ def test_build_application_registers_every_handler(fake_token: None) -> None:
     assert handle_get_reward in callbacks
     assert handle_points_command in callbacks
     assert handle_older_points in callbacks
+    assert handle_open_task in callbacks
+    assert handle_list_tasks in callbacks
+    assert handle_home in callbacks
+    assert handle_add_task in callbacks
+    assert handle_edit_menu in callbacks
+    assert handle_edit_name in callbacks
+    assert handle_edit_reward in callbacks
+    assert handle_activate_task in callbacks
+    assert handle_deactivate_task in callbacks
+    assert handle_task_flow_text in callbacks
 
 
 def test_build_application_fails_clearly_without_a_token(monkeypatch: pytest.MonkeyPatch) -> None:

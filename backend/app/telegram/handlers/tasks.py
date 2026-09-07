@@ -128,13 +128,6 @@ def _mark_ready(
         db.close()
 
 
-async def handle_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.effective_user is None or update.message is None:
-        return
-    text, keyboard = await asyncio.to_thread(_tasks_view, update.effective_user.id)
-    await update.message.reply_text(text, reply_markup=keyboard)
-
-
 async def handle_my_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_user is None or update.message is None:
         return

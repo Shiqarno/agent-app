@@ -8,9 +8,24 @@ from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    MessageHandler,
+    filters,
 )
 
 from app.config import settings
+from app.telegram.handlers.adult_tasks import (
+    handle_activate_task,
+    handle_add_task,
+    handle_deactivate_task,
+    handle_edit_menu,
+    handle_edit_name,
+    handle_edit_reward,
+    handle_home,
+    handle_list_tasks,
+    handle_open_task,
+    handle_task_flow_text,
+    handle_tasks_command,
+)
 from app.telegram.handlers.confirmations import (
     handle_confirm_execution,
     handle_confirmations_command,
@@ -20,11 +35,19 @@ from app.telegram.handlers.confirmations import (
 from app.telegram.handlers.points import handle_older_points, handle_points_command
 from app.telegram.handlers.rewards import handle_get_reward, handle_rewards_command
 from app.telegram.handlers.start import handle_start
-from app.telegram.handlers.tasks import (
-    handle_mark_ready,
-    handle_my_tasks_command,
-    handle_take_task,
-    handle_tasks_command,
+from app.telegram.handlers.tasks import handle_mark_ready, handle_my_tasks_command, handle_take_task
+from app.telegram.keyboards.adult_tasks import (
+    ACTIVATE_CALLBACK_PREFIX,
+    ADD_CALLBACK_DATA,
+    DEACTIVATE_CALLBACK_PREFIX,
+    EDIT_CALLBACK_PREFIX,
+    EDIT_NAME_CALLBACK_PREFIX,
+    EDIT_REWARD_CALLBACK_PREFIX,
+    HOME_CALLBACK_DATA,
+    LIST_CALLBACK_DATA,
+)
+from app.telegram.keyboards.adult_tasks import (
+    OPEN_CALLBACK_PREFIX as ADULT_TASK_OPEN_CALLBACK_PREFIX,
 )
 from app.telegram.keyboards.confirmations import (
     CONFIRM_CALLBACK_PREFIX,
@@ -92,6 +115,30 @@ def build_application() -> BotApplication:
     application.add_handler(
         CallbackQueryHandler(handle_older_points, pattern=f"^{OLDER_CALLBACK_PREFIX}")
     )
+    application.add_handler(
+        CallbackQueryHandler(handle_open_task, pattern=f"^{ADULT_TASK_OPEN_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_list_tasks, pattern=f"^{LIST_CALLBACK_DATA}$")
+    )
+    application.add_handler(CallbackQueryHandler(handle_home, pattern=f"^{HOME_CALLBACK_DATA}$"))
+    application.add_handler(CallbackQueryHandler(handle_add_task, pattern=f"^{ADD_CALLBACK_DATA}$"))
+    application.add_handler(
+        CallbackQueryHandler(handle_edit_menu, pattern=f"^{EDIT_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_edit_name, pattern=f"^{EDIT_NAME_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_edit_reward, pattern=f"^{EDIT_REWARD_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_activate_task, pattern=f"^{ACTIVATE_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_deactivate_task, pattern=f"^{DEACTIVATE_CALLBACK_PREFIX}")
+    )
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_task_flow_text))
     application.add_error_handler(_on_error)
     return application
 
