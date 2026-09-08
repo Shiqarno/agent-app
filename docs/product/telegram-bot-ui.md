@@ -54,8 +54,9 @@ Points
 
 Headed "Доступные задачи". The list of active Task definitions the Child
 can currently self-claim — no description, no history. A Task's name
-appears nowhere but its own `Take` button, alongside its reward points,
-so nothing is ever shown twice.
+appears nowhere but its own button, alongside its reward points — no verb
+on the button either, since tapping it is self-evidently the action, so
+nothing is ever shown twice.
 
 ### Take
 
@@ -92,10 +93,10 @@ confirms.
 
 Headed "Доступные награды", followed by the Child's current balance. The
 global reward catalog (not scoped by who created it), each showing name,
-cost, and current balance context: `Get` when affordable, "Not enough
-points" when not — the `Get` button itself also shows the reward's name
-and cost. `Get` redeems immediately at the reward's *current* cost — never
-a cost cached from when the screen was rendered.
+cost, and current balance context: a button (name + cost, no verb) when
+affordable, "Not enough points" and no button when not. Tapping a reward's
+button redeems immediately at its *current* cost — never a cost cached
+from when the screen was rendered.
 
 ### Points
 
@@ -129,8 +130,10 @@ separate domain entity, just that status. Any connected Adult may act on
 any awaiting execution; there is no Adult↔Child ownership. A two-step
 flow:
 
-1. **The list** — one button per awaiting execution, showing only the
-   Task's name; nothing is duplicated as separate text above it.
+1. **The list** — one button per awaiting execution, showing the Task's
+   name and the Child's name (needed to tell apart two Children awaiting
+   confirmation on the same Task); nothing is duplicated as separate text
+   above it.
 2. **The selected execution** — tapping a Task shows its name, the Child,
    and the reward snapshot, together with `Confirm` (→ `COMPLETED`,
    exactly one `TASK_COMPLETED` point transaction) and `Return to work`
@@ -147,17 +150,23 @@ Headed "Все задачи". Manages the reusable Task-definition catalog —
 distinct from Child Tasks, which is about claiming, not defining. Any
 Adult may manage any Task; there is no per-Adult ownership in Telegram.
 
-Each Task in the list shows its name, current reward, and availability for
-**self-claim** — `is_active` and its own single self-claim slot, not
-whether the Task has any executions at all — right on the button itself,
-so the Adult can scan the whole catalog without opening each Task:
+Each Task's button shows its name and current reward, so the Adult can
+scan the whole catalog without opening each Task. Whether the Task is
+currently open for **self-claim** — `is_active`, its own single self-claim
+slot, never whether the Task has any executions at all — is shown by
+striking through the name when inactive, rather than a separate word:
 
-- an active Task with no current open execution is **Available**;
-- an active Task *with* one, or an inactive Task, is **Not available** —
-  when there's a current open execution, its Child and state are shown
-  (e.g. "Alex — in progress");
-- terminal (completed/cancelled) executions never affect availability and
-  are never shown here — this is not a history view.
+- an active Task's name is shown plain;
+- an inactive Task's name is shown struck through;
+- this reflects `is_active` alone — a Task can be active with a current
+  open execution (e.g. directly assigned) and still shows plain, since
+  self-claim availability and execution state are independent.
+
+Below the list, message text also shows each Task's availability with
+more context — when there's a current open execution, its Child and state
+(e.g. "Alex — in progress"); terminal (completed/cancelled) executions
+never affect availability and are never shown here — this is not a
+history view.
 
 A Task can have more than one open execution at once for different
 Children (one self-claimed, others directly assigned); the list and

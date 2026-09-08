@@ -1,6 +1,6 @@
 from app.models import Task, TaskExecution, User
 
-CONFIRMATIONS_HEADING = "Confirmations"
+CONFIRMATIONS_HEADING = "Подтверждения"
 NO_CONFIRMATIONS_TEXT = "No tasks waiting for confirmation."
 
 

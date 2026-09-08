@@ -148,7 +148,7 @@ def test_adult_can_render_the_confirmation_list(real: RealData) -> None:
     assert text == CONFIRMATIONS_HEADING
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 1
-    assert keyboard.inline_keyboard[0][0].text == "Clean room"
+    assert keyboard.inline_keyboard[0][0].text == "Clean room · Vova"
     assert keyboard.inline_keyboard[0][0].callback_data == f"{OPEN_CALLBACK_PREFIX}{execution.id}"
 
 
@@ -171,12 +171,39 @@ def test_multiple_confirmations_produce_one_button_each_with_distinct_execution_
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 2
     labels = {row[0].text for row in keyboard.inline_keyboard}
-    assert labels == {"Wash dishes", "Clean room"}
+    assert labels == {"Wash dishes · Alex", "Clean room · Blair"}
     callback_datas = {row[0].callback_data for row in keyboard.inline_keyboard}
     assert callback_datas == {
         f"{OPEN_CALLBACK_PREFIX}{execution_a.id}",
         f"{OPEN_CALLBACK_PREFIX}{execution_b.id}",
     }
+
+
+def test_same_task_for_two_children_produces_two_distinguishable_buttons(
+    real: RealData,
+) -> None:
+    """Issue #36: a title-only button would be ambiguous when two Children
+    both have an execution of the same Task -- the Child name on each
+    button is what disambiguates them.
+    """
+    adult = real.make_user(ADULT)
+    child_a = real.make_user(CHILD, "Alice")
+    child_b = real.make_user(CHILD, "Bob")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult, title="Clean room", reward_points=20)
+    execution_a = real.make_execution(task, child_a, TaskExecutionStatus.AWAITING_CONFIRMATION)
+    execution_b = real.make_execution(task, child_b, TaskExecutionStatus.AWAITING_CONFIRMATION)
+
+    _text, keyboard = _list_view(telegram_id)
+
+    assert keyboard is not None
+    assert len(keyboard.inline_keyboard) == 2
+    labels = {row[0].text for row in keyboard.inline_keyboard}
+    assert labels == {"Clean room · Alice", "Clean room · Bob"}
+    by_label = {row[0].text: row[0].callback_data for row in keyboard.inline_keyboard}
+    assert by_label["Clean room · Alice"] == f"{OPEN_CALLBACK_PREFIX}{execution_a.id}"
+    assert by_label["Clean room · Bob"] == f"{OPEN_CALLBACK_PREFIX}{execution_b.id}"
 
 
 def test_child_cannot_use_confirmation_actions(real: RealData) -> None:

@@ -8,16 +8,18 @@ EXECUTION_START_CALLBACK_PREFIX = "execution:start:"
 
 
 def available_tasks_keyboard(tasks: list[Task]) -> InlineKeyboardMarkup:
-    """One `Take` row per Task, its reward included directly on the button
-    (Issue #35) so the Child can see it without opening Task Details. The
-    callback payload only identifies the Task (Issue #24 section 15) -- it
-    is never treated as authorization, the Application layer re-verifies
-    everything when the callback is handled.
+    """One row per Task, its reward included directly on the button
+    (Issue #35) so the Child can see it without opening Task Details --
+    the Task is represented only by its button (Issue #36), so no `Take`
+    verb or separate name text; tapping it is self-evidently the action.
+    The callback payload only identifies the Task (Issue #24 section 15)
+    -- it is never treated as authorization, the Application layer
+    re-verifies everything when the callback is handled.
     """
     rows = [
         [
             InlineKeyboardButton(
-                f"Take · {task.title} · {task.reward_points} pts",
+                f"{task.title} · {task.reward_points} pts",
                 callback_data=f"{TASKS_CALLBACK_PREFIX}{task.id}",
             )
         ]

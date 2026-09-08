@@ -11,15 +11,22 @@ OPEN_CALLBACK_PREFIX = "confirmation:open:"
 def confirmation_list_keyboard(
     items: list[tuple[TaskExecution, Task, User]],
 ) -> InlineKeyboardMarkup:
-    """One row per execution, task name only (Issue #36 step 1) -- Confirm
-    and Return live one tap further in, on the selected execution's own
+    """One row per execution, Task name + Child name (Issue #36 step 1) --
+    the Child name disambiguates when multiple Children have an execution
+    of the same Task, which a title-only button could not. Confirm and
+    Return live one tap further in, on the selected execution's own
     detail screen (confirmation_detail_keyboard), not here. The callback
     payload only identifies the execution for routing, never authorization;
     the Application layer re-verifies everything.
     """
     rows = [
-        [InlineKeyboardButton(task.title, callback_data=f"{OPEN_CALLBACK_PREFIX}{execution.id}")]
-        for execution, task, _child in items
+        [
+            InlineKeyboardButton(
+                f"{task.title} · {child.name}",
+                callback_data=f"{OPEN_CALLBACK_PREFIX}{execution.id}",
+            )
+        ]
+        for execution, task, child in items
     ]
     return InlineKeyboardMarkup(rows)
 

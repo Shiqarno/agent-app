@@ -44,6 +44,7 @@ from app.telegram.keyboards.adult_tasks import (
     EDIT_CALLBACK_PREFIX,
     LIST_CALLBACK_DATA,
     OPEN_CALLBACK_PREFIX,
+    _strikethrough,
 )
 from app.telegram_identity import activate_telegram_identity
 
@@ -156,26 +157,34 @@ def test_adult_tasks_command_opens_adult_tasks_list(real: RealData) -> None:
     assert any("Add task" in label for label in labels)
     assert any("Home" in label for label in labels)
     assert keyboard.inline_keyboard[0][0].callback_data == f"{OPEN_CALLBACK_PREFIX}{task.id}"
-    assert keyboard.inline_keyboard[0][0].text == "Available · Clean room · 20 pts"
+    # Issue #36: no "Available"/"Unavailable" word on the button -- an
+    # active Task's name is shown plain.
+    assert keyboard.inline_keyboard[0][0].text == "Clean room · 20 pts"
 
 
-def test_adult_tasks_list_button_shows_unavailable_for_a_task_with_an_open_execution(
+def test_adult_tasks_list_button_is_not_struck_through_for_an_active_task_with_an_open_execution(
     real: RealData,
 ) -> None:
+    """Issue #36: the button's visual state is driven by `Task.is_active`
+    alone, never by whether a current execution exists -- a directly-
+    assigned Task (Issue #32) can be active with an open execution, and
+    must still show plain (no strikethrough), matching `is_active`'s own
+    established, execution-independent meaning.
+    """
     adult = real.make_user(ADULT)
     child = real.make_user(CHILD, "Alex")
     telegram_id = _next_telegram_id()
     real.connect(adult, telegram_id)
-    task = real.make_task(adult, title="Clean room", reward_points=20)
+    task = real.make_task(adult, title="Clean room", reward_points=20, is_active=True)
     real.make_execution(task, child, TaskExecutionStatus.IN_PROGRESS)
 
     _text, keyboard = _tasks_command_view(telegram_id)
 
     assert keyboard is not None
-    assert keyboard.inline_keyboard[0][0].text == "Unavailable · Clean room · 20 pts"
+    assert keyboard.inline_keyboard[0][0].text == "Clean room · 20 pts"
 
 
-def test_adult_tasks_list_button_shows_unavailable_for_an_inactive_task(real: RealData) -> None:
+def test_adult_tasks_list_button_strikes_through_an_inactive_tasks_name(real: RealData) -> None:
     adult = real.make_user(ADULT)
     telegram_id = _next_telegram_id()
     real.connect(adult, telegram_id)
@@ -184,7 +193,12 @@ def test_adult_tasks_list_button_shows_unavailable_for_an_inactive_task(real: Re
     _text, keyboard = _tasks_command_view(telegram_id)
 
     assert keyboard is not None
-    assert keyboard.inline_keyboard[0][0].text == "Unavailable · Clean room · 20 pts"
+    label = keyboard.inline_keyboard[0][0].text
+    assert label == f"{_strikethrough('Clean room')} · 20 pts"
+    assert "Unavailable" not in label
+    # Every character survives, just with a combining strikethrough mark
+    # after it -- the plain name is still recoverable from the label.
+    assert label.replace("̶", "") == "Clean room · 20 pts"
 
 
 def test_child_tasks_command_still_opens_child_tasks(real: RealData) -> None:
@@ -201,7 +215,9 @@ def test_child_tasks_command_still_opens_child_tasks(real: RealData) -> None:
     assert "Take" not in text  # Child view has no "Take" in the text itself
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert any(label.startswith("Take") for label in labels)
+    # Issue #36: Child /tasks buttons no longer say "Take" either.
+    assert any("Clean room" in label for label in labels)
+    assert not any(label.startswith("Take") for label in labels)
 
 
 def test_unavailable_task_shows_current_execution(real: RealData) -> None:

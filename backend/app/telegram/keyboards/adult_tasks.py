@@ -17,27 +17,41 @@ ASSIGN_CALLBACK_PREFIX = "adulttask:assign:"
 ASSIGN_TO_CALLBACK_PREFIX = "adulttask:assignchild:"
 
 
+# Telegram inline keyboard button labels are always plain text -- there is
+# no Markdown/HTML rendering inside a button, unlike message text. A
+# strikethrough Task name (Issue #36, for an inactive Task) is therefore
+# rendered with Unicode combining characters baked directly into the
+# label string, the standard technique for this platform limitation.
+_STRIKETHROUGH_COMBINING_CHAR = "̶"
+
+
+def _strikethrough(text: str) -> str:
+    return "".join(f"{char}{_STRIKETHROUGH_COMBINING_CHAR}" for char in text)
+
+
 def tasks_list_keyboard(
     items: list[tuple[Task, TaskExecution | None, User | None]],
 ) -> InlineKeyboardMarkup:
     """One row per Task, plus `+ Add task` and `← Home` (Issue #28 section
-    4). Each button shows self-claim availability, name, and reward
-    (Issue #35) so the Adult doesn't need to open every Task to see them --
-    availability here means only "currently self-claimable" (Task.is_active
-    with no current open execution), the same semantics as the view below,
-    never whether the Task has ever had executions. The callback payload
-    only identifies the Task for routing -- the Application layer
-    re-verifies role/existence/state on every call.
+    4). Each button shows name and reward so the Adult doesn't need to
+    open every Task to see them (Issue #35); self-claim availability is
+    shown by striking through the name when `Task.is_active` is false
+    (Issue #36) rather than a separate `Available`/`Unavailable` word --
+    driven by `is_active` alone, never by whether a current execution
+    exists, matching this Task's own established, execution-independent
+    meaning (Issue #32). The callback payload only identifies the Task for
+    routing -- the Application layer re-verifies role/existence/state on
+    every call.
     """
     rows = [
         [
             InlineKeyboardButton(
-                f"{'Available' if execution is None and task.is_active else 'Unavailable'} · "
-                f"{task.title} · {task.reward_points} pts",
+                f"{task.title if task.is_active else _strikethrough(task.title)} · "
+                f"{task.reward_points} pts",
                 callback_data=f"{OPEN_CALLBACK_PREFIX}{task.id}",
             )
         ]
-        for task, execution, _child in items
+        for task, _execution, _child in items
     ]
     rows.append([InlineKeyboardButton("+ Add task", callback_data=ADD_CALLBACK_DATA)])
     rows.append([InlineKeyboardButton("← Home", callback_data=HOME_CALLBACK_DATA)])

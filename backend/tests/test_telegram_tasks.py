@@ -154,7 +154,7 @@ def test_tasks_view_renders_available_tasks(real: RealData) -> None:
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 1
     assert keyboard.inline_keyboard[0][0].callback_data == f"{TASKS_CALLBACK_PREFIX}{task.id}"
-    assert keyboard.inline_keyboard[0][0].text == "Take · Clean room · 20 pts"
+    assert keyboard.inline_keyboard[0][0].text == "Clean room · 20 pts"
 
 
 def test_tasks_view_renders_multiple_tasks_as_separate_buttons(real: RealData) -> None:
@@ -171,7 +171,7 @@ def test_tasks_view_renders_multiple_tasks_as_separate_buttons(real: RealData) -
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 2
     labels = {row[0].text for row in keyboard.inline_keyboard}
-    assert labels == {"Take · Wash dishes · 10 pts", "Take · Walk the dog · 15 pts"}
+    assert labels == {"Wash dishes · 10 pts", "Walk the dog · 15 pts"}
     callback_datas = {row[0].callback_data for row in keyboard.inline_keyboard}
     assert callback_datas == {
         f"{TASKS_CALLBACK_PREFIX}{task_a.id}",
