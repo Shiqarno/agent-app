@@ -477,7 +477,9 @@ describe('UsersPage', () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/activation'))).toBe(false)
   })
 
-  it('an Adult never offers Get activation link, even when not Telegram-connected', async () => {
+  // --- Issue #34: Telegram activation is role-independent -------------------------
+
+  it('an unconnected Adult shows Not connected and offers Get activation link', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => jsonResponse(200, [user({ role: 'adult', telegram_connected: false })])),
@@ -488,9 +490,152 @@ describe('UsersPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Not connected')).toBeInTheDocument()
     })
+    expect(screen.getByRole('button', { name: /get activation link/i })).toBeInTheDocument()
+  })
+
+  it('a connected Adult shows Connected and does not offer Get activation link', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => jsonResponse(200, [user({ role: 'adult', telegram_connected: true })])),
+    )
+
+    renderUsersPage()
+
+    await waitFor(() => {
+      expect(screen.getByText('Connected')).toBeInTheDocument()
+    })
     expect(
       screen.queryByRole('button', { name: /get activation link/i }),
     ).not.toBeInTheDocument()
+  })
+
+  it('a Connected Adult never calls the activation endpoint', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/users')) {
+        return jsonResponse(200, [user({ role: 'adult', telegram_connected: true })])
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderUsersPage()
+
+    await waitFor(() => {
+      expect(screen.getByText('Connected')).toBeInTheDocument()
+    })
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/activation'))).toBe(false)
+  })
+
+  it('clicking Get activation link for an Adult calls the activation endpoint and shows a Telegram deep link', async () => {
+    const expectedUrl = activationTelegramUrlFor('raw-adult-token')
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/users')) {
+        return jsonResponse(200, [user({ role: 'adult', telegram_connected: false })])
+      }
+      if (url.endsWith('/api/users/user-1/activation')) {
+        expect(init?.method).toBe('POST')
+        return jsonResponse(200, {
+          activation_token: 'raw-adult-token',
+          expires_at: '2026-09-06T12:00:00Z',
+        })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderUsersPage()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /get activation link/i })).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /get activation link/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(expectedUrl)).toBeInTheDocument()
+    })
+    expect(screen.getByText(/expires:/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /open in telegram/i })).toHaveAttribute(
+      'href',
+      expectedUrl,
+    )
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/activation')),
+    ).toHaveLength(1)
+  })
+
+  it('the Copy link action copies the generated Telegram link for an Adult', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.endsWith('/api/users')) {
+          return jsonResponse(200, [user({ role: 'adult', telegram_connected: false })])
+        }
+        if (url.endsWith('/api/users/user-1/activation')) {
+          return jsonResponse(200, {
+            activation_token: 'raw-adult-token',
+            expires_at: '2026-09-06T12:00:00Z',
+          })
+        }
+        throw new Error(`Unexpected request: ${url}`)
+      }),
+    )
+
+    renderUsersPage()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /get activation link/i })).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /get activation link/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /copy link/i })).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /copy link/i }))
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(activationTelegramUrlFor('raw-adult-token'))
+    })
+  })
+
+  it('generating a Telegram link for an Adult does not affect a Child in the same list', async () => {
+    const users = [
+      user({ id: 'user-1', name: 'Alice', role: 'adult', telegram_connected: false }),
+      user({ id: 'user-2', name: 'Bob', role: 'child', telegram_connected: false }),
+    ]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.endsWith('/api/users')) return jsonResponse(200, users)
+        if (url.endsWith('/api/users/user-1/activation')) {
+          return jsonResponse(200, {
+            activation_token: 'token-for-alice',
+            expires_at: '2026-09-06T12:00:00Z',
+          })
+        }
+        throw new Error(`Unexpected request: ${url}`)
+      }),
+    )
+
+    renderUsersPage()
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: /get activation link/i })).toHaveLength(2)
+    })
+
+    const aliceItem = screen.getByText('Alice').closest('li') as HTMLElement
+    fireEvent.click(within(aliceItem).getByRole('button', { name: /get activation link/i }))
+
+    await waitFor(() => {
+      expect(within(aliceItem).getByText(/token-for-alice/i)).toBeInTheDocument()
+    })
+    const bobItem = screen.getByText('Bob').closest('li') as HTMLElement
+    expect(within(bobItem).queryByText(/t\.me\//i)).not.toBeInTheDocument()
+    expect(within(bobItem).getByText('Not connected')).toBeInTheDocument()
+    expect(
+      within(bobItem).getByRole('button', { name: /get activation link/i }),
+    ).toBeEnabled()
   })
 
   it('clicking Get activation link calls the activation endpoint and shows a Telegram deep link', async () => {

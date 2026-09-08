@@ -19,12 +19,13 @@ message from every screen. Reconnecting a Telegram account to a different
 User replaces the link; a Telegram account already linked to a different
 User is refused, never silently reassigned.
 
-The Adult obtains the `/start` link for a Child from the Web app (Users →
-a Child → Telegram), which shows whether that Child is connected and, if
-not, a `Get activation link` action producing a `t.me` deep link to send
-them — the same underlying token/link the Web sign-up flow already uses,
-just presented for Telegram. Having Web credentials or not has no bearing
-on Telegram eligibility, and vice versa.
+The Adult obtains the `/start` link for any not-yet-connected User —
+Adult or Child — from the Web app (Users → a User → Telegram), which
+shows whether that User is connected and, if not, a `Get activation link`
+action producing a `t.me` deep link to send them — the same underlying
+token/link the Web sign-up flow already uses, just presented for
+Telegram. Having Web credentials or not has no bearing on Telegram
+eligibility, and vice versa; nor does role.
 
 `/start` with no token opens **Home**, whose content depends on the
 connected User's role.

@@ -110,35 +110,33 @@ def regenerate_user_activation(
     two independent channels: Web credential setup (routers.auth.activate)
     and Telegram linking (telegram_identity.activate_telegram_identity,
     Issue #23) -- a fresh token here is valid for either, whichever the
-    Adult hands to the User first.
+    User's contact hands them first.
 
-    Regeneration is refused only once BOTH channels are already used up
-    (Issue #33): a User with Web credentials but no TelegramIdentity still
-    has a legitimate reason to get a fresh token (to connect Telegram), and
-    vice versa. Before Telegram existed, "has credentials" alone correctly
-    meant "nothing left to activate"; that's no longer sufficient now that
-    there's a second, independent channel.
+    Regeneration is refused only once a TelegramIdentity already exists
+    (Issue #34) -- UserCredential has no bearing on this decision at all,
+    in either direction: a User with Web credentials but no TelegramIdentity
+    still has a legitimate reason to get a fresh token (to connect
+    Telegram), and a User with no Web credentials yet is equally eligible
+    regardless of Telegram status, for the same reason in reverse. Role is
+    likewise irrelevant -- Adult and Child are both ordinary Users here.
     """
     target = db.get(User, user_id)
     if target is None:
         raise UserNotFoundError()
 
-    existing_credential = db.scalar(select(UserCredential).where(UserCredential.user_id == user_id))
     existing_telegram_identity = db.scalar(
         select(TelegramIdentity).where(TelegramIdentity.user_id == user_id)
     )
-    if existing_credential is not None and existing_telegram_identity is not None:
+    if existing_telegram_identity is not None:
         raise UserAlreadyActivatedError()
 
     activation = db.scalar(select(UserActivation).where(UserActivation.user_id == user_id))
     # Every User created via POST /api/users gets a UserActivation row
     # atomically (Issue #10). The only User that doesn't is the first Adult
     # from /auth/setup, created with credentials directly and no row at
-    # all -- previously always caught by the credential check above before
-    # reaching here, but that check alone no longer guarantees it now that
-    # it's credential-AND-Telegram (Issue #33): that bootstrap Adult has no
-    # UserActivation row to regenerate, Telegram or not, so this is treated
-    # the same as already fully activated rather than a server error.
+    # all -- not caught by the TelegramIdentity check above (they have
+    # none), so this is treated the same as already fully activated rather
+    # than a server error.
     if activation is None:
         raise UserAlreadyActivatedError()
 

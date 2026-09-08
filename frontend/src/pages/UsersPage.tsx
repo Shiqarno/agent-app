@@ -217,7 +217,7 @@ function UsersPage() {
                     </Badge>
                   </p>
 
-                  {user.role === 'child' && !user.telegram_connected && (
+                  {!user.telegram_connected && (
                     <div>
                       <button
                         onClick={() => handleGetTelegramLink(user.id)}
