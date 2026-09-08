@@ -19,7 +19,7 @@ def available_tasks_keyboard(tasks: list[Task]) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(
-                f"{task.title} · {task.reward_points} pts",
+                f"{task.title} · 💰 {task.reward_points}",
                 callback_data=f"{TASKS_CALLBACK_PREFIX}{task.id}",
             )
         ]
@@ -42,7 +42,7 @@ def my_tasks_keyboard(items: list[tuple[TaskExecution, Task]]) -> InlineKeyboard
             rows.append(
                 [
                     InlineKeyboardButton(
-                        f"{task.title} · {execution.reward_points} pts",
+                        f"{task.title} · 💰 {execution.reward_points}",
                         callback_data=f"{EXECUTION_START_CALLBACK_PREFIX}{execution.id}",
                     )
                 ]
@@ -51,7 +51,7 @@ def my_tasks_keyboard(items: list[tuple[TaskExecution, Task]]) -> InlineKeyboard
             rows.append(
                 [
                     InlineKeyboardButton(
-                        f"{task.title} · {execution.reward_points} pts",
+                        f"{task.title} · 💰 {execution.reward_points}",
                         callback_data=f"{EXECUTION_DONE_CALLBACK_PREFIX}{execution.id}",
                     )
                 ]

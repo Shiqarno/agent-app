@@ -183,7 +183,7 @@ def test_resolve_home_shows_the_childs_current_points_balance(real: RealData) ->
 
     text, _keyboard, _role = _resolve_home(telegram_id)
 
-    assert "Твои баллы: 120 pts" in text
+    assert "Твои баллы: 💰 120" in text
 
 
 def test_resolve_home_balance_reflects_the_point_ledger_not_a_stored_value(
@@ -200,7 +200,7 @@ def test_resolve_home_balance_reflects_the_point_ledger_not_a_stored_value(
 
     text, _keyboard, _role = _resolve_home(telegram_id)
 
-    assert "Твои баллы: 80 pts" in text
+    assert "Твои баллы: 💰 80" in text
 
 
 def test_resolve_home_shows_zero_balance_for_a_child_with_no_transactions(
@@ -212,7 +212,7 @@ def test_resolve_home_shows_zero_balance_for_a_child_with_no_transactions(
 
     text, _keyboard, _role = _resolve_home(telegram_id)
 
-    assert "Твои баллы: 0 pts" in text
+    assert "Твои баллы: 💰 0" in text
 
 
 def test_resolve_home_still_shows_existing_child_navigation_hints(real: RealData) -> None:

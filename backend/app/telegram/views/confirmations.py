@@ -19,11 +19,11 @@ def render_confirmation_detail(execution: TaskExecution, task: Task, child: User
     reward snapshot -- shown once here, not on the Confirm/Return buttons
     beneath it (confirmation_detail_keyboard).
     """
-    return f"{task.title}\n\n{child.name} · {execution.reward_points} pts"
+    return f"{task.title}\n\n{child.name} · 💰 {execution.reward_points}"
 
 
 def render_execution_confirmed(task: Task, child: User, execution: TaskExecution) -> str:
-    return f"{task.title} confirmed -- {child.name} earned {execution.reward_points} pts."
+    return f"{task.title} confirmed -- {child.name} earned 💰 {execution.reward_points}."
 
 
 def render_execution_returned(task: Task, child: User) -> str:

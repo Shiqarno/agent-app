@@ -76,11 +76,15 @@ class TaskNotFoundError(TaskOperationError):
 
 
 class TaskNotEditableError(TaskOperationError):
-    """The Task has a current open execution, so it cannot be edited,
-    activated, or deactivated right now (Issue #28 sections 5/8/13) -- an
-    Adult must wait for the Child's work to reach a terminal state (via the
-    existing Confirmation workflow) or a Return-to-work, not act on stale
-    Task Details.
+    """The Task has a current open execution, so its title/reward cannot be
+    edited right now (Issue #28 section 5) -- an Adult must wait for the
+    Child's work to reach a terminal state (via the existing Confirmation
+    workflow) or a Return-to-work, not act on stale Task Details.
+
+    Deliberately no longer raised by activate_task/deactivate_task (Issue
+    #37): `Task.is_active` is a self-claim slot, independent of whatever
+    executions already exist, so toggling it is never blocked by them --
+    only editing the Task's own title/reward still is.
     """
 
 
@@ -480,8 +484,16 @@ def update_task(
 def activate_task(db: Session, user: User, task_id: uuid.UUID) -> Task:
     """Reopens the Task's self-claim slot (Issue #28 section 8). Idempotent
     -- activating an already-active Task is a no-op success, matching the
-    existing Web `activate_task` precedent. Refused while a current open
-    execution exists, same rationale and locking as update_task above.
+    existing Web `activate_task` precedent.
+
+    Deliberately independent of any current open execution (Issue #37):
+    `is_active` means only "may a new self-claim happen right now", never
+    whether the Task has executions at all -- an Adult may reopen the
+    self-claim slot while one or more Children already have open
+    executions of this Task, and doing so never touches those executions.
+    The existing (task_id, user_id) open-execution uniqueness constraint
+    is what continues to prevent the *same* Child from claiming twice; it
+    has nothing to do with this flag.
     """
     if user.role != UserRole.ADULT:
         raise NotAnAdultError()
@@ -489,8 +501,6 @@ def activate_task(db: Session, user: User, task_id: uuid.UUID) -> Task:
     task = _get_task_for_update(db, task_id)
     if task is None:
         raise TaskNotFoundError()
-    if _has_open_execution(db, task.id):
-        raise TaskNotEditableError()
 
     task.is_active = True
     task.updated_at = utcnow()
@@ -501,7 +511,9 @@ def activate_task(db: Session, user: User, task_id: uuid.UUID) -> Task:
 
 def deactivate_task(db: Session, user: User, task_id: uuid.UUID) -> Task:
     """Closes the Task's self-claim slot (Issue #28 section 8). Idempotent,
-    same rationale as activate_task above.
+    same rationale as activate_task above -- deliberately independent of
+    any current open execution (Issue #37): existing executions are never
+    cancelled or otherwise modified by closing the slot.
     """
     if user.role != UserRole.ADULT:
         raise NotAnAdultError()
@@ -509,8 +521,6 @@ def deactivate_task(db: Session, user: User, task_id: uuid.UUID) -> Task:
     task = _get_task_for_update(db, task_id)
     if task is None:
         raise TaskNotFoundError()
-    if _has_open_execution(db, task.id):
-        raise TaskNotEditableError()
 
     task.is_active = False
     task.updated_at = utcnow()

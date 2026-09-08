@@ -53,16 +53,23 @@ Points
 ### Home
 
 No separate Child Dashboard — `/start` shows the Child's current overall
-Points balance ("Твои баллы: N pts", read fresh from the Point Ledger,
+Points balance ("Твои баллы: 💰 N", read fresh from the Point Ledger,
 never a stored value) above the same navigation hints as before.
+
+Every points amount shown anywhere in the bot — a balance, a reward, a
+cost, a transaction — uses the same 💰 notation (💰 followed by the
+number), never the literal word "pts". This is a single, consistent
+visual convention across every screen in both the Child and Adult
+navigation; it never changes the underlying numeric value or point
+semantics, only how it's displayed.
 
 ### Tasks
 
 Headed "Доступные задачи". The list of active Task definitions the Child
 can currently self-claim — no description, no history. A Task's name
-appears nowhere but its own button, alongside its reward points — no verb
-on the button either, since tapping it is self-evidently the action, so
-nothing is ever shown twice.
+appears nowhere but its own button, alongside its reward (💰 notation) —
+no verb on the button either, since tapping it is self-evidently the
+action, so nothing is ever shown twice.
 
 ### Take
 
@@ -80,10 +87,10 @@ done — neither button says "Start" or "Done", since tapping either is
 self-evidently the action, and neither Task's name appears anywhere but
 its own button. An `AWAITING_CONFIRMATION` item has no button at all (no
 action is possible on it), so it's shown as text instead — name, reward,
-and "waiting for confirmation". Every reward shown is always the amount
-actually snapshotted onto *that* execution when it began, never a Task's
-reward if it was edited since. Completed/cancelled executions never
-appear here or suppress a Task's future availability.
+and "waiting for confirmation". Every reward shown (💰 notation) is
+always the amount actually snapshotted onto *that* execution when it
+began, never a Task's reward if it was edited since. Completed/cancelled
+executions never appear here or suppress a Task's future availability.
 
 ### Start
 
@@ -100,12 +107,12 @@ confirms.
 
 Headed "Доступные награды", followed by the Child's current balance. The
 global reward catalog (not scoped by who created it): an affordable
-Reward is fully represented by its own button (name + cost, no verb) —
-tapping it redeems immediately at the reward's *current* cost, never a
-cost cached from when the screen was rendered. A Reward the Child can't
-currently afford gets no button (nothing to tap), so it's shown as text
-instead — name, cost, and "Not enough points" — the only case a Reward's
-name appears anywhere but a button.
+Reward is fully represented by its own button (name + cost, 💰 notation,
+no verb) — tapping it redeems immediately at the reward's *current* cost,
+never a cost cached from when the screen was rendered. A Reward the Child
+can't currently afford gets no button (nothing to tap), so it's shown as
+text instead — name, cost, and "Not enough points" — the only case a
+Reward's name appears anywhere but a button.
 
 ### Points
 
@@ -144,12 +151,12 @@ flow:
    confirmation on the same Task); nothing is duplicated as separate text
    above it.
 2. **The selected execution** — tapping a Task shows its name, the Child,
-   and the reward snapshot, together with `Confirm` (→ `COMPLETED`,
-   exactly one `TASK_COMPLETED` point transaction) and `Return to work`
-   (→ back to `IN_PROGRESS`, no points). A `← Back` action returns to the
-   list without acting. Both `Confirm` and `Return to work` act
-   immediately, no further confirmation dialog, and afterward return to
-   the (now refreshed) list.
+   and the reward snapshot (💰 notation), together with `Confirm` (→
+   `COMPLETED`, exactly one `TASK_COMPLETED` point transaction) and
+   `Return to work` (→ back to `IN_PROGRESS`, no points). A `← Back`
+   action returns to the list without acting. Both `Confirm` and
+   `Return to work` act immediately, no further confirmation dialog, and
+   afterward return to the (now refreshed) list.
 
 Selecting one execution never exposes or affects another's controls.
 
@@ -159,23 +166,26 @@ Headed "Все задачи". Manages the reusable Task-definition catalog —
 distinct from Child Tasks, which is about claiming, not defining. Any
 Adult may manage any Task; there is no per-Adult ownership in Telegram.
 
-Each Task is fully represented by its own button — name and current
-reward, so the Adult can scan the whole catalog without opening each Task
-— and nothing is duplicated as separate text alongside the list. Whether
-the Task is currently open for **self-claim** — `is_active`, its own
-single self-claim slot, never whether the Task has any executions at all
-— is shown by striking through the name when inactive, rather than a
-separate word:
+Each Task is fully represented by its own button, and nothing is
+duplicated as separate text alongside the list. Whether the Task is
+currently open for **self-claim** — `is_active`, its own single
+self-claim slot, never whether the Task has any executions at all —
+decides the button's whole shape, not just a word on it:
 
-- an active Task's name is shown plain;
-- an inactive Task's name is shown struck through, as one visually
-  unbroken line across the whole name;
+- an active Task's button shows its name and current reward (💰
+  notation), plain;
+- an inactive Task's button shows *only* its struck-through name, as one
+  visually unbroken line across the whole name — no reward amount at
+  all, since the button represents an unavailable self-claim offer, not
+  a reward-bearing action;
 - this reflects `is_active` alone — a Task can be active with a current
-  open execution (e.g. directly assigned) and still shows plain, since
-  self-claim availability and execution state are independent.
+  open execution (e.g. directly assigned) and still shows plain with its
+  reward, since self-claim availability and execution state are
+  independent.
 
 A Task can have more than one open execution at once for different
-Children (one self-claimed, others directly assigned) — that detail, and
+Children (one self-claimed, others directly assigned, or several
+self-claimed across a deactivate/reactivate cycle) — that detail, and
 which Child currently has it and its state (e.g. "Alex — in progress"),
 lives one tap further in, on Task Details; terminal (completed/cancelled)
 executions never affect availability and are never shown there either —
@@ -185,9 +195,15 @@ Opening a Task shows its details: reward, availability, and (when one
 exists) the current execution summary. From here an Adult can:
 
 - **Edit** title and/or reward points — only when there is no current open
-  execution;
-- **Activate** an inactive Task, or **Deactivate** an active one — again,
-  only with no current open execution;
+  execution, since an edit could otherwise change the terms of work
+  already underway;
+- **Activate** an inactive Task, or **Deactivate** an active one — always
+  available, regardless of any current open execution: `is_active` is a
+  self-claim slot, entirely independent of whatever executions the Task
+  already has, so toggling it never touches them. An Adult can freely
+  reopen a Task's self-claim slot while one or more Children already have
+  an open execution of it (letting another Child claim it too), or close
+  it without disturbing anyone already working on it;
 - **Assign** the Task directly to a Child — always available, regardless
   of `is_active` or of any other open execution, since direct assignment
   is independent of both;
@@ -199,6 +215,9 @@ Editing a Task's reward only changes future claims; every existing
 changes `is_active`, never touches any other `TaskExecution`, and never
 changes the Task's reward — it only creates one new `ASSIGNED` execution
 for the chosen Child, with the Task's *current* reward snapshotted into it.
+The same (Task, Child) pairing can never have two simultaneous open
+executions — that per-Child uniqueness is the only limit on how many
+Children may hold an open execution of the same Task at once.
 
 ### Assign
 
@@ -224,18 +243,23 @@ the source of truth.
 
 ### Users
 
-An identity/onboarding surface — not a dashboard. It shows every User's
-name, role, and whether their Telegram account is connected; it does not
-show task history, points balance, reward history, or any Telegram-internal
-detail like a numeric account id or an activation token. Any Adult may
-manage any User; there is no per-Adult ownership in Telegram, and there is
-still no permanent Adult↔Child relationship anywhere in the product.
+An identity/onboarding surface — not a dashboard. It does not show task
+history, points balance, reward history, or any Telegram-internal detail
+like a numeric account id or an activation token. Any Adult may manage
+any User; there is no per-Adult ownership in Telegram, and there is still
+no permanent Adult↔Child relationship anywhere in the product.
 
-Opening a User shows the same three facts (name, role, connection) on
-their own. For an unconnected Child, this is also where an Adult gets
-**Get activation link** — never shown once that Child is connected, and
-never usable to reconnect or replace an already-connected account (that
-stays out of scope; the existing activation/identity rules are unchanged).
+Each User is fully represented by their own button (just their name) —
+nothing is duplicated as separate text alongside the list; role and
+connection status aren't shown at the list level at all.
+
+Opening a User is where those facts live: name, role, and whether their
+Telegram account is connected — a selected-entity screen, not the list,
+so showing them here isn't duplication. For an unconnected Child, this is
+also where an Adult gets **Get activation link** — never shown once that
+Child is connected, and never usable to reconnect or replace an
+already-connected account (that stays out of scope; the existing
+activation/identity rules are unchanged).
 
 **Add Child** collects just a name, validated the same way as everywhere
 else (non-blank) — invalid input is rejected with a plain message and the
@@ -266,10 +290,10 @@ manage any Reward; there is no per-Adult ownership in Telegram (who
 originally created a Reward is recorded for audit purposes only).
 
 Each Reward is fully represented by its own button — name and current
-cost — nothing duplicated as separate text alongside the list. Opening one
-shows its full details — name, cost, and description — with an **Edit**
-action. There is no Delete and no activate/deactivate control: a Reward
-has no such lifecycle concept at all.
+cost (💰 notation) — nothing duplicated as separate text alongside the
+list. Opening one shows its full details — name, cost, and description —
+with an **Edit** action. There is no Delete and no activate/deactivate
+control: a Reward has no such lifecycle concept at all.
 
 **Add Reward** and **Edit** both collect the same three fields, in the
 same order:
@@ -298,9 +322,9 @@ view or adjust any Child's Points; there is no per-Adult ownership in
 Telegram, and there is still no permanent Adult↔Child relationship
 anywhere in the product.
 
-The Points list shows only Children, each with their current balance —
-Adults never appear here, since there is nothing to manage about an
-Adult's own Points from this screen.
+The Points list shows only Children, each with their current balance (💰
+notation) — Adults never appear here, since there is nothing to manage
+about an Adult's own Points from this screen.
 
 Opening a Child shows their balance and recent transaction history,
 newest first, paginated ("Older" loads more) — the same shape as the

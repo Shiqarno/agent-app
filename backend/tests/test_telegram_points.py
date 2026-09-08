@@ -182,7 +182,7 @@ def test_child_can_render_points(real: RealData) -> None:
     text, keyboard = _points_view(telegram_id, None)
 
     assert "Balance" in text
-    assert "100 pts" in text
+    assert "💰 100" in text
     assert "Clean room" in text
     assert keyboard is not None
 
@@ -196,7 +196,7 @@ def test_balance_is_rendered(real: RealData) -> None:
 
     text, _ = _points_view(telegram_id, None)
 
-    assert "60 pts" in text
+    assert "💰 60" in text
 
 
 def test_task_completed_shows_the_task_title(real: RealData) -> None:
@@ -208,7 +208,7 @@ def test_task_completed_shows_the_task_title(real: RealData) -> None:
     text, _ = _points_view(telegram_id, None)
 
     assert "Wash dishes" in text
-    assert "+20 pts" in text
+    assert "+💰 20" in text
     assert "TASK_COMPLETED" not in text
 
 
@@ -222,7 +222,7 @@ def test_reward_redeemed_shows_the_reward_name(real: RealData) -> None:
     text, _ = _points_view(telegram_id, None)
 
     assert "Ice cream" in text
-    assert "-100 pts" in text
+    assert "-💰 100" in text
     assert "REWARD_REDEEMED" not in text
 
 
@@ -233,7 +233,7 @@ def test_empty_history_renders_correctly(real: RealData) -> None:
 
     text, keyboard = _points_view(telegram_id, None)
 
-    assert "0 pts" in text
+    assert "💰 0" in text
     assert NO_TRANSACTIONS_TEXT in text
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 0

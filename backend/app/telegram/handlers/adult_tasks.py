@@ -278,11 +278,10 @@ def _finish_edit_reward(
 def _toggle_active(
     telegram_user_id: int, raw_task_id: str, *, activate: bool
 ) -> tuple[str, str, InlineKeyboardMarkup | None]:
-    """Returns (toast, refreshed message text, refreshed keyboard). A stale
-    activate/deactivate (Issue #28 section 13) is handled like any other
-    rejection: the Application operation is called anyway, its rejection
-    becomes a friendly toast, and the Task Details view underneath is
-    refreshed to current state.
+    """Returns (toast, refreshed message text, refreshed keyboard). Never
+    blocked by a current open execution (Issue #37: `is_active` is a
+    self-claim slot, independent of whatever executions already exist) --
+    the only rejections left are role and existence.
     """
     db = SessionLocal()
     try:
@@ -304,8 +303,6 @@ def _toggle_active(
             return _NOT_AN_ADULT_TEXT, _NOT_AN_ADULT_TEXT, None
         except TaskNotFoundError:
             return _TASK_NOT_FOUND_TEXT, _TASK_NOT_FOUND_TEXT, back_to_tasks_keyboard()
-        except TaskNotEditableError:
-            toast = _TASK_NOT_EDITABLE_TEXT
 
         try:
             task, execution, child = get_task(db, user, task_id)

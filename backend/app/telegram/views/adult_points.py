@@ -13,7 +13,7 @@ def render_children_points_list(items: list[tuple[User, int]]) -> str:
     """
     if not items:
         return f"💰 Points\n\n{NO_CHILDREN_TEXT}"
-    blocks = [f"{child.name} — {balance} pts" for child, balance in items]
+    blocks = [f"{child.name} — 💰 {balance}" for child, balance in items]
     return "💰 Points\n\n" + "\n".join(blocks)
 
 
@@ -22,7 +22,7 @@ def render_child_points(child: User, view: PointsView, now: datetime) -> str:
     the Child's own self-service Points screen, headed with the Child's
     name so the Adult always knows whose ledger they're looking at.
     """
-    header = f"{child.name}\n\nBalance\n{view.balance} pts"
+    header = f"{child.name}\n\nBalance\n💰 {view.balance}"
     if not view.transactions:
         return f"{header}\n\n{NO_TRANSACTIONS_TEXT}"
     blocks = [
@@ -33,7 +33,7 @@ def render_child_points(child: User, view: PointsView, now: datetime) -> str:
 
 
 def render_adjust_menu(child: User, balance: int) -> str:
-    return f"Adjust points for {child.name}.\n\nCurrent balance: {balance} pts"
+    return f"Adjust points for {child.name}.\n\nCurrent balance: 💰 {balance}"
 
 
 def render_amount_prompt(direction: str, child: User) -> str:
@@ -47,9 +47,9 @@ def render_description_prompt(direction: str) -> str:
 
 
 def render_adjustment_success(child: User, amount: int, new_balance: int) -> str:
-    sign = "+" if amount >= 0 else ""
-    return f"{sign}{amount} pts for {child.name}.\n\n{child.name} now has {new_balance} pts."
+    sign = "+" if amount >= 0 else "-"
+    return f"{sign}💰 {abs(amount)} for {child.name}.\n\n{child.name} now has 💰 {new_balance}."
 
 
 def render_insufficient_balance(child: User, magnitude: int, balance: int) -> str:
-    return f"Current balance: {balance} pts.\n\nYou cannot remove {magnitude} points."
+    return f"Current balance: 💰 {balance}.\n\nYou cannot remove 💰 {magnitude}."

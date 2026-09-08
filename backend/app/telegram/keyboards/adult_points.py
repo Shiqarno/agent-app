@@ -24,7 +24,7 @@ def points_children_keyboard(items: list[tuple[User, int]]) -> InlineKeyboardMar
     rows = [
         [
             InlineKeyboardButton(
-                f"{child.name} — {balance} pts", callback_data=f"{OPEN_CALLBACK_PREFIX}{child.id}"
+                f"{child.name} — 💰 {balance}", callback_data=f"{OPEN_CALLBACK_PREFIX}{child.id}"
             )
         ]
         for child, balance in items

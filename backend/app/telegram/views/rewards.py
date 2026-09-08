@@ -17,7 +17,7 @@ def render_rewards(rewards: list[Reward], balance: int) -> str:
         return f"{header}\n\n{NO_REWARDS_TEXT_PREFIX}"
 
     unaffordable_blocks = [
-        f"{reward.name} · {reward.cost_points} pts\nNot enough points"
+        f"{reward.name} · 💰 {reward.cost_points}\nNot enough points"
         for reward in rewards
         if balance < reward.cost_points
     ]

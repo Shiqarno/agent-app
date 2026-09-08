@@ -154,7 +154,7 @@ def test_tasks_view_renders_available_tasks(real: RealData) -> None:
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 1
     assert keyboard.inline_keyboard[0][0].callback_data == f"{TASKS_CALLBACK_PREFIX}{task.id}"
-    assert keyboard.inline_keyboard[0][0].text == "Clean room · 20 pts"
+    assert keyboard.inline_keyboard[0][0].text == "Clean room · 💰 20"
 
 
 def test_tasks_view_renders_multiple_tasks_as_separate_buttons(real: RealData) -> None:
@@ -171,7 +171,7 @@ def test_tasks_view_renders_multiple_tasks_as_separate_buttons(real: RealData) -
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 2
     labels = {row[0].text for row in keyboard.inline_keyboard}
-    assert labels == {"Wash dishes · 10 pts", "Walk the dog · 15 pts"}
+    assert labels == {"Wash dishes · 💰 10", "Walk the dog · 💰 15"}
     callback_datas = {row[0].callback_data for row in keyboard.inline_keyboard}
     assert callback_datas == {
         f"{TASKS_CALLBACK_PREFIX}{task_a.id}",
@@ -217,7 +217,7 @@ def test_my_tasks_view_renders_in_progress_with_done_button(real: RealData) -> N
     assert keyboard.inline_keyboard[0][0].callback_data == (
         f"{EXECUTION_DONE_CALLBACK_PREFIX}{execution.id}"
     )
-    assert keyboard.inline_keyboard[0][0].text == "Clean room · 20 pts"
+    assert keyboard.inline_keyboard[0][0].text == "Clean room · 💰 20"
 
 
 def test_my_tasks_view_awaiting_confirmation_has_no_cta(real: RealData) -> None:
@@ -364,7 +364,7 @@ def test_my_tasks_view_renders_assigned_with_start_button(real: RealData) -> Non
     assert text == MY_TASKS_HEADING
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert any(label == "Clean room · 20 pts" for label in labels)
+    assert any(label == "Clean room · 💰 20" for label in labels)
     assert not any("Start" in label for label in labels)
 
 
@@ -388,8 +388,8 @@ def test_my_tasks_buttons_use_the_execution_reward_snapshot_not_the_current_task
 
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert any("20 pts" in label for label in labels)
-    assert not any("99 pts" in label for label in labels)
+    assert any("💰 20" in label for label in labels)
+    assert not any("💰 99" in label for label in labels)
 
 
 def test_start_routes_to_start_execution(real: RealData) -> None:
@@ -409,7 +409,7 @@ def test_start_routes_to_start_execution(real: RealData) -> None:
     assert refreshed.status == TaskExecutionStatus.IN_PROGRESS
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert any(label == "Clean room · 20 pts" for label in labels)
+    assert any(label == "Clean room · 💰 20" for label in labels)
 
 
 def test_start_does_not_create_a_second_execution_via_telegram(real: RealData) -> None:

@@ -336,28 +336,89 @@ def test_child_cannot_deactivate_a_task(
         deactivate_task(db_session, child, task.id)
 
 
-def test_activate_is_rejected_when_an_open_execution_exists(
+def test_activate_succeeds_when_an_open_execution_exists(
     make_user: Callable[..., User], db_session: Session
 ) -> None:
+    """Issue #37: `is_active` is a self-claim slot, independent of any
+    execution the Task already has -- activating must never be blocked by
+    one, and must never touch it.
+    """
     adult = make_user(ADULT)
     child = make_user(CHILD)
     task = _make_task(db_session, adult, is_active=False)
-    _make_execution(db_session, task, child, TaskExecutionStatus.AWAITING_CONFIRMATION)
+    execution = _make_execution(db_session, task, child, TaskExecutionStatus.AWAITING_CONFIRMATION)
 
-    with pytest.raises(TaskNotEditableError):
-        activate_task(db_session, adult, task.id)
+    activated = activate_task(db_session, adult, task.id)
+
+    assert activated.is_active is True
+    db_session.refresh(execution)
+    assert execution.status == TaskExecutionStatus.AWAITING_CONFIRMATION
+    assert execution.reward_points == task.reward_points
+    assert db_session.query(TaskExecution).filter_by(task_id=task.id).count() == 1
 
 
-def test_deactivate_is_rejected_when_an_open_execution_exists(
+def test_deactivate_succeeds_when_an_open_execution_exists(
     make_user: Callable[..., User], db_session: Session
 ) -> None:
+    """Issue #37: same independence in the other direction -- deactivating
+    must never be blocked by, or modify, an open execution.
+    """
     adult = make_user(ADULT)
     child = make_user(CHILD)
     task = _make_task(db_session, adult, is_active=True)
-    _make_execution(db_session, task, child, TaskExecutionStatus.ASSIGNED)
+    execution = _make_execution(db_session, task, child, TaskExecutionStatus.ASSIGNED)
 
-    with pytest.raises(TaskNotEditableError):
-        deactivate_task(db_session, adult, task.id)
+    deactivated = deactivate_task(db_session, adult, task.id)
+
+    assert deactivated.is_active is False
+    db_session.refresh(execution)
+    assert execution.status == TaskExecutionStatus.ASSIGNED
+    assert execution.reward_points == task.reward_points
+    assert db_session.query(TaskExecution).filter_by(task_id=task.id).count() == 1
+
+
+def test_multiple_children_can_hold_simultaneous_open_executions_after_reactivation(
+    make_user: Callable[..., User], db_session: Session
+) -> None:
+    """Issue #37: reactivating a Task with one Child's open execution must
+    let a *different* Child claim it too -- the (task_id, user_id)
+    uniqueness constraint only blocks the *same* Child from double-claiming.
+    """
+    adult = make_user(ADULT)
+    first_child = make_user(CHILD)
+    second_child = make_user(CHILD)
+    task = _make_task(db_session, adult, is_active=True)
+    first_execution = _make_execution(
+        db_session, task, first_child, TaskExecutionStatus.IN_PROGRESS
+    )
+
+    deactivate_task(db_session, adult, task.id)
+    activate_task(db_session, adult, task.id)
+    second_execution, _task = claim_task(db_session, second_child, task.id)
+
+    assert second_execution.id != first_execution.id
+    db_session.refresh(first_execution)
+    assert first_execution.status == TaskExecutionStatus.IN_PROGRESS
+    assert db_session.query(TaskExecution).filter_by(task_id=task.id).count() == 2
+
+
+def test_same_child_still_blocked_from_a_second_open_execution_after_reactivation(
+    make_user: Callable[..., User], db_session: Session
+) -> None:
+    """The (task_id, user_id) uniqueness constraint (Issue #28) is untouched
+    by this issue -- reactivating doesn't let the *same* Child hold two
+    simultaneous open executions of the same Task.
+    """
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    task = _make_task(db_session, adult, is_active=True)
+    _make_execution(db_session, task, child, TaskExecutionStatus.IN_PROGRESS)
+
+    deactivate_task(db_session, adult, task.id)
+    activate_task(db_session, adult, task.id)
+
+    with pytest.raises(TaskNotClaimableError):
+        claim_task(db_session, child, task.id)
 
 
 def test_activate_is_idempotent(make_user: Callable[..., User], db_session: Session) -> None:
@@ -402,11 +463,20 @@ def test_deactivate_ignores_a_cancelled_execution(
 
 def test_concurrent_claim_vs_deactivate_never_leaves_an_inconsistent_state() -> None:
     """A Child's Take and an Adult's Deactivate racing on the same Task must
-    fully serialize via the shared Task row lock (Issue #28 section 13):
-    whichever transaction gets the lock first wins, and the other re-reads
-    the now-committed result and is cleanly rejected -- never both
-    "succeeding" (an execution created on a Task the Adult believes they
-    just deactivated), and never a partial/inconsistent state.
+    fully serialize via the shared Task row lock (Issue #28 section 13): the
+    Task's `is_active` never ends up in a state that doesn't reflect one of
+    the two operations having cleanly run.
+
+    Deactivate itself is never rejected by this race (Issue #37: toggling
+    `is_active` is independent of any execution, so an execution the Take
+    just created never blocks it) -- it always succeeds and always ends
+    with `is_active is False`. What the race actually decides is only
+    whether the Take's read of `is_active` happened before or after that
+    write: if Take's row lock is acquired first, it sees the Task still
+    active and creates an execution (which Deactivate then leaves
+    untouched); if Deactivate's lock is acquired first, Take re-reads the
+    now-committed `is_active is False` and is cleanly rejected -- never a
+    partial/inconsistent state either way.
     """
     setup_session = SessionLocal()
     adult = User(name="Concurrent Adult", role=ADULT)
@@ -446,8 +516,6 @@ def test_concurrent_claim_vs_deactivate_never_leaves_an_inconsistent_state() -> 
                 assert user is not None
                 deactivate_task(session, user, task.id)
                 results["deactivate"] = "success"
-            except TaskNotEditableError:
-                results["deactivate"] = "rejected"
             finally:
                 session.close()
 
@@ -466,12 +534,12 @@ def test_concurrent_claim_vs_deactivate_never_leaves_an_inconsistent_state() -> 
         assert refreshed_task is not None
         assert refreshed_task.is_active is False
 
+        # Deactivate always succeeds now (Issue #37) -- it's the Take's
+        # outcome that depends on lock ordering.
+        assert results["deactivate"] == "success"
         if results["claim"] == "success":
-            assert results["deactivate"] == "rejected"
             assert execution_count == 1
         else:
-            assert results["claim"] == "rejected"
-            assert results["deactivate"] == "success"
             assert execution_count == 0
     finally:
         setup_session.rollback()

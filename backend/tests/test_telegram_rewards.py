@@ -161,7 +161,7 @@ def test_child_can_render_rewards(real: RealData) -> None:
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 1
     assert keyboard.inline_keyboard[0][0].callback_data == f"{GET_CALLBACK_PREFIX}{reward.id}"
-    assert keyboard.inline_keyboard[0][0].text == "Ice cream · 100 pts"
+    assert keyboard.inline_keyboard[0][0].text == "Ice cream · 💰 100"
 
 
 def test_unaffordable_reward_gets_no_button(real: RealData) -> None:

@@ -18,7 +18,7 @@ def rewards_keyboard(rewards: list[Reward], balance: int) -> InlineKeyboardMarku
     rows = [
         [
             InlineKeyboardButton(
-                f"{reward.name} · {reward.cost_points} pts",
+                f"{reward.name} · 💰 {reward.cost_points}",
                 callback_data=f"{GET_CALLBACK_PREFIX}{reward.id}",
             )
         ]

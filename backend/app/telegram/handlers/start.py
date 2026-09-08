@@ -67,7 +67,7 @@ def _resolve_home(
 
     if role == UserRole.CHILD:
         text = (
-            f"Твои баллы: {balance} pts\n\n"
+            f"Твои баллы: 💰 {balance}\n\n"
             f"Welcome back, {name}! Use /tasks to see available tasks, "
             "/mytasks to see what you're working on, /rewards to spend your points, "
             "or /points to see your balance and history."

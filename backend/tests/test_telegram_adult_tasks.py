@@ -159,7 +159,7 @@ def test_adult_tasks_command_opens_adult_tasks_list(real: RealData) -> None:
     assert keyboard.inline_keyboard[0][0].callback_data == f"{OPEN_CALLBACK_PREFIX}{task.id}"
     # No "Available"/"Unavailable" word on the button -- an active Task's
     # name is shown plain.
-    assert keyboard.inline_keyboard[0][0].text == "Clean room · 20 pts"
+    assert keyboard.inline_keyboard[0][0].text == "Clean room · 💰 20"
 
 
 def test_adult_tasks_list_button_is_not_struck_through_for_an_active_task_with_an_open_execution(
@@ -181,7 +181,7 @@ def test_adult_tasks_list_button_is_not_struck_through_for_an_active_task_with_a
     _text, keyboard = _tasks_command_view(telegram_id)
 
     assert keyboard is not None
-    assert keyboard.inline_keyboard[0][0].text == "Clean room · 20 pts"
+    assert keyboard.inline_keyboard[0][0].text == "Clean room · 💰 20"
 
 
 def test_adult_tasks_list_button_strikes_through_an_inactive_tasks_name(real: RealData) -> None:
@@ -194,11 +194,16 @@ def test_adult_tasks_list_button_strikes_through_an_inactive_tasks_name(real: Re
 
     assert keyboard is not None
     label = keyboard.inline_keyboard[0][0].text
-    assert label == f"{_strikethrough('Clean room')} · 20 pts"
+    # Issue #37: an inactive Task's button shows only its struck-through
+    # name -- no reward at all, since the button represents an unavailable
+    # self-claim offer, not a reward-bearing action.
+    assert label == _strikethrough("Clean room")
+    assert "20" not in label
+    assert "💰" not in label
     assert "Unavailable" not in label
     # Every character survives, just with a combining strikethrough mark
     # after it -- the plain name is still recoverable from the label.
-    assert label.replace("̶", "") == "Clean room · 20 pts"
+    assert label.replace("̶", "") == "Clean room"
 
 
 def test_strikethrough_does_not_mark_up_spaces(real: RealData) -> None:
@@ -241,11 +246,11 @@ def test_adult_tasks_list_button_strikes_through_a_multi_word_inactive_tasks_nam
 
     assert keyboard is not None
     label = keyboard.inline_keyboard[0][0].text
-    assert label == f"{_strikethrough('Do the homework')} · 20 pts"
-    assert label.replace("̶", "") == "Do the homework · 20 pts"
+    assert label == _strikethrough("Do the homework")
+    assert label.replace("̶", "") == "Do the homework"
     # No disconnected dash floating over a word boundary anywhere in the
-    # label (the title's internal spaces, or the " · 20 pts" suffix) --
-    # a space is never itself decorated with the combining mark.
+    # label (the title's own internal spaces) -- a space is never itself
+    # decorated with the combining mark.
     assert " ̶" not in label
 
 
@@ -287,7 +292,7 @@ def test_unavailable_task_shows_current_execution_on_details_not_the_list(
 
     assert list_text == "Все задачи"
     assert list_keyboard is not None
-    expected_label = f"{_strikethrough('Take out trash')} · 20 pts"
+    expected_label = _strikethrough("Take out trash")
     assert list_keyboard.inline_keyboard[0][0].text == expected_label
 
     details_text, _ = _task_details_view(telegram_id, str(task.id))
@@ -311,7 +316,7 @@ def test_completed_execution_does_not_suppress_availability_in_list(real: RealDa
     # button's name stays plain (not struck through), and the Task
     # remains active.
     assert keyboard is not None
-    assert keyboard.inline_keyboard[0][0].text == "Clean room · 20 pts"
+    assert keyboard.inline_keyboard[0][0].text == "Clean room · 💰 20"
 
 
 def test_child_cannot_access_adult_tasks_management(real: RealData) -> None:
@@ -355,7 +360,13 @@ def test_adult_can_open_task_details(real: RealData) -> None:
     assert any("Tasks" in label for label in labels)
 
 
-def test_task_details_with_current_execution_hides_management_actions(real: RealData) -> None:
+def test_task_details_with_current_execution_hides_edit_but_not_activate_deactivate(
+    real: RealData,
+) -> None:
+    """Issue #37: a current open execution only blocks Edit -- Activate/
+    Deactivate stay available and reflect the Task's actual (independent)
+    `is_active` status.
+    """
     adult = real.make_user(ADULT)
     child = real.make_user(CHILD, "Alex")
     telegram_id = _next_telegram_id()
@@ -367,11 +378,12 @@ def test_task_details_with_current_execution_hides_management_actions(real: Real
 
     assert "Alex" in text
     assert "waiting for confirmation" in text
-    assert "unavailable" in text.lower()
+    assert "Not available" in text
+    assert "Cannot edit the name or reward while this execution is open." in text
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
     assert "Edit" not in labels
-    assert "Activate" not in labels
+    assert "Activate" in labels
     assert "Deactivate" not in labels
 
 
@@ -610,22 +622,29 @@ def test_adult_can_activate_a_task(real: RealData) -> None:
     assert task.is_active is True
 
 
-def test_stale_deactivate_while_a_current_execution_exists_is_a_friendly_error(
+def test_deactivate_succeeds_while_a_current_execution_exists(
     real: RealData,
 ) -> None:
+    """Issue #37: deactivating is never blocked by an open execution, and
+    never touches it -- the execution is still there, untouched, on the
+    refreshed Task Details underneath the toast.
+    """
     adult = real.make_user(ADULT)
     child = real.make_user(CHILD)
     telegram_id = _next_telegram_id()
     real.connect(adult, telegram_id)
     task = real.make_task(adult, is_active=True)
-    real.make_execution(task, child, TaskExecutionStatus.IN_PROGRESS)
+    execution = real.make_execution(task, child, TaskExecutionStatus.IN_PROGRESS)
 
     toast, text, keyboard = _toggle_active(telegram_id, str(task.id), activate=False)
 
-    assert toast == _TASK_NOT_EDITABLE_TEXT
+    assert "deactivated" in toast
+    assert "Not available" in text
     assert keyboard is not None
     real.session.refresh(task)
-    assert task.is_active is True  # unchanged
+    assert task.is_active is False
+    real.session.refresh(execution)
+    assert execution.status == TaskExecutionStatus.IN_PROGRESS
 
 
 def test_child_cannot_activate_or_deactivate_via_crafted_callback(real: RealData) -> None:

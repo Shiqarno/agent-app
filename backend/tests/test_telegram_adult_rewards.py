@@ -117,7 +117,7 @@ def test_adult_can_open_rewards(real: RealData) -> None:
     assert "Pizza" not in text
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert any(label == "Pizza · 500 pts" for label in labels)
+    assert any(label == "Pizza · 💰 500" for label in labels)
     assert any("Add Reward" in label for label in labels)
 
 

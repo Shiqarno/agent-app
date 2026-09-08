@@ -8,16 +8,15 @@ def _connection_label(connected: bool) -> str:
 
 
 def render_users_list(items: list[tuple[User, bool]]) -> str:
-    """Issue #29 section 2: name, role, and Telegram connection status only
-    -- no task/points/reward history, no Telegram numeric id, no token.
+    """Issue #29 section 2 / Issue #37: just the heading -- every User
+    always has a button (users_list_keyboard), showing their name, so
+    nothing is duplicated as separate text above it. Role and connection
+    status, when needed, live one tap further in on User Details
+    (render_user_details below), a selected-entity screen.
     """
     if not items:
         return f"Users\n\n{NO_USERS_TEXT}"
-    blocks = [
-        f"{user.name}\n{user.role.value.capitalize()}\n{_connection_label(connected)}"
-        for user, connected in items
-    ]
-    return "Users\n\n" + "\n\n".join(blocks)
+    return "Users"
 
 
 def render_user_details(user: User, connected: bool) -> str:

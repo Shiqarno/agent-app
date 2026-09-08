@@ -6,7 +6,7 @@ NO_TRANSACTIONS_TEXT = "No transactions yet."
 
 
 def _format_amount(amount: int) -> str:
-    return f"+{amount} pts" if amount >= 0 else f"{amount} pts"
+    return f"+💰 {amount}" if amount >= 0 else f"-💰 {-amount}"
 
 
 def _format_date(created_at: datetime, now: datetime) -> str:
@@ -23,7 +23,7 @@ def render_points(view: PointsView, now: datetime) -> str:
     with a human-readable source description and a relative date -- never
     the raw `PointTransactionReason` or a database timestamp.
     """
-    header = f"Points\n\nBalance\n{view.balance} pts"
+    header = f"Points\n\nBalance\n💰 {view.balance}"
     if not view.transactions:
         return f"{header}\n\n{NO_TRANSACTIONS_TEXT}"
 

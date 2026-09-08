@@ -30,14 +30,22 @@ def render_tasks_list(items: list[tuple[Task, TaskExecution | None, User | None]
 
 
 def render_task_details(task: Task, execution: TaskExecution | None, child: User | None) -> str:
-    """Issue #28 section 5. With a current open execution, Edit/Activate/
-    Deactivate are all unavailable -- this view never becomes a
-    confirmation UI; that stays in the separate Confirmation workflow.
+    """Issue #28 section 5. With a current open execution, only Edit is
+    unavailable (Issue #37: Activate/Deactivate are never blocked by an
+    open execution, since toggling the self-claim slot doesn't touch it)
+    -- this view never becomes a confirmation UI; that stays in the
+    separate Confirmation workflow. Status is always shown, execution or
+    not: `is_active` is independent of any execution (a directly-assigned
+    or reactivated Task can be Available with one open), so it would be
+    misleading to hide it whenever an execution happens to exist.
     """
     header = f"{task.title}\n\nReward: {task.reward_points} points"
-    if execution is not None and child is not None:
-        return f"{header}\n\n{_execution_summary(execution, child)}\n\nTask currently unavailable."
     status = "Available" if task.is_active else "Not available"
+    if execution is not None and child is not None:
+        return (
+            f"{header}\nStatus: {status}\n\n{_execution_summary(execution, child)}\n\n"
+            "Cannot edit the name or reward while this execution is open."
+        )
     return f"{header}\nStatus: {status}"
 
 

@@ -28,7 +28,7 @@ def render_my_tasks(items: list[tuple[TaskExecution, Task]]) -> str:
         return f"{MY_TASKS_HEADING}\n\n{NO_TASKS_IN_PROGRESS_TEXT}"
 
     waiting_blocks = [
-        f"{task.title} · {execution.reward_points} pts\nWaiting for confirmation"
+        f"{task.title} · 💰 {execution.reward_points}\nWaiting for confirmation"
         for execution, task in items
         if execution.status == TaskExecutionStatus.AWAITING_CONFIRMATION
     ]

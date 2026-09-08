@@ -424,7 +424,7 @@ def test_confirm_routes_to_confirm_execution_and_removes_it_from_the_queue(
 
     toast, text, keyboard = _confirm(telegram_id, str(execution.id))
 
-    assert toast == "Clean room confirmed -- Vova earned 20 pts."
+    assert toast == "Clean room confirmed -- Vova earned 💰 20."
     real.session.expire_all()
     refreshed = real.session.get(TaskExecution, execution.id)
     assert refreshed is not None

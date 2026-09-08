@@ -43,26 +43,35 @@ def _strikethrough(text: str) -> str:
     )
 
 
+def _task_button_label(task: Task) -> str:
+    """An active Task shows its name and current reward (Issue #35); an
+    inactive one shows only its struck-through name, no reward at all
+    (Issue #37) -- the button represents an unavailable self-claim offer,
+    not a reward-bearing action, so showing a reward on it would be
+    misleading. Driven by `is_active` alone, never by whether a current
+    execution exists, matching this Task's own established, execution-
+    independent meaning (Issue #32).
+    """
+    if task.is_active:
+        return f"{task.title} · 💰 {task.reward_points}"
+    return _strikethrough(task.title)
+
+
 def tasks_list_keyboard(
     items: list[tuple[Task, TaskExecution | None, User | None]],
 ) -> InlineKeyboardMarkup:
     """One row per Task, plus `+ Add task` and `← Home` (Issue #28 section
     4). Each button shows name and reward so the Adult doesn't need to
     open every Task to see them (Issue #35); self-claim availability is
-    shown by striking through the name when `Task.is_active` is false
-    (Issue #36) rather than a separate `Available`/`Unavailable` word --
-    driven by `is_active` alone, never by whether a current execution
-    exists, matching this Task's own established, execution-independent
-    meaning (Issue #32). The callback payload only identifies the Task for
-    routing -- the Application layer re-verifies role/existence/state on
-    every call.
+    shown via `_task_button_label` above rather than a separate
+    `Available`/`Unavailable` word (Issue #36/#37). The callback payload
+    only identifies the Task for routing -- the Application layer
+    re-verifies role/existence/state on every call.
     """
     rows = [
         [
             InlineKeyboardButton(
-                f"{task.title if task.is_active else _strikethrough(task.title)} · "
-                f"{task.reward_points} pts",
-                callback_data=f"{OPEN_CALLBACK_PREFIX}{task.id}",
+                _task_button_label(task), callback_data=f"{OPEN_CALLBACK_PREFIX}{task.id}"
             )
         ]
         for task, _execution, _child in items
@@ -73,12 +82,14 @@ def tasks_list_keyboard(
 
 
 def task_details_keyboard(task: Task, has_current_execution: bool) -> InlineKeyboardMarkup:
-    """Edit/Activate/Deactivate only when there is no current open
-    execution (Issue #28 section 5) -- hiding the button is presentation
-    only, the Application layer refuses the action regardless. `Assign`
-    (Issue #32) is deliberately always available, current execution or
-    not: direct assignment is independent of `Task.is_active` and of any
-    other Child's open execution -- a Task may have any number of open
+    """`Edit` only when there is no current open execution (Issue #28
+    section 5, unchanged) -- hiding the button is presentation only, the
+    Application layer refuses the action regardless. `Activate`/
+    `Deactivate` are always available (Issue #37): toggling the self-claim
+    slot never touches existing executions, so it's never blocked by them.
+    `Assign` (Issue #32) is likewise always available, current execution
+    or not: direct assignment is independent of `Task.is_active` and of
+    any other Child's open execution -- a Task may have any number of open
     executions for different Children simultaneously.
     """
     rows = []
@@ -86,22 +97,18 @@ def task_details_keyboard(task: Task, has_current_execution: bool) -> InlineKeyb
         rows.append(
             [InlineKeyboardButton("Edit", callback_data=f"{EDIT_CALLBACK_PREFIX}{task.id}")]
         )
-        if task.is_active:
-            rows.append(
-                [
-                    InlineKeyboardButton(
-                        "Deactivate", callback_data=f"{DEACTIVATE_CALLBACK_PREFIX}{task.id}"
-                    )
-                ]
-            )
-        else:
-            rows.append(
-                [
-                    InlineKeyboardButton(
-                        "Activate", callback_data=f"{ACTIVATE_CALLBACK_PREFIX}{task.id}"
-                    )
-                ]
-            )
+    if task.is_active:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "Deactivate", callback_data=f"{DEACTIVATE_CALLBACK_PREFIX}{task.id}"
+                )
+            ]
+        )
+    else:
+        rows.append(
+            [InlineKeyboardButton("Activate", callback_data=f"{ACTIVATE_CALLBACK_PREFIX}{task.id}")]
+        )
     rows.append(
         [InlineKeyboardButton("Assign", callback_data=f"{ASSIGN_CALLBACK_PREFIX}{task.id}")]
     )

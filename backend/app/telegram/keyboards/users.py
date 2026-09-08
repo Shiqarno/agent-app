@@ -10,16 +10,15 @@ GET_LINK_CALLBACK_PREFIX = "adultuser:getlink:"
 
 
 def users_list_keyboard(items: list[tuple[User, bool]]) -> InlineKeyboardMarkup:
-    """One `Open` row per User, plus `+ Add Child` and `← Home` (Issue #29
-    section 2). The callback payload only identifies the User for routing
-    -- the Application layer re-verifies role/existence/state on every call.
+    """One row per User, plus `+ Add Child` and `← Home` (Issue #29 section
+    2). The button label is just the User's name (Issue #37) -- matching
+    every other Adult list in this app, the button *is* the User, so no
+    action-verb prefix or separate name text is needed. The callback
+    payload only identifies the User for routing -- the Application layer
+    re-verifies role/existence/state on every call.
     """
     rows = [
-        [
-            InlineKeyboardButton(
-                f"Open · {user.name}", callback_data=f"{OPEN_CALLBACK_PREFIX}{user.id}"
-            )
-        ]
+        [InlineKeyboardButton(user.name, callback_data=f"{OPEN_CALLBACK_PREFIX}{user.id}")]
         for user, _connected in items
     ]
     rows.append([InlineKeyboardButton("+ Add Child", callback_data=ADD_CHILD_CALLBACK_DATA)])

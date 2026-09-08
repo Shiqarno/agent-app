@@ -104,11 +104,12 @@ def test_adult_can_open_users(real: RealData) -> None:
 
     text, keyboard = _users_list_view(telegram_id)
 
-    assert "Users" in text
-    assert "Alex" in text
+    # Issue #37: the heading is the ENTIRE message text -- each User is
+    # represented only by their button, never duplicated as text above it.
+    assert text == "Users"
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert any("Alex" in label for label in labels)
+    assert any(label == "Alex" for label in labels)
     assert any("Add Child" in label for label in labels)
     assert any("Home" in label for label in labels)
 
@@ -124,7 +125,10 @@ def test_child_cannot_access_users(real: RealData) -> None:
     assert keyboard is None
 
 
-def test_users_list_renders_connection_status(real: RealData) -> None:
+def test_users_list_does_not_render_connection_status(real: RealData) -> None:
+    """Issue #37: connection status is a User Details concern now, not the
+    list's -- the list carries only each User's button.
+    """
     adult = real.make_user(ADULT)
     telegram_id = _next_telegram_id()
     real.connect_via_activation(adult, telegram_id)
@@ -132,10 +136,14 @@ def test_users_list_renders_connection_status(real: RealData) -> None:
     real.connect(connected_child, _next_telegram_id())
     real.make_child_with_activation("Pending Kid")
 
-    text, _keyboard = _users_list_view(telegram_id)
+    text, keyboard = _users_list_view(telegram_id)
 
-    assert "Connected Kid\nChild\nConnected" in text
-    assert "Pending Kid\nChild\nNot connected" in text
+    assert text == "Users"
+    assert "Connected" not in text
+    assert keyboard is not None
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+    assert any(label == "Connected Kid" for label in labels)
+    assert any(label == "Pending Kid" for label in labels)
 
 
 def test_users_view_for_unconnected_account() -> None:
