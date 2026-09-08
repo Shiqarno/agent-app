@@ -15,25 +15,18 @@ def _execution_summary(execution: TaskExecution, child: User) -> str:
     return f"{child.name} — {_EXECUTION_STATE_LABELS[execution.status]}"
 
 
-def render_task_list_item(task: Task, execution: TaskExecution | None, child: User | None) -> str:
-    """Issue #28 section 4: name, reward, availability, and -- only when
-    one exists -- the current open execution's Child and state. Never
-    execution history.
-    """
-    if execution is not None and child is not None:
-        availability = f"Not available\n{_execution_summary(execution, child)}"
-    elif task.is_active:
-        availability = "Available"
-    else:
-        availability = "Not available"
-    return f"{task.title}\n{task.reward_points} points\n{availability}"
-
-
 def render_tasks_list(items: list[tuple[Task, TaskExecution | None, User | None]]) -> str:
+    """Issue #28 section 4 / Issue #36: just the heading -- every Task
+    always has its own button (tasks_list_keyboard), which already shows
+    name, reward, and self-claim availability (via strikethrough), so
+    nothing is duplicated as separate text above it. The current open
+    execution's Child and state, when one exists, remains visible one tap
+    further in on Task Details (render_task_details below), which is a
+    selected-entity screen, not a list.
+    """
     if not items:
         return f"{ALL_TASKS_HEADING}\n\n{NO_TASKS_TEXT}"
-    blocks = [render_task_list_item(task, execution, child) for task, execution, child in items]
-    return f"{ALL_TASKS_HEADING}\n\n" + "\n\n".join(blocks)
+    return ALL_TASKS_HEADING
 
 
 def render_task_details(task: Task, execution: TaskExecution | None, child: User | None) -> str:

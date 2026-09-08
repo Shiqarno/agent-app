@@ -22,20 +22,6 @@ def render_confirmation_detail(execution: TaskExecution, task: Task, child: User
     return f"{task.title}\n\n{child.name} · {execution.reward_points} pts"
 
 
-def render_confirmation_summary(items: list[tuple[TaskExecution, Task, User]]) -> str:
-    """The Adult Home action block (Issue #25 section 1) -- a short preview,
-    not the full queue.
-    """
-    count = len(items)
-    noun = "task" if count == 1 else "tasks"
-    lines = [
-        f"{task.title} · {child.name} · {execution.reward_points} pts"
-        for execution, task, child in items
-    ]
-    header = f"Task Confirmation\n\n{count} {noun} waiting for confirmation"
-    return f"{header}\n\n" + "\n".join(lines)
-
-
 def render_execution_confirmed(task: Task, child: User, execution: TaskExecution) -> str:
     return f"{task.title} confirmed -- {child.name} earned {execution.reward_points} pts."
 

@@ -112,11 +112,12 @@ def test_adult_can_open_rewards(real: RealData) -> None:
 
     text, keyboard = _rewards_command_view(telegram_id)
 
-    assert "Pizza" in text
-    assert "500" in text
+    # Issue #36: the heading is the ENTIRE message text -- name and cost
+    # live only on the button, never duplicated as text above it.
+    assert "Pizza" not in text
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert any("Pizza" in label for label in labels)
+    assert any(label == "Pizza · 500 pts" for label in labels)
     assert any("Add Reward" in label for label in labels)
 
 

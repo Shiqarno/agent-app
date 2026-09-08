@@ -147,18 +147,18 @@ def test_adult_tasks_command_opens_adult_tasks_list(real: RealData) -> None:
 
     text, keyboard = _tasks_command_view(telegram_id)
 
-    assert text.startswith("Все задачи")
-    assert "Clean room" in text
-    assert "20 points" in text
-    assert "Available" in text
+    # Issue #36: the heading is the ENTIRE message text -- name, reward,
+    # and availability all live only on the button, never duplicated as
+    # text above it.
+    assert text == "Все задачи"
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
     assert any("Clean room" in label for label in labels)
     assert any("Add task" in label for label in labels)
     assert any("Home" in label for label in labels)
     assert keyboard.inline_keyboard[0][0].callback_data == f"{OPEN_CALLBACK_PREFIX}{task.id}"
-    # Issue #36: no "Available"/"Unavailable" word on the button -- an
-    # active Task's name is shown plain.
+    # No "Available"/"Unavailable" word on the button -- an active Task's
+    # name is shown plain.
     assert keyboard.inline_keyboard[0][0].text == "Clean room · 20 pts"
 
 
@@ -201,6 +201,54 @@ def test_adult_tasks_list_button_strikes_through_an_inactive_tasks_name(real: Re
     assert label.replace("̶", "") == "Clean room · 20 pts"
 
 
+def test_strikethrough_does_not_mark_up_spaces(real: RealData) -> None:
+    """Issue #36: a combining mark over a space has no glyph to attach to
+    and renders as a disconnected dash, breaking a multi-word name's
+    strikethrough into separate-looking segments at each word boundary --
+    the exact "character-by-character" bug this fix addresses. Spaces
+    must stay plain; every other character gets the combining mark.
+    """
+    result = _strikethrough("Do the homework")
+
+    assert " " in result
+    # A space is never itself decorated with the combining mark (that
+    # would render as a disconnected dash with nothing to attach to).
+    assert " ̶" not in result
+    assert result.replace("̶", "") == "Do the homework"
+    # Every non-space character got exactly one combining mark.
+    assert result.count("̶") == len("Do the homework".replace(" ", ""))
+
+
+def test_strikethrough_handles_punctuation_and_mixed_case(real: RealData) -> None:
+    result = _strikethrough("Walk the dog!")
+
+    assert result.replace("̶", "") == "Walk the dog!"
+    assert result.count("̶") == len("Walk the dog!".replace(" ", ""))
+
+
+def test_adult_tasks_list_button_strikes_through_a_multi_word_inactive_tasks_name(
+    real: RealData,
+) -> None:
+    """Issue #36: explicitly verifies a multi-word name end to end through
+    the actual list rendering, not just the helper in isolation.
+    """
+    adult = real.make_user(ADULT)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    real.make_task(adult, title="Do the homework", reward_points=20, is_active=False)
+
+    _text, keyboard = _tasks_command_view(telegram_id)
+
+    assert keyboard is not None
+    label = keyboard.inline_keyboard[0][0].text
+    assert label == f"{_strikethrough('Do the homework')} · 20 pts"
+    assert label.replace("̶", "") == "Do the homework · 20 pts"
+    # No disconnected dash floating over a word boundary anywhere in the
+    # label (the title's internal spaces, or the " · 20 pts" suffix) --
+    # a space is never itself decorated with the combining mark.
+    assert " ̶" not in label
+
+
 def test_child_tasks_command_still_opens_child_tasks(real: RealData) -> None:
     """Regression: /tasks must remain the existing Child Available-Tasks
     screen for a Child, unaffected by the new Adult dispatch.
@@ -220,7 +268,14 @@ def test_child_tasks_command_still_opens_child_tasks(real: RealData) -> None:
     assert not any(label.startswith("Take") for label in labels)
 
 
-def test_unavailable_task_shows_current_execution(real: RealData) -> None:
+def test_unavailable_task_shows_current_execution_on_details_not_the_list(
+    real: RealData,
+) -> None:
+    """Issue #36: the list itself carries no per-task execution context any
+    more (only the button's strikethrough reflects `is_active`) -- that
+    detail now lives one tap further in, on Task Details, the "selected
+    entity" screen where showing it isn't duplication.
+    """
     adult = real.make_user(ADULT)
     child = real.make_user(CHILD, "Alex")
     telegram_id = _next_telegram_id()
@@ -228,12 +283,18 @@ def test_unavailable_task_shows_current_execution(real: RealData) -> None:
     task = real.make_task(adult, title="Take out trash", is_active=False)
     real.make_execution(task, child, TaskExecutionStatus.IN_PROGRESS)
 
-    text, _ = _adult_tasks_list_view(telegram_id)
+    list_text, list_keyboard = _adult_tasks_list_view(telegram_id)
 
-    assert "Take out trash" in text
-    assert "Not available" in text
-    assert "Alex" in text
-    assert "in progress" in text
+    assert list_text == "Все задачи"
+    assert list_keyboard is not None
+    expected_label = f"{_strikethrough('Take out trash')} · 20 pts"
+    assert list_keyboard.inline_keyboard[0][0].text == expected_label
+
+    details_text, _ = _task_details_view(telegram_id, str(task.id))
+
+    assert "Take out trash" in details_text
+    assert "Alex" in details_text
+    assert "in progress" in details_text
 
 
 def test_completed_execution_does_not_suppress_availability_in_list(real: RealData) -> None:
@@ -244,10 +305,13 @@ def test_completed_execution_does_not_suppress_availability_in_list(real: RealDa
     task = real.make_task(adult, title="Clean room")
     real.make_execution(task, child, TaskExecutionStatus.COMPLETED)
 
-    text, _ = _adult_tasks_list_view(telegram_id)
+    _text, keyboard = _adult_tasks_list_view(telegram_id)
 
-    assert "Available" in text
-    assert "Alex" not in text
+    # A terminal execution never counts against availability -- the
+    # button's name stays plain (not struck through), and the Task
+    # remains active.
+    assert keyboard is not None
+    assert keyboard.inline_keyboard[0][0].text == "Clean room · 20 pts"
 
 
 def test_child_cannot_access_adult_tasks_management(real: RealData) -> None:
@@ -591,9 +655,10 @@ def test_back_to_tasks_from_details_shows_the_list_again(real: RealData) -> None
 
     text, keyboard = _adult_tasks_list_view(telegram_id)
 
-    assert "Все задачи" in text
-    assert "Clean room" in text
+    assert text == "Все задачи"
     assert keyboard is not None
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+    assert any("Clean room" in label for label in labels)
 
 
 def test_open_and_edit_callback_prefixes_do_not_collide() -> None:

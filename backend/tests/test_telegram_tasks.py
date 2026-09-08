@@ -208,14 +208,16 @@ def test_my_tasks_view_renders_in_progress_with_done_button(real: RealData) -> N
 
     text, keyboard = _my_tasks_view(telegram_id)
 
-    assert text.startswith(MY_TASKS_HEADING)
-    assert "Clean room" in text
+    # Issue #36: an IN_PROGRESS item is fully represented by its Done
+    # button -- its name never appears as separate text.
+    assert text == MY_TASKS_HEADING
+    assert "Clean room" not in text
     assert "Waiting for confirmation" not in text
     assert keyboard is not None
     assert keyboard.inline_keyboard[0][0].callback_data == (
         f"{EXECUTION_DONE_CALLBACK_PREFIX}{execution.id}"
     )
-    assert keyboard.inline_keyboard[0][0].text == "Done · Clean room · 20 pts"
+    assert keyboard.inline_keyboard[0][0].text == "Clean room · 20 pts"
 
 
 def test_my_tasks_view_awaiting_confirmation_has_no_cta(real: RealData) -> None:
@@ -357,11 +359,13 @@ def test_my_tasks_view_renders_assigned_with_start_button(real: RealData) -> Non
 
     text, keyboard = _my_tasks_view(telegram_id)
 
-    assert "Assigned to you" in text
+    # Issue #36: an ASSIGNED item is likewise fully represented by its
+    # Start button -- no "Assigned to you" text and no "Start" verb.
+    assert text == MY_TASKS_HEADING
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert any("Start" in label for label in labels)
-    assert any("20 pts" in label for label in labels)
+    assert any(label == "Clean room · 20 pts" for label in labels)
+    assert not any("Start" in label for label in labels)
 
 
 def test_my_tasks_buttons_use_the_execution_reward_snapshot_not_the_current_task_reward(
@@ -376,18 +380,16 @@ def test_my_tasks_buttons_use_the_execution_reward_snapshot_not_the_current_task
     telegram_id = _next_telegram_id()
     real.connect(child, telegram_id)
     task = real.make_task(adult, reward_points=20)
-    execution = real.make_execution(task, child, TaskExecutionStatus.IN_PROGRESS, reward_points=20)
+    real.make_execution(task, child, TaskExecutionStatus.IN_PROGRESS, reward_points=20)
     task.reward_points = 99
     real.session.commit()
 
-    text, keyboard = _my_tasks_view(telegram_id)
+    _text, keyboard = _my_tasks_view(telegram_id)
 
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
     assert any("20 pts" in label for label in labels)
     assert not any("99 pts" in label for label in labels)
-    assert f"{execution.reward_points} pts" in text
-    assert "99 pts" not in text
 
 
 def test_start_routes_to_start_execution(real: RealData) -> None:
@@ -407,7 +409,7 @@ def test_start_routes_to_start_execution(real: RealData) -> None:
     assert refreshed.status == TaskExecutionStatus.IN_PROGRESS
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert any("Done" in label for label in labels)
+    assert any(label == "Clean room · 20 pts" for label in labels)
 
 
 def test_start_does_not_create_a_second_execution_via_telegram(real: RealData) -> None:

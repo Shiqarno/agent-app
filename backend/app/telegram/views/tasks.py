@@ -17,22 +17,24 @@ def render_available_tasks(tasks: list[Task]) -> str:
 
 
 def render_my_tasks(items: list[tuple[TaskExecution, Task]]) -> str:
-    """Issue #24 section 3 / Issue #35: heading, then IN_PROGRESS shows just
-    name/reward (the Done button carries the CTA); AWAITING_CONFIRMATION
-    additionally shows a waiting line and gets no CTA at all.
+    """Issue #24 section 3 / Issue #36: heading, then text only for
+    AWAITING_CONFIRMATION items -- those get no button at all (no action
+    is possible), so a text line is the only way they stay visible.
+    ASSIGNED/IN_PROGRESS items are fully represented by their own Start/
+    Done button (my_tasks_keyboard, name + reward already there), so
+    nothing is duplicated as separate text for them.
     """
     if not items:
         return f"{MY_TASKS_HEADING}\n\n{NO_TASKS_IN_PROGRESS_TEXT}"
 
-    blocks = []
-    for execution, task in items:
-        block = f"{task.title} · {execution.reward_points} pts"
-        if execution.status == TaskExecutionStatus.ASSIGNED:
-            block += "\nAssigned to you"
-        elif execution.status == TaskExecutionStatus.AWAITING_CONFIRMATION:
-            block += "\nWaiting for confirmation"
-        blocks.append(block)
-    return f"{MY_TASKS_HEADING}\n\n" + "\n\n".join(blocks)
+    waiting_blocks = [
+        f"{task.title} · {execution.reward_points} pts\nWaiting for confirmation"
+        for execution, task in items
+        if execution.status == TaskExecutionStatus.AWAITING_CONFIRMATION
+    ]
+    if not waiting_blocks:
+        return MY_TASKS_HEADING
+    return f"{MY_TASKS_HEADING}\n\n" + "\n\n".join(waiting_blocks)
 
 
 def render_task_taken(task: Task) -> str:

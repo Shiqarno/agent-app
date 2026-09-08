@@ -50,9 +50,3 @@ def confirmation_detail_keyboard(execution: TaskExecution) -> InlineKeyboardMark
             [InlineKeyboardButton("← Back", callback_data=VIEW_ALL_CALLBACK_DATA)],
         ]
     )
-
-
-def confirmation_summary_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("View all", callback_data=VIEW_ALL_CALLBACK_DATA)]]
-    )

@@ -3,18 +3,15 @@ from app.models import Reward
 NO_REWARDS_TEXT = "No rewards yet."
 
 
-def render_reward_list_item(reward: Reward) -> str:
-    return f"{reward.name} — {reward.cost_points} pts"
-
-
 def render_rewards_list(rewards: list[Reward]) -> str:
-    """Issue #30 section "Rewards list": name and cost only -- no
-    description, no redemption/history data.
+    """Issue #30 section "Rewards list" / Issue #36: just the heading --
+    every Reward always has its own button (rewards_list_keyboard), which
+    already shows name and cost, so nothing is duplicated as separate
+    text above it.
     """
     if not rewards:
         return f"🎁 Rewards\n\n{NO_REWARDS_TEXT}"
-    blocks = [render_reward_list_item(reward) for reward in rewards]
-    return "🎁 Rewards\n\n" + "\n".join(blocks)
+    return "🎁 Rewards"
 
 
 def render_reward_details(reward: Reward) -> str:

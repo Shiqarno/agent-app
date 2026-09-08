@@ -11,12 +11,18 @@ EDIT_CALLBACK_PREFIX = "adultreward:edit:"
 
 def rewards_list_keyboard(rewards: list[Reward]) -> InlineKeyboardMarkup:
     """One row per Reward, plus `+ Add Reward` and `← Home` (Issue #30
-    "Rewards list"). The callback payload only identifies the Reward for
-    routing -- the Application layer re-verifies role/existence on every
-    call.
+    "Rewards list"). Each button shows name and cost (Issue #36) so the
+    Adult doesn't need to open every Reward to see them. The callback
+    payload only identifies the Reward for routing -- the Application
+    layer re-verifies role/existence on every call.
     """
     rows = [
-        [InlineKeyboardButton(reward.name, callback_data=f"{OPEN_CALLBACK_PREFIX}{reward.id}")]
+        [
+            InlineKeyboardButton(
+                f"{reward.name} · {reward.cost_points} pts",
+                callback_data=f"{OPEN_CALLBACK_PREFIX}{reward.id}",
+            )
+        ]
         for reward in rewards
     ]
     rows.append([InlineKeyboardButton("+ Add Reward", callback_data=ADD_CALLBACK_DATA)])

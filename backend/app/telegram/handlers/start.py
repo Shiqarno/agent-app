@@ -5,10 +5,9 @@ from telegram.ext import ContextTypes
 
 from app.db import SessionLocal
 from app.models import UserRole
-from app.task_operations import get_pending_confirmations
+from app.reward_operations import get_balance
 from app.telegram.commands import commands_for_role
-from app.telegram.keyboards.confirmations import confirmation_summary_keyboard
-from app.telegram.views.confirmations import render_confirmation_summary
+from app.telegram.handlers.confirmations import _list_view as _confirmation_list_view
 from app.telegram_identity import (
     TelegramAccountAlreadyLinkedError,
     TelegramActivationInvalidError,
@@ -57,40 +56,29 @@ def _resolve_home(
         user = resolve_user_by_telegram_id(db, telegram_user_id)
         if user is None:
             return _NOT_CONNECTED_TEXT, None, None
-        # Minimal, role-aware placeholder -- Adult Rewards/Points UX is
-        # still out of scope (Issue #24 implements Child Tasks/My Tasks;
-        # Issue #25 implements the Adult Task Confirmation queue below;
-        # Issue #26 implements Child Rewards; Issue #27 implements Child
-        # Points; Issue #28 implements Adult Tasks; Issue #29 implements
-        # Adult Users).
-        if user.role == UserRole.CHILD:
-            return (
-                (
-                    f"Welcome back, {user.name}! Use /tasks to see available tasks, "
-                    "/mytasks to see what you're working on, /rewards to spend your points, "
-                    "or /points to see your balance and history."
-                ),
-                None,
-                user.role,
-            )
-
-        # Adult Home leads with the Confirmation queue when there's
-        # something to act on (Issue #25 section 1) -- not a general
-        # dashboard; Pending Tasks stays out of scope.
-        items = get_pending_confirmations(db, user)
-        if items:
-            return render_confirmation_summary(items), confirmation_summary_keyboard(), user.role
-        return (
-            (
-                f"Welcome back, {user.name}! Use /confirmations to review tasks "
-                "waiting for confirmation, /tasks to manage the task catalog, "
-                "or /users to manage Users."
-            ),
-            None,
-            user.role,
-        )
+        role = user.role
+        name = user.name
+        # Reuses the same shared Point Ledger query every other balance
+        # display in the app uses (Issue #36) -- no Telegram-specific
+        # balance calculation.
+        balance = get_balance(db, user.id) if role == UserRole.CHILD else None
     finally:
         db.close()
+
+    if role == UserRole.CHILD:
+        text = (
+            f"Твои баллы: {balance} pts\n\n"
+            f"Welcome back, {name}! Use /tasks to see available tasks, "
+            "/mytasks to see what you're working on, /rewards to spend your points, "
+            "or /points to see your balance and history."
+        )
+        return text, None, role
+
+    # Adult Home *is* the Confirmation queue (Issue #36) -- the exact same
+    # retrieval and presentation `/confirmations` itself uses, not a
+    # second, parallel implementation of it.
+    text, keyboard = _confirmation_list_view(telegram_user_id)
+    return text, keyboard, role
 
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

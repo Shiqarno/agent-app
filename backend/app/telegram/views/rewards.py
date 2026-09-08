@@ -5,20 +5,25 @@ NO_REWARDS_TEXT_PREFIX = "Нет доступных наград."
 
 
 def render_rewards(rewards: list[Reward], balance: int) -> str:
-    """Issue #26 "Rewards list" / Issue #35: heading, balance, name, cost,
-    and an affordability line -- no description, no technical status.
+    """Issue #26 "Rewards list" / Issue #36: heading and balance, then text
+    only for unaffordable Rewards -- those get no button at all (nothing
+    to tap), so a text line is the only way they stay visible. An
+    affordable Reward is fully represented by its own Get-less button
+    (rewards_keyboard, name + cost already there), so nothing is
+    duplicated as separate text for it.
     """
     header = f"{AVAILABLE_REWARDS_HEADING}\nYou have {balance} points"
     if not rewards:
         return f"{header}\n\n{NO_REWARDS_TEXT_PREFIX}"
 
-    blocks = []
-    for reward in rewards:
-        block = f"{reward.name} · {reward.cost_points} pts"
-        if balance < reward.cost_points:
-            block += "\nNot enough points"
-        blocks.append(block)
-    return header + "\n\n" + "\n\n".join(blocks)
+    unaffordable_blocks = [
+        f"{reward.name} · {reward.cost_points} pts\nNot enough points"
+        for reward in rewards
+        if balance < reward.cost_points
+    ]
+    if not unaffordable_blocks:
+        return header
+    return header + "\n\n" + "\n\n".join(unaffordable_blocks)
 
 
 def render_redemption_success(reward: Reward, remaining_balance: int) -> str:

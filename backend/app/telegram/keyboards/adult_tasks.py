@@ -19,14 +19,28 @@ ASSIGN_TO_CALLBACK_PREFIX = "adulttask:assignchild:"
 
 # Telegram inline keyboard button labels are always plain text -- there is
 # no Markdown/HTML rendering inside a button, unlike message text. A
-# strikethrough Task name (Issue #36, for an inactive Task) is therefore
-# rendered with Unicode combining characters baked directly into the
-# label string, the standard technique for this platform limitation.
+# strikethrough Task name (for an inactive Task) is therefore rendered
+# with a Unicode combining long-stroke-overlay character (U+0336) baked
+# directly into the label string, the standard technique for this
+# platform limitation.
 _STRIKETHROUGH_COMBINING_CHAR = "̶"
 
 
 def _strikethrough(text: str) -> str:
-    return "".join(f"{char}{_STRIKETHROUGH_COMBINING_CHAR}" for char in text)
+    """Applies the combining mark after every non-space character, so the
+    whole name reads as one visually unbroken strikethrough span rather
+    than character-by-character marks (Issue #36's rendering fix).
+    Deliberately skips spaces: a combining mark has no glyph to attach to
+    over a space, so decorating one there renders as a disconnected dash
+    floating between words -- exactly the artifact that breaks a
+    multi-word name's strikethrough into separate-looking segments at
+    each word boundary. Leaving spaces plain keeps each word's
+    strikethrough continuous while the name overall still reads as fully
+    struck through.
+    """
+    return "".join(
+        char if char.isspace() else f"{char}{_STRIKETHROUGH_COMBINING_CHAR}" for char in text
+    )
 
 
 def tasks_list_keyboard(

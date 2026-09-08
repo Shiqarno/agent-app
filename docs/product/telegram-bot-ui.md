@@ -50,6 +50,12 @@ Rewards
 Points
 ```
 
+### Home
+
+No separate Child Dashboard — `/start` shows the Child's current overall
+Points balance ("Твои баллы: N pts", read fresh from the Point Ledger,
+never a stored value) above the same navigation hints as before.
+
 ### Tasks
 
 Headed "Доступные задачи". The list of active Task definitions the Child
@@ -68,15 +74,16 @@ removes the Task from Tasks, and makes it visible in My Tasks.
 
 Headed "Твои задачи". The Child's own non-terminal executions
 (`ASSIGNED`, `IN_PROGRESS`, `AWAITING_CONFIRMATION`), newest first. An
-`ASSIGNED` item — created when an Adult directly assigns a Task to this
-Child, never by the Child's own Take — shows "assigned to you" and a
-`Start` action; an `IN_PROGRESS` item has `Done`; an
-`AWAITING_CONFIRMATION` item shows "waiting for confirmation" and no
-action. Both the `Start` and `Done` buttons show the Task's name and its
-reward — always the amount actually snapshotted onto *this* execution
-when it began, never a Task's reward if it was edited since. Completed/
-cancelled executions never appear here or suppress a Task's future
-availability.
+`ASSIGNED` item is fully represented by its own button (name + reward, no
+verb) that starts it; an `IN_PROGRESS` item's button (same shape) marks it
+done — neither button says "Start" or "Done", since tapping either is
+self-evidently the action, and neither Task's name appears anywhere but
+its own button. An `AWAITING_CONFIRMATION` item has no button at all (no
+action is possible on it), so it's shown as text instead — name, reward,
+and "waiting for confirmation". Every reward shown is always the amount
+actually snapshotted onto *that* execution when it began, never a Task's
+reward if it was edited since. Completed/cancelled executions never
+appear here or suppress a Task's future availability.
 
 ### Start
 
@@ -92,11 +99,13 @@ confirms.
 ### Rewards
 
 Headed "Доступные награды", followed by the Child's current balance. The
-global reward catalog (not scoped by who created it), each showing name,
-cost, and current balance context: a button (name + cost, no verb) when
-affordable, "Not enough points" and no button when not. Tapping a reward's
-button redeems immediately at its *current* cost — never a cost cached
-from when the screen was rendered.
+global reward catalog (not scoped by who created it): an affordable
+Reward is fully represented by its own button (name + cost, no verb) —
+tapping it redeems immediately at the reward's *current* cost, never a
+cost cached from when the screen was rendered. A Reward the Child can't
+currently afford gets no button (nothing to tap), so it's shown as text
+instead — name, cost, and "Not enough points" — the only case a Reward's
+name appears anywhere but a button.
 
 ### Points
 
@@ -117,11 +126,11 @@ Points
 
 ### Home
 
-When executions are waiting for confirmation, Home leads with that queue
-(name, Child, reward, count) and a way to view all. Otherwise it shows a
-generic connected message pointing at the available commands (`/tasks`,
-`/confirmations`, ...). Home is an action surface, not a dashboard — it
-does not attempt to summarize everything at once.
+`/start` *is* the Confirmation queue — the exact same screen `/confirmations`
+itself shows, not a separate preview or summary. Home is an action
+surface, not a dashboard: it does not attempt to summarize everything at
+once, and it never auto-confirms or auto-returns anything just because
+the Adult opened it.
 
 ### Confirmation
 
@@ -150,28 +159,27 @@ Headed "Все задачи". Manages the reusable Task-definition catalog —
 distinct from Child Tasks, which is about claiming, not defining. Any
 Adult may manage any Task; there is no per-Adult ownership in Telegram.
 
-Each Task's button shows its name and current reward, so the Adult can
-scan the whole catalog without opening each Task. Whether the Task is
-currently open for **self-claim** — `is_active`, its own single self-claim
-slot, never whether the Task has any executions at all — is shown by
-striking through the name when inactive, rather than a separate word:
+Each Task is fully represented by its own button — name and current
+reward, so the Adult can scan the whole catalog without opening each Task
+— and nothing is duplicated as separate text alongside the list. Whether
+the Task is currently open for **self-claim** — `is_active`, its own
+single self-claim slot, never whether the Task has any executions at all
+— is shown by striking through the name when inactive, rather than a
+separate word:
 
 - an active Task's name is shown plain;
-- an inactive Task's name is shown struck through;
+- an inactive Task's name is shown struck through, as one visually
+  unbroken line across the whole name;
 - this reflects `is_active` alone — a Task can be active with a current
   open execution (e.g. directly assigned) and still shows plain, since
   self-claim availability and execution state are independent.
 
-Below the list, message text also shows each Task's availability with
-more context — when there's a current open execution, its Child and state
-(e.g. "Alex — in progress"); terminal (completed/cancelled) executions
-never affect availability and are never shown here — this is not a
-history view.
-
 A Task can have more than one open execution at once for different
-Children (one self-claimed, others directly assigned); the list and
-details screens summarize only one such execution for context, never a
-full history.
+Children (one self-claimed, others directly assigned) — that detail, and
+which Child currently has it and its state (e.g. "Alex — in progress"),
+lives one tap further in, on Task Details; terminal (completed/cancelled)
+executions never affect availability and are never shown there either —
+this is not a history view.
 
 Opening a Task shows its details: reward, availability, and (when one
 exists) the current execution summary. From here an Adult can:
@@ -257,10 +265,11 @@ Child Rewards, which is about redeeming, not defining. Any Adult may
 manage any Reward; there is no per-Adult ownership in Telegram (who
 originally created a Reward is recorded for audit purposes only).
 
-Each Reward in the list shows its name and current cost. Opening one shows
-its full details — name, cost, and description — with an **Edit** action.
-There is no Delete and no activate/deactivate control: a Reward has no
-such lifecycle concept at all.
+Each Reward is fully represented by its own button — name and current
+cost — nothing duplicated as separate text alongside the list. Opening one
+shows its full details — name, cost, and description — with an **Edit**
+action. There is no Delete and no activate/deactivate control: a Reward
+has no such lifecycle concept at all.
 
 **Add Reward** and **Edit** both collect the same three fields, in the
 same order:

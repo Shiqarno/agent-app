@@ -29,11 +29,12 @@ def available_tasks_keyboard(tasks: list[Task]) -> InlineKeyboardMarkup:
 
 
 def my_tasks_keyboard(items: list[tuple[TaskExecution, Task]]) -> InlineKeyboardMarkup:
-    """A `Start` row for ASSIGNED executions (Issue #32) and a `Done` row
-    for IN_PROGRESS ones (Issue #24 section 3) -- AWAITING_CONFIRMATION
-    items get no CTA at all. Each button includes the execution's own
-    reward snapshot (Issue #35) -- never the Task's current reward, which
-    can have since changed.
+    """A row for each ASSIGNED execution (Start) and each IN_PROGRESS one
+    (Done) -- AWAITING_CONFIRMATION items get no CTA at all. No `Start`/
+    `Done` verb on the button (Issue #36): the execution is represented
+    only by its button, so just name + reward -- the execution's own
+    snapshot (Issue #35), never the Task's current reward, which can have
+    since changed.
     """
     rows = []
     for execution, task in items:
@@ -41,7 +42,7 @@ def my_tasks_keyboard(items: list[tuple[TaskExecution, Task]]) -> InlineKeyboard
             rows.append(
                 [
                     InlineKeyboardButton(
-                        f"Start · {task.title} · {execution.reward_points} pts",
+                        f"{task.title} · {execution.reward_points} pts",
                         callback_data=f"{EXECUTION_START_CALLBACK_PREFIX}{execution.id}",
                     )
                 ]
@@ -50,7 +51,7 @@ def my_tasks_keyboard(items: list[tuple[TaskExecution, Task]]) -> InlineKeyboard
             rows.append(
                 [
                     InlineKeyboardButton(
-                        f"Done · {task.title} · {execution.reward_points} pts",
+                        f"{task.title} · {execution.reward_points} pts",
                         callback_data=f"{EXECUTION_DONE_CALLBACK_PREFIX}{execution.id}",
                     )
                 ]

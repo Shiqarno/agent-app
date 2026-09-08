@@ -154,10 +154,10 @@ def test_child_can_render_rewards(real: RealData) -> None:
 
     text, keyboard = _rewards_view(telegram_id)
 
-    assert text.startswith(AVAILABLE_REWARDS_HEADING)
-    assert "Ice cream" in text
-    assert "100" in text
-    assert "320" in text
+    # Issue #36: an affordable Reward is fully represented by its button --
+    # its name never appears as separate text.
+    assert text == f"{AVAILABLE_REWARDS_HEADING}\nYou have 320 points"
+    assert "Ice cream" not in text
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 1
     assert keyboard.inline_keyboard[0][0].callback_data == f"{GET_CALLBACK_PREFIX}{reward.id}"
