@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  activationTelegramUrlFor,
   activationUrlFor,
   ApiError,
   getUsers,
@@ -26,6 +27,12 @@ type RegenerationState =
   | { phase: 'success'; activationUrl: string; expiresAt: string }
   | { phase: 'error'; message: string }
 
+type TelegramLinkState =
+  | { phase: 'idle' }
+  | { phase: 'pending' }
+  | { phase: 'success'; telegramUrl: string; expiresAt: string }
+  | { phase: 'error'; message: string }
+
 type CopyStatus = 'idle' | 'copied' | 'failed'
 
 const ACTIVATION_STATUS_LABELS: Record<ActivationStatus, string> = {
@@ -41,6 +48,8 @@ function UsersPage() {
   const [state, setState] = useState<ListState>({ phase: 'loading' })
   const [regenerations, setRegenerations] = useState<Record<string, RegenerationState>>({})
   const [copyStatuses, setCopyStatuses] = useState<Record<string, CopyStatus>>({})
+  const [telegramLinks, setTelegramLinks] = useState<Record<string, TelegramLinkState>>({})
+  const [telegramCopyStatuses, setTelegramCopyStatuses] = useState<Record<string, CopyStatus>>({})
 
   const loadUsers = useCallback(() => {
     setState({ phase: 'loading' })
@@ -97,6 +106,48 @@ function UsersPage() {
     }
   }
 
+  async function handleGetTelegramLink(userId: string) {
+    setTelegramLinks((prev) => ({ ...prev, [userId]: { phase: 'pending' } }))
+    setTelegramCopyStatuses((prev) => ({ ...prev, [userId]: 'idle' }))
+
+    try {
+      // Same endpoint/token as the Web activation link above -- it's valid
+      // for either channel (see routers.users.regenerate_user_activation);
+      // this call just presents the result as a Telegram deep link instead.
+      const response = await regenerateActivation(userId)
+      setTelegramLinks((prev) => ({
+        ...prev,
+        [userId]: {
+          phase: 'success',
+          telegramUrl: activationTelegramUrlFor(response.activation_token),
+          expiresAt: response.expires_at,
+        },
+      }))
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'USER_ALREADY_ACTIVATED') {
+        // The status shown was stale (the user is now fully activated on
+        // both channels); refresh the list so it reflects that rather than
+        // leaving a Get-link action visible where it no longer applies.
+        setTelegramLinks((prev) => ({ ...prev, [userId]: { phase: 'idle' } }))
+        loadUsers()
+        return
+      }
+      setTelegramLinks((prev) => ({
+        ...prev,
+        [userId]: { phase: 'error', message: errorMessage(error, 'Could not generate a link.') },
+      }))
+    }
+  }
+
+  async function handleCopyTelegramLink(userId: string, telegramUrl: string) {
+    try {
+      await navigator.clipboard.writeText(telegramUrl)
+      setTelegramCopyStatuses((prev) => ({ ...prev, [userId]: 'copied' }))
+    } catch {
+      setTelegramCopyStatuses((prev) => ({ ...prev, [userId]: 'failed' }))
+    }
+  }
+
   return (
     <div>
       <PageHeader title="Users" action={<Link to="/users/new">Add user</Link>} />
@@ -110,6 +161,7 @@ function UsersPage() {
         <ul className="user-list">
           {state.users.map((user) => {
             const regeneration = regenerations[user.id] ?? { phase: 'idle' }
+            const telegramLink = telegramLinks[user.id] ?? { phase: 'idle' }
             return (
               <li key={user.id} className="user-card">
                 <Avatar avatar_id={user.avatar_id} size="sm" alt={`${user.name}'s avatar`} />
@@ -156,6 +208,59 @@ function UsersPage() {
                     )}
                   </div>
                 )}
+
+                <div>
+                  <p>
+                    Telegram:{' '}
+                    <Badge tone={user.telegram_connected ? 'success' : 'warning'}>
+                      {user.telegram_connected ? 'Connected' : 'Not connected'}
+                    </Badge>
+                  </p>
+
+                  {user.role === 'child' && !user.telegram_connected && (
+                    <div>
+                      <button
+                        onClick={() => handleGetTelegramLink(user.id)}
+                        disabled={telegramLink.phase === 'pending'}
+                      >
+                        {telegramLink.phase === 'pending'
+                          ? 'Generating...'
+                          : 'Get activation link'}
+                      </button>
+                      {telegramLink.phase === 'error' && (
+                        <p role="alert">{telegramLink.message}</p>
+                      )}
+                      {telegramLink.phase === 'success' && (
+                        <div>
+                          <p>
+                            <code>{telegramLink.telegramUrl}</code>
+                          </p>
+                          <p>
+                            Expires: {new Date(telegramLink.expiresAt).toLocaleString()}
+                          </p>
+                          <p>
+                            <a href={telegramLink.telegramUrl} target="_blank" rel="noreferrer">
+                              Open in Telegram
+                            </a>
+                          </p>
+                          <button
+                            onClick={() =>
+                              handleCopyTelegramLink(user.id, telegramLink.telegramUrl)
+                            }
+                          >
+                            Copy link
+                          </button>
+                          {telegramCopyStatuses[user.id] === 'copied' && (
+                            <p role="status">Copied.</p>
+                          )}
+                          {telegramCopyStatuses[user.id] === 'failed' && (
+                            <p role="alert">Could not copy automatically.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </li>
             )
           })}

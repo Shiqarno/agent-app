@@ -16,7 +16,16 @@ from app.csrf import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
 from app.db import SessionLocal
 from app.identity import SESSION_COOKIE_NAME
 from app.main import app
-from app.models import AvatarId, User, UserActivation, UserCredential, UserRole, UserSession, utcnow
+from app.models import (
+    AvatarId,
+    TelegramIdentity,
+    User,
+    UserActivation,
+    UserCredential,
+    UserRole,
+    UserSession,
+    utcnow,
+)
 from app.security import hash_password, hash_token
 
 ADULT = UserRole.ADULT
@@ -32,6 +41,18 @@ def create_credential(
     db_session.commit()
     db_session.refresh(credential)
     return credential
+
+
+def create_telegram_identity(
+    db_session: Session, user: User, telegram_user_id: int | None = None
+) -> TelegramIdentity:
+    identity = TelegramIdentity(
+        user_id=user.id, telegram_user_id=telegram_user_id or secrets.randbelow(9_000_000_000)
+    )
+    db_session.add(identity)
+    db_session.commit()
+    db_session.refresh(identity)
+    return identity
 
 
 def real_session_headers(session: Session, user_id: uuid.UUID) -> dict[str, str]:
@@ -80,6 +101,7 @@ def test_adult_can_discover_all_users(client: TestClient, make_user: Callable[..
         "role": "adult",
         "avatar_id": adult_a.avatar_id.value,
         "activation_status": "PENDING",
+        "telegram_connected": False,
     }
     assert by_id[str(adult_b.id)] == {
         "id": str(adult_b.id),
@@ -87,6 +109,7 @@ def test_adult_can_discover_all_users(client: TestClient, make_user: Callable[..
         "role": "adult",
         "avatar_id": adult_b.avatar_id.value,
         "activation_status": "PENDING",
+        "telegram_connected": False,
     }
     assert by_id[str(child_a.id)] == {
         "id": str(child_a.id),
@@ -94,6 +117,7 @@ def test_adult_can_discover_all_users(client: TestClient, make_user: Callable[..
         "role": "child",
         "avatar_id": child_a.avatar_id.value,
         "activation_status": "PENDING",
+        "telegram_connected": False,
     }
     assert by_id[str(child_b.id)] == {
         "id": str(child_b.id),
@@ -101,7 +125,43 @@ def test_adult_can_discover_all_users(client: TestClient, make_user: Callable[..
         "role": "child",
         "avatar_id": child_b.avatar_id.value,
         "activation_status": "PENDING",
+        "telegram_connected": False,
     }
+
+
+def test_telegram_connected_is_true_for_a_connected_user(
+    client: TestClient, make_user: Callable[..., User], db_session: Session
+) -> None:
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    create_telegram_identity(db_session, child)
+
+    response = client.get("/api/users", headers=auth(adult))
+
+    by_id = {entry["id"]: entry for entry in response.json()}
+    assert by_id[str(child.id)]["telegram_connected"] is True
+    assert by_id[str(adult.id)]["telegram_connected"] is False
+
+
+def test_telegram_connected_is_independent_of_activation_status(
+    client: TestClient, make_user: Callable[..., User], db_session: Session
+) -> None:
+    """A User can be Web-ACTIVE and not Telegram-connected, or Telegram-
+    connected and Web-PENDING -- the two axes never move together.
+    """
+    adult = make_user(ADULT)
+    web_only = make_user(CHILD, "Web Only")
+    create_credential(db_session, web_only, "webonly@example.com")
+    telegram_only = make_user(CHILD, "Telegram Only")
+    create_telegram_identity(db_session, telegram_only)
+
+    response = client.get("/api/users", headers=auth(adult))
+
+    by_id = {entry["id"]: entry for entry in response.json()}
+    assert by_id[str(web_only.id)]["activation_status"] == "ACTIVE"
+    assert by_id[str(web_only.id)]["telegram_connected"] is False
+    assert by_id[str(telegram_only.id)]["activation_status"] == "PENDING"
+    assert by_id[str(telegram_only.id)]["telegram_connected"] is True
 
 
 # --- Child cannot discover users --------------------------------------------------------
@@ -577,7 +637,14 @@ def test_activation_status_never_exposes_email_or_token_fields(
     response = client.get("/api/users", headers=auth(adult))
 
     for entry in response.json():
-        assert set(entry.keys()) == {"id", "name", "role", "avatar_id", "activation_status"}
+        assert set(entry.keys()) == {
+            "id",
+            "name",
+            "role",
+            "avatar_id",
+            "activation_status",
+            "telegram_connected",
+        }
 
 
 # =========================================================================================
@@ -687,14 +754,76 @@ def test_regenerating_resets_used_at_to_null(
     assert activation.used_at is None
 
 
-def test_regenerating_an_active_user_returns_409(
+def test_regenerating_a_fully_activated_user_returns_409(
     client: TestClient, make_user: Callable[..., User], db_session: Session
 ) -> None:
+    """A User with BOTH Web credentials and a connected TelegramIdentity
+    (Issue #33) has genuinely nothing left to activate through either
+    channel -- the only case this endpoint still refuses.
+    """
     adult = make_user(ADULT)
     child = make_user(CHILD)
     create_credential(db_session, child, "kid@example.com")
+    create_telegram_identity(db_session, child)
 
     response = client.post(f"/api/users/{child.id}/activation", headers=auth(adult))
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "USER_ALREADY_ACTIVATED"
+
+
+def test_regenerating_a_credentialed_but_not_telegram_connected_user_succeeds(
+    client: TestClient, make_user: Callable[..., User], db_session: Session
+) -> None:
+    """Issue #33: a User who already has Web credentials but hasn't
+    connected Telegram yet still has a legitimate reason to get a fresh
+    token -- this is the exact case the Web UI's new Telegram action needs.
+    Before Telegram existed, "has credentials" alone correctly meant
+    "nothing left to activate"; it no longer does.
+    """
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    create_activation(child)
+    create_credential(db_session, child, "kid@example.com")
+
+    response = client.post(f"/api/users/{child.id}/activation", headers=auth(adult))
+
+    assert response.status_code == 200
+    assert "activation_token" in response.json()
+
+
+def test_regenerating_a_telegram_connected_but_not_credentialed_user_still_succeeds(
+    client: TestClient, make_user: Callable[..., User], db_session: Session
+) -> None:
+    """Unaffected by Issue #33's change: a Telegram-connected User with no
+    Web credentials yet could already regenerate a token before this issue
+    (the old guard only checked credentials), and still can.
+    """
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    create_activation(child)
+    create_telegram_identity(db_session, child)
+
+    response = client.post(f"/api/users/{child.id}/activation", headers=auth(adult))
+
+    assert response.status_code == 200
+    assert "activation_token" in response.json()
+
+
+def test_regenerating_a_user_with_credentials_and_no_activation_row_returns_409(
+    client: TestClient, make_user: Callable[..., User], db_session: Session
+) -> None:
+    """The real bootstrap Adult (from /auth/setup) is created with
+    credentials directly and never gets a UserActivation row at all.
+    Previously always caught by the credential-only guard before reaching
+    the row lookup; must still be handled gracefully (not a 500) now that
+    the guard alone no longer catches every credentialed User.
+    """
+    adult = make_user(ADULT)
+    target = make_user(ADULT, "Bootstrap-like Adult")
+    create_credential(db_session, target, "target@example.com")
+
+    response = client.post(f"/api/users/{target.id}/activation", headers=auth(adult))
 
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "USER_ALREADY_ACTIVATED"
@@ -766,8 +895,29 @@ def test_regeneration_does_not_create_a_second_activation_row(
     assert row_count == 1
 
 
-def test_activating_then_regenerating_is_rejected_because_the_user_is_now_active(
+def test_activating_via_web_then_regenerating_still_succeeds_pending_telegram(
     client: TestClient, make_user: Callable[..., User]
+) -> None:
+    """Issue #33: Web-activating (setting up credentials) alone no longer
+    blocks regeneration -- the User still has a legitimate reason to get a
+    fresh token to connect Telegram.
+    """
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    token = create_activation(child)
+    client.post(
+        "/api/auth/activate",
+        json={"token": token, "email": "kid@example.com", "pin": "1234", "password": PASSWORD},
+    )
+
+    response = client.post(f"/api/users/{child.id}/activation", headers=auth(adult))
+
+    assert response.status_code == 200
+    assert "activation_token" in response.json()
+
+
+def test_activating_via_web_and_connecting_telegram_then_regenerating_is_rejected(
+    client: TestClient, make_user: Callable[..., User], db_session: Session
 ) -> None:
     adult = make_user(ADULT)
     child = make_user(CHILD)
@@ -776,6 +926,7 @@ def test_activating_then_regenerating_is_rejected_because_the_user_is_now_active
         "/api/auth/activate",
         json={"token": token, "email": "kid@example.com", "pin": "1234", "password": PASSWORD},
     )
+    create_telegram_identity(db_session, child)
 
     response = client.post(f"/api/users/{child.id}/activation", headers=auth(adult))
 

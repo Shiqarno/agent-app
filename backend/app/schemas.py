@@ -133,6 +133,11 @@ class UserListItemResponse(BaseModel):
     role: UserRole
     avatar_id: AvatarId
     activation_status: ActivationStatus
+    # Whether a TelegramIdentity exists for this User (Issue #33) --
+    # deliberately independent of activation_status, which reflects Web
+    # credential (PIN) setup only. A User can be ACTIVE (has Web
+    # credentials) and not Telegram-connected, or vice versa.
+    telegram_connected: bool
 
 
 class UserCreate(BaseModel):

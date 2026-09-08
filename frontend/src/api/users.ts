@@ -13,6 +13,10 @@ export type UserSummary = {
   role: UserRole
   avatar_id: string
   activation_status: ActivationStatus
+  // Whether a TelegramIdentity exists for this User (Issue #33) --
+  // independent of activation_status, which reflects Web credential (PIN)
+  // setup only.
+  telegram_connected: boolean
 }
 
 export type CreatedUser = {
@@ -68,4 +72,17 @@ export function regenerateActivation(userId: string): Promise<ActivationRegenera
 // link" flows build it identically.
 export function activationUrlFor(token: string): string {
   return `${window.location.origin}/activate?activation_token=${encodeURIComponent(token)}`
+}
+
+// The Telegram bot's public @username -- not a secret (unlike
+// TELEGRAM_BOT_TOKEN, which is never sent to the browser), configured via
+// the same VITE_* build-time mechanism as VITE_API_URL (Issue #33).
+const TELEGRAM_BOT_USERNAME = import.meta.env.VITE_TELEGRAM_BOT_USERNAME ?? ''
+
+// Same activation token as activationUrlFor above (this endpoint's raw
+// token is valid for either channel -- see routers.users.
+// regenerate_user_activation), presented as a Telegram deep link instead
+// of a Web link.
+export function activationTelegramUrlFor(token: string): string {
+  return `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${encodeURIComponent(token)}`
 }

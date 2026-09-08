@@ -9,7 +9,7 @@ from app.activation import regenerate_activation
 from app.db import get_db
 from app.errors import UserAlreadyActivatedError, UserNotFoundError
 from app.identity import get_current_user, require_adult
-from app.models import User, UserActivation, UserCredential, utcnow
+from app.models import TelegramIdentity, User, UserActivation, UserCredential, utcnow
 from app.schemas import (
     ActivationRegenerateResponse,
     ActivationStatus,
@@ -32,8 +32,11 @@ def list_users(
 
     # Activation status is derived from UserCredential existence (no second
     # persisted source of truth) -- one extra query for all activated user
-    # ids, rather than a per-user existence check, avoids N+1.
+    # ids, rather than a per-user existence check, avoids N+1. Telegram
+    # connection (Issue #33) is a separate, independent axis, derived the
+    # same way from TelegramIdentity existence.
     activated_ids = set(db.scalars(select(UserCredential.user_id)))
+    telegram_connected_ids = set(db.scalars(select(TelegramIdentity.user_id)))
 
     return [
         UserListItemResponse(
@@ -44,6 +47,7 @@ def list_users(
             activation_status=(
                 ActivationStatus.ACTIVE if u.id in activated_ids else ActivationStatus.PENDING
             ),
+            telegram_connected=u.id in telegram_connected_ids,
         )
         for u in users
     ]
@@ -102,21 +106,41 @@ def update_my_avatar(
 def regenerate_user_activation(
     user_id: uuid.UUID, user: User = Depends(require_adult), db: Session = Depends(get_db)
 ) -> ActivationRegenerateResponse:
+    """The same UserActivation token is the shared onboarding mechanism for
+    two independent channels: Web credential setup (routers.auth.activate)
+    and Telegram linking (telegram_identity.activate_telegram_identity,
+    Issue #23) -- a fresh token here is valid for either, whichever the
+    Adult hands to the User first.
+
+    Regeneration is refused only once BOTH channels are already used up
+    (Issue #33): a User with Web credentials but no TelegramIdentity still
+    has a legitimate reason to get a fresh token (to connect Telegram), and
+    vice versa. Before Telegram existed, "has credentials" alone correctly
+    meant "nothing left to activate"; that's no longer sufficient now that
+    there's a second, independent channel.
+    """
     target = db.get(User, user_id)
     if target is None:
         raise UserNotFoundError()
 
     existing_credential = db.scalar(select(UserCredential).where(UserCredential.user_id == user_id))
-    if existing_credential is not None:
+    existing_telegram_identity = db.scalar(
+        select(TelegramIdentity).where(TelegramIdentity.user_id == user_id)
+    )
+    if existing_credential is not None and existing_telegram_identity is not None:
         raise UserAlreadyActivatedError()
 
     activation = db.scalar(select(UserActivation).where(UserActivation.user_id == user_id))
     # Every User created via POST /api/users gets a UserActivation row
     # atomically (Issue #10). The only User that doesn't is the first Adult
-    # from /auth/setup, which is created with credentials directly -- and
-    # that case is already caught by the check above, so a pending user here
-    # is always guaranteed to have one.
-    assert activation is not None, "pending User is missing its UserActivation row"
+    # from /auth/setup, created with credentials directly and no row at
+    # all -- previously always caught by the credential check above before
+    # reaching here, but that check alone no longer guarantees it now that
+    # it's credential-AND-Telegram (Issue #33): that bootstrap Adult has no
+    # UserActivation row to regenerate, Telegram or not, so this is treated
+    # the same as already fully activated rather than a server error.
+    if activation is None:
+        raise UserAlreadyActivatedError()
 
     raw_token = regenerate_activation(activation)
     db.commit()

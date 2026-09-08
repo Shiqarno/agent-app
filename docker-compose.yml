@@ -38,6 +38,11 @@ services:
       # this for a deployment that intentionally serves the API from a
       # separate origin.
       VITE_API_URL: ${VITE_API_URL:-}
+      # The bot's public @username (Issue #33), for building a t.me deep
+      # link in the Users page -- must match whichever bot the
+      # telegram-bot service's TELEGRAM_BOT_TOKEN authenticates as. Public,
+      # not a secret, unlike TELEGRAM_BOT_TOKEN.
+      VITE_TELEGRAM_BOT_USERNAME: ${VITE_TELEGRAM_BOT_USERNAME:-}
     ports:
       - "5173:5173"
     volumes:
