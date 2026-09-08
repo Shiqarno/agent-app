@@ -68,6 +68,7 @@ from app.telegram.handlers.adult_users import (
 from app.telegram.handlers.confirmations import (
     handle_confirm_execution,
     handle_confirmations_command,
+    handle_open_confirmation,
     handle_return_execution,
     handle_view_all_confirmations,
 )
@@ -135,6 +136,9 @@ from app.telegram.keyboards.confirmations import (
     CONFIRM_CALLBACK_PREFIX,
     RETURN_CALLBACK_PREFIX,
     VIEW_ALL_CALLBACK_DATA,
+)
+from app.telegram.keyboards.confirmations import (
+    OPEN_CALLBACK_PREFIX as CONFIRMATION_OPEN_CALLBACK_PREFIX,
 )
 from app.telegram.keyboards.points import OLDER_CALLBACK_PREFIX
 from app.telegram.keyboards.rewards import GET_CALLBACK_PREFIX as REWARD_GET_CALLBACK_PREFIX
@@ -244,6 +248,11 @@ def build_application() -> BotApplication:
     )
     application.add_handler(
         CallbackQueryHandler(handle_view_all_confirmations, pattern=f"^{VIEW_ALL_CALLBACK_DATA}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            handle_open_confirmation, pattern=f"^{CONFIRMATION_OPEN_CALLBACK_PREFIX}"
+        )
     )
     application.add_handler(CommandHandler("rewards", handle_rewards_command_dispatch))
     application.add_handler(

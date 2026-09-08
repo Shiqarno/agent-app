@@ -147,13 +147,36 @@ def test_tasks_view_renders_available_tasks(real: RealData) -> None:
 
     text, keyboard = _tasks_view(telegram_id)
 
-    assert text.startswith(AVAILABLE_TASKS_HEADING)
-    assert "Clean room" in text
-    assert "20" in text
+    # Issue #36: the heading is the ENTIRE message text -- the task name
+    # and reward live only on the button, never duplicated as text above it.
+    assert text == AVAILABLE_TASKS_HEADING
+    assert "Clean room" not in text
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 1
     assert keyboard.inline_keyboard[0][0].callback_data == f"{TASKS_CALLBACK_PREFIX}{task.id}"
     assert keyboard.inline_keyboard[0][0].text == "Take · Clean room · 20 pts"
+
+
+def test_tasks_view_renders_multiple_tasks_as_separate_buttons(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(child, telegram_id)
+    task_a = real.make_task(adult, title="Wash dishes", reward_points=10)
+    task_b = real.make_task(adult, title="Walk the dog", reward_points=15)
+
+    text, keyboard = _tasks_view(telegram_id)
+
+    assert text == AVAILABLE_TASKS_HEADING
+    assert keyboard is not None
+    assert len(keyboard.inline_keyboard) == 2
+    labels = {row[0].text for row in keyboard.inline_keyboard}
+    assert labels == {"Take · Wash dishes · 10 pts", "Take · Walk the dog · 15 pts"}
+    callback_datas = {row[0].callback_data for row in keyboard.inline_keyboard}
+    assert callback_datas == {
+        f"{TASKS_CALLBACK_PREFIX}{task_a.id}",
+        f"{TASKS_CALLBACK_PREFIX}{task_b.id}",
+    }
 
 
 def test_tasks_view_with_no_tasks(real: RealData) -> None:

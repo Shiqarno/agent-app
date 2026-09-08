@@ -21,11 +21,17 @@ from app.telegram.handlers.confirmations import (
     _NOT_AN_ADULT_TEXT,
     _NOT_CONNECTED_TEXT,
     _confirm,
-    _queue_view,
+    _detail_view,
+    _list_view,
     _return_to_work,
 )
-from app.telegram.keyboards.confirmations import CONFIRM_CALLBACK_PREFIX, RETURN_CALLBACK_PREFIX
-from app.telegram.views.confirmations import NO_CONFIRMATIONS_TEXT
+from app.telegram.keyboards.confirmations import (
+    CONFIRM_CALLBACK_PREFIX,
+    OPEN_CALLBACK_PREFIX,
+    RETURN_CALLBACK_PREFIX,
+    VIEW_ALL_CALLBACK_DATA,
+)
+from app.telegram.views.confirmations import CONFIRMATIONS_HEADING, NO_CONFIRMATIONS_TEXT
 from app.telegram_identity import activate_telegram_identity
 
 ADULT = UserRole.ADULT
@@ -123,11 +129,11 @@ def real(db_session: Session) -> Iterator[RealData]:
 
 
 # =========================================================================================
-# Rendering
+# Step 1: confirmation list
 # =========================================================================================
 
 
-def test_adult_can_render_the_confirmation_queue(real: RealData) -> None:
+def test_adult_can_render_the_confirmation_list(real: RealData) -> None:
     adult = real.make_user(ADULT)
     child = real.make_user(CHILD, "Vova")
     telegram_id = _next_telegram_id()
@@ -135,26 +141,118 @@ def test_adult_can_render_the_confirmation_queue(real: RealData) -> None:
     task = real.make_task(adult, title="Clean room", reward_points=20)
     execution = real.make_execution(task, child, TaskExecutionStatus.AWAITING_CONFIRMATION)
 
-    text, keyboard = _queue_view(telegram_id)
+    text, keyboard = _list_view(telegram_id)
+
+    # Issue #36: the heading is the ENTIRE message text -- the Task name is
+    # never duplicated as text above the button; it lives only there.
+    assert text == CONFIRMATIONS_HEADING
+    assert keyboard is not None
+    assert len(keyboard.inline_keyboard) == 1
+    assert keyboard.inline_keyboard[0][0].text == "Clean room"
+    assert keyboard.inline_keyboard[0][0].callback_data == f"{OPEN_CALLBACK_PREFIX}{execution.id}"
+
+
+def test_multiple_confirmations_produce_one_button_each_with_distinct_execution_ids(
+    real: RealData,
+) -> None:
+    adult = real.make_user(ADULT)
+    child_a = real.make_user(CHILD, "Alex")
+    child_b = real.make_user(CHILD, "Blair")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task_a = real.make_task(adult, title="Wash dishes", reward_points=10)
+    task_b = real.make_task(adult, title="Clean room", reward_points=20)
+    execution_a = real.make_execution(task_a, child_a, TaskExecutionStatus.AWAITING_CONFIRMATION)
+    execution_b = real.make_execution(task_b, child_b, TaskExecutionStatus.AWAITING_CONFIRMATION)
+
+    text, keyboard = _list_view(telegram_id)
+
+    assert text == CONFIRMATIONS_HEADING
+    assert keyboard is not None
+    assert len(keyboard.inline_keyboard) == 2
+    labels = {row[0].text for row in keyboard.inline_keyboard}
+    assert labels == {"Wash dishes", "Clean room"}
+    callback_datas = {row[0].callback_data for row in keyboard.inline_keyboard}
+    assert callback_datas == {
+        f"{OPEN_CALLBACK_PREFIX}{execution_a.id}",
+        f"{OPEN_CALLBACK_PREFIX}{execution_b.id}",
+    }
+
+
+def test_child_cannot_use_confirmation_actions(real: RealData) -> None:
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(child, telegram_id)
+
+    text, keyboard = _list_view(telegram_id)
+
+    assert text == _NOT_AN_ADULT_TEXT
+    assert keyboard is None
+
+
+def test_empty_list_renders_correctly(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+
+    text, keyboard = _list_view(telegram_id)
+
+    assert text == f"{CONFIRMATIONS_HEADING}\n\n{NO_CONFIRMATIONS_TEXT}"
+    assert keyboard is not None
+    assert len(keyboard.inline_keyboard) == 0
+
+
+def test_list_view_for_unconnected_account() -> None:
+    text, keyboard = _list_view(_next_telegram_id())
+
+    assert text == _NOT_CONNECTED_TEXT
+    assert keyboard is None
+
+
+# =========================================================================================
+# Step 2: selected confirmation
+# =========================================================================================
+
+
+def test_opening_a_confirmation_shows_its_task_name_and_actions(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD, "Vova")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult, title="Clean room", reward_points=20)
+    execution = real.make_execution(task, child, TaskExecutionStatus.AWAITING_CONFIRMATION)
+
+    text, keyboard = _detail_view(telegram_id, str(execution.id))
 
     assert "Clean room" in text
     assert "Vova" in text
     assert "20" in text
     assert keyboard is not None
-    assert len(keyboard.inline_keyboard) == 1
-    assert (
-        keyboard.inline_keyboard[0][0].callback_data == f"{CONFIRM_CALLBACK_PREFIX}{execution.id}"
-    )
-    assert keyboard.inline_keyboard[0][1].callback_data == f"{RETURN_CALLBACK_PREFIX}{execution.id}"
+    buttons = [button for row in keyboard.inline_keyboard for button in row]
+    confirm = next(b for b in buttons if b.text == "Confirm")
+    ret = next(b for b in buttons if b.text == "Return")
+    assert confirm.callback_data == f"{CONFIRM_CALLBACK_PREFIX}{execution.id}"
+    assert ret.callback_data == f"{RETURN_CALLBACK_PREFIX}{execution.id}"
 
 
-def test_each_execution_has_its_own_confirm_and_return_row_in_matching_order(
-    real: RealData,
-) -> None:
-    """Issue #35 "option A": each execution gets its own keyboard row
-    pairing Confirm+Return (not all Confirms grouped, then all Returns),
-    in the same order as the text blocks above it, so a Return button is
-    never mistakable for a different execution's row.
+def test_detail_view_has_a_way_back_to_the_list(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult)
+    execution = real.make_execution(task, child, TaskExecutionStatus.AWAITING_CONFIRMATION)
+
+    _text, keyboard = _detail_view(telegram_id, str(execution.id))
+
+    assert keyboard is not None
+    callback_datas = [button.callback_data for row in keyboard.inline_keyboard for button in row]
+    assert VIEW_ALL_CALLBACK_DATA in callback_datas
+
+
+def test_selecting_one_task_shows_only_that_executions_controls(real: RealData) -> None:
+    """Issue #36 execution isolation: opening Task A must never surface
+    Task B's controls, and vice versa.
     """
     adult = real.make_user(ADULT)
     child_a = real.make_user(CHILD, "Alex")
@@ -166,22 +264,70 @@ def test_each_execution_has_its_own_confirm_and_return_row_in_matching_order(
     execution_a = real.make_execution(task_a, child_a, TaskExecutionStatus.AWAITING_CONFIRMATION)
     execution_b = real.make_execution(task_b, child_b, TaskExecutionStatus.AWAITING_CONFIRMATION)
 
-    text, keyboard = _queue_view(telegram_id)
+    text_a, keyboard_a = _detail_view(telegram_id, str(execution_a.id))
+    text_b, keyboard_b = _detail_view(telegram_id, str(execution_b.id))
 
-    # Text blocks appear in the same order as the keyboard rows below.
-    assert text.index("Wash dishes") < text.index("Clean room")
+    assert "Wash dishes" in text_a
+    assert "Clean room" not in text_a
+    assert keyboard_a is not None
+    callbacks_a = [button.callback_data for row in keyboard_a.inline_keyboard for button in row]
+    assert f"{CONFIRM_CALLBACK_PREFIX}{execution_a.id}" in callbacks_a
+    assert f"{CONFIRM_CALLBACK_PREFIX}{execution_b.id}" not in callbacks_a
+
+    assert "Clean room" in text_b
+    assert "Wash dishes" not in text_b
+    assert keyboard_b is not None
+    callbacks_b = [button.callback_data for row in keyboard_b.inline_keyboard for button in row]
+    assert f"{CONFIRM_CALLBACK_PREFIX}{execution_b.id}" in callbacks_b
+    assert f"{CONFIRM_CALLBACK_PREFIX}{execution_a.id}" not in callbacks_b
+
+
+def test_opening_a_stale_execution_falls_back_to_the_list(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult)
+    execution = real.make_execution(task, child, TaskExecutionStatus.IN_PROGRESS)
+
+    text, keyboard = _detail_view(telegram_id, str(execution.id))
+
+    assert text == _EXECUTION_UNCONFIRMABLE_TEXT
     assert keyboard is not None
-    assert len(keyboard.inline_keyboard) == 2
-    row_a, row_b = keyboard.inline_keyboard
-    assert len(row_a) == 2
-    assert row_a[0].callback_data == f"{CONFIRM_CALLBACK_PREFIX}{execution_a.id}"
-    assert row_a[1].callback_data == f"{RETURN_CALLBACK_PREFIX}{execution_a.id}"
-    assert len(row_b) == 2
-    assert row_b[0].callback_data == f"{CONFIRM_CALLBACK_PREFIX}{execution_b.id}"
-    assert row_b[1].callback_data == f"{RETURN_CALLBACK_PREFIX}{execution_b.id}"
-    # Not the broken layout: no row mixes actions from different executions.
-    assert row_a[0].callback_data != row_b[0].callback_data
-    assert row_a[1].callback_data != row_b[1].callback_data
+
+
+def test_opening_a_bogus_execution_id_does_not_crash(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+
+    text, keyboard = _detail_view(telegram_id, "not-a-uuid")
+
+    assert text == _EXECUTION_UNCONFIRMABLE_TEXT
+    assert keyboard is not None
+
+
+def test_detail_view_for_unconnected_account() -> None:
+    text, keyboard = _detail_view(_next_telegram_id(), str(uuid.uuid4()))
+
+    assert text == _NOT_CONNECTED_TEXT
+    assert keyboard is None
+
+
+def test_child_cannot_open_a_confirmation_detail(real: RealData) -> None:
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(child, telegram_id)
+
+    text, keyboard = _detail_view(telegram_id, str(uuid.uuid4()))
+
+    assert text == _NOT_AN_ADULT_TEXT
+    assert keyboard is None
+
+
+# =========================================================================================
+# Post-action navigation and isolation
+# =========================================================================================
 
 
 def test_confirming_one_execution_does_not_affect_another(real: RealData) -> None:
@@ -205,14 +351,11 @@ def test_confirming_one_execution_does_not_affect_another(real: RealData) -> Non
     assert refreshed_a.status == TaskExecutionStatus.COMPLETED
     assert refreshed_b is not None
     assert refreshed_b.status == TaskExecutionStatus.AWAITING_CONFIRMATION
-    # Only execution B remains in the refreshed queue.
-    assert "Clean room" in text
-    assert "Wash dishes" not in text
+    # Back on the (refreshed) list -- only execution B remains.
+    assert text == CONFIRMATIONS_HEADING
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 1
-    assert (
-        keyboard.inline_keyboard[0][0].callback_data == f"{CONFIRM_CALLBACK_PREFIX}{execution_b.id}"
-    )
+    assert keyboard.inline_keyboard[0][0].callback_data == f"{OPEN_CALLBACK_PREFIX}{execution_b.id}"
 
 
 def test_returning_one_execution_does_not_affect_another(real: RealData) -> None:
@@ -235,36 +378,6 @@ def test_returning_one_execution_does_not_affect_another(real: RealData) -> None
     assert refreshed_a.status == TaskExecutionStatus.IN_PROGRESS
     assert refreshed_b is not None
     assert refreshed_b.status == TaskExecutionStatus.AWAITING_CONFIRMATION
-
-
-def test_child_cannot_use_confirmation_actions(real: RealData) -> None:
-    child = real.make_user(CHILD)
-    telegram_id = _next_telegram_id()
-    real.connect(child, telegram_id)
-
-    text, keyboard = _queue_view(telegram_id)
-
-    assert text == _NOT_AN_ADULT_TEXT
-    assert keyboard is None
-
-
-def test_empty_queue_renders_correctly(real: RealData) -> None:
-    adult = real.make_user(ADULT)
-    telegram_id = _next_telegram_id()
-    real.connect(adult, telegram_id)
-
-    text, keyboard = _queue_view(telegram_id)
-
-    assert text == NO_CONFIRMATIONS_TEXT
-    assert keyboard is not None
-    assert len(keyboard.inline_keyboard) == 0
-
-
-def test_queue_view_for_unconnected_account() -> None:
-    text, keyboard = _queue_view(_next_telegram_id())
-
-    assert text == _NOT_CONNECTED_TEXT
-    assert keyboard is None
 
 
 # =========================================================================================
@@ -294,8 +407,8 @@ def test_confirm_routes_to_confirm_execution_and_removes_it_from_the_queue(
     )
     assert transaction.amount == 20
     assert transaction.user_id == child.id
-    # Removed from the queue.
-    assert text == NO_CONFIRMATIONS_TEXT
+    # Back on the (refreshed, now empty) list.
+    assert text == f"{CONFIRMATIONS_HEADING}\n\n{NO_CONFIRMATIONS_TEXT}"
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 0
 
@@ -366,7 +479,7 @@ def test_return_routes_to_return_execution_to_work_and_removes_it_from_the_queue
     assert (
         real.session.query(PointTransaction).filter_by(task_execution_id=execution.id).count() == 0
     )
-    assert text == NO_CONFIRMATIONS_TEXT
+    assert text == f"{CONFIRMATIONS_HEADING}\n\n{NO_CONFIRMATIONS_TEXT}"
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 0
 

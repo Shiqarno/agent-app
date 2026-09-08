@@ -53,10 +53,9 @@ Points
 ### Tasks
 
 Headed "Доступные задачи". The list of active Task definitions the Child
-can currently self-claim — name and reward points only, no description,
-no history. Each has a `Take` action, and the button itself already shows
-the Task's name and reward points, so the Child can see what a Task is
-worth without opening anything.
+can currently self-claim — no description, no history. A Task's name
+appears nowhere but its own `Take` button, alongside its reward points,
+so nothing is ever shown twice.
 
 ### Take
 
@@ -127,14 +126,20 @@ does not attempt to summarize everything at once.
 
 A queue of `TaskExecution`s currently `AWAITING_CONFIRMATION` — not a
 separate domain entity, just that status. Any connected Adult may act on
-any awaiting execution; there is no Adult↔Child ownership. Each item shows
-the Task, the Child, and the reward snapshot, immediately followed by its
-own `Confirm` (→ `COMPLETED`, exactly one `TASK_COMPLETED` point
-transaction) and `Return to work` (→ back to `IN_PROGRESS`, no points)
-pair — one item, one pair of buttons, in the same order top to bottom, so
-acting on one execution is never ambiguous with acting on another. Both
-act immediately, no confirmation dialog. There is no separate Confirmation
-Details screen.
+any awaiting execution; there is no Adult↔Child ownership. A two-step
+flow:
+
+1. **The list** — one button per awaiting execution, showing only the
+   Task's name; nothing is duplicated as separate text above it.
+2. **The selected execution** — tapping a Task shows its name, the Child,
+   and the reward snapshot, together with `Confirm` (→ `COMPLETED`,
+   exactly one `TASK_COMPLETED` point transaction) and `Return to work`
+   (→ back to `IN_PROGRESS`, no points). A `← Back` action returns to the
+   list without acting. Both `Confirm` and `Return to work` act
+   immediately, no further confirmation dialog, and afterward return to
+   the (now refreshed) list.
+
+Selecting one execution never exposes or affects another's controls.
 
 ### Tasks (Adult)
 

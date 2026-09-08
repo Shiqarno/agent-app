@@ -7,13 +7,13 @@ NO_TASKS_IN_PROGRESS_TEXT = "У тебя нет активных задач."
 
 
 def render_available_tasks(tasks: list[Task]) -> str:
-    """Issue #24 section 1 / Issue #35: heading, then name and reward per
-    Task -- no description, no status, no Adult/creator information.
+    """Issue #24 section 1 / Issue #36: just the heading -- name and reward
+    live only on each Task's Take button (available_tasks_keyboard), never
+    duplicated as a separate text block above it.
     """
     if not tasks:
         return f"{AVAILABLE_TASKS_HEADING}\n\n{NO_TASKS_AVAILABLE_TEXT}"
-    blocks = "\n\n".join(f"{task.title} · {task.reward_points} pts" for task in tasks)
-    return f"{AVAILABLE_TASKS_HEADING}\n\n{blocks}"
+    return AVAILABLE_TASKS_HEADING
 
 
 def render_my_tasks(items: list[tuple[TaskExecution, Task]]) -> str:

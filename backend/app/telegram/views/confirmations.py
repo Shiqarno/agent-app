@@ -1,18 +1,25 @@
 from app.models import Task, TaskExecution, User
 
+CONFIRMATIONS_HEADING = "Confirmations"
 NO_CONFIRMATIONS_TEXT = "No tasks waiting for confirmation."
 
 
-def render_confirmation_queue(items: list[tuple[TaskExecution, Task, User]]) -> str:
-    """Issue #25 section 3/21: Task title, Child name, reward snapshot,
-    nothing else -- no description, no history, no technical status names.
+def render_confirmation_list(items: list[tuple[TaskExecution, Task, User]]) -> str:
+    """Issue #36 step 1: just the heading -- each execution's Task name
+    lives only on its own button (confirmation_list_keyboard), never
+    duplicated as a separate text block above it.
     """
     if not items:
-        return NO_CONFIRMATIONS_TEXT
-    return "\n\n".join(
-        f"{task.title} · {child.name} · {execution.reward_points} pts"
-        for execution, task, child in items
-    )
+        return f"{CONFIRMATIONS_HEADING}\n\n{NO_CONFIRMATIONS_TEXT}"
+    return CONFIRMATIONS_HEADING
+
+
+def render_confirmation_detail(execution: TaskExecution, task: Task, child: User) -> str:
+    """Issue #36 step 2: the selected execution's own Task name, Child, and
+    reward snapshot -- shown once here, not on the Confirm/Return buttons
+    beneath it (confirmation_detail_keyboard).
+    """
+    return f"{task.title}\n\n{child.name} · {execution.reward_points} pts"
 
 
 def render_confirmation_summary(items: list[tuple[TaskExecution, Task, User]]) -> str:

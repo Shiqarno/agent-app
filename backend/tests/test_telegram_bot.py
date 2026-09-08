@@ -58,6 +58,7 @@ from app.telegram.handlers.adult_users import (
 from app.telegram.handlers.confirmations import (
     handle_confirm_execution,
     handle_confirmations_command,
+    handle_open_confirmation,
     handle_return_execution,
     handle_view_all_confirmations,
 )
@@ -96,6 +97,7 @@ def test_build_application_registers_every_handler(fake_token: None) -> None:
     assert handle_confirm_execution in callbacks
     assert handle_return_execution in callbacks
     assert handle_view_all_confirmations in callbacks
+    assert handle_open_confirmation in callbacks
     assert handle_rewards_command_dispatch in callbacks
     assert handle_get_reward in callbacks
     assert handle_points_command_dispatch in callbacks
