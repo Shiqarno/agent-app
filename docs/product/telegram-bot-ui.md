@@ -56,12 +56,22 @@ No separate Child Dashboard — `/start` shows the Child's current overall
 Points balance ("Твои баллы: 💰 N", read fresh from the Point Ledger,
 never a stored value) above the same navigation hints as before.
 
-Every points amount shown anywhere in the bot — a balance, a reward, a
-cost, a transaction — uses the same 💰 notation (💰 followed by the
-number), never the literal word "pts". This is a single, consistent
-visual convention across every screen in both the Child and Adult
-navigation; it never changes the underlying numeric value or point
-semantics, only how it's displayed.
+Points amounts use two conventions, depending on the kind of screen:
+
+- **Compact list/button text** (a Task or Reward's reward/cost on its own
+  button, most balance lines, a transaction amount) uses 💰 notation (💰
+  followed by the number) — never the literal word "pts". This is the
+  convention across most lists, buttons, and balance lines in both the
+  Child and Adult navigation — see each screen below for its exact
+  wording.
+- **Explanatory/detail text** (e.g. a Task's or Reward's own reward/cost
+  line on its detail screen, the Child Rewards balance banner, a
+  redemption confirmation) may spell the amount out as "N points"
+  instead — this is pre-existing, narrative wording, distinct from the
+  retired "pts" abbreviation, and is not required to switch to 💰.
+
+Neither convention ever changes the underlying numeric value or point
+semantics, only how an amount is displayed.
 
 ### Tasks
 
@@ -105,8 +115,10 @@ confirms.
 
 ### Rewards
 
-Headed "Доступные награды", followed by the Child's current balance. The
-global reward catalog (not scoped by who created it): an affordable
+Headed "Доступные награды", followed by the Child's current balance ("You
+have N points" — this particular banner is explanatory text and uses the
+spelled-out word, unlike the Points screens' 💰 balance). The global
+reward catalog (not scoped by who created it): an affordable
 Reward is fully represented by its own button (name + cost, 💰 notation,
 no verb) — tapping it redeems immediately at the reward's *current* cost,
 never a cost cached from when the screen was rendered. A Reward the Child
@@ -153,10 +165,10 @@ flow:
 2. **The selected execution** — tapping a Task shows its name, the Child,
    and the reward snapshot (💰 notation), together with `Confirm` (→
    `COMPLETED`, exactly one `TASK_COMPLETED` point transaction) and
-   `Return to work` (→ back to `IN_PROGRESS`, no points). A `← Back`
-   action returns to the list without acting. Both `Confirm` and
-   `Return to work` act immediately, no further confirmation dialog, and
-   afterward return to the (now refreshed) list.
+   `Return` (→ back to `IN_PROGRESS`, no points, sending the work back to
+   the Child). A `← Back` action returns to the list without acting. Both
+   `Confirm` and `Return` act immediately, no further confirmation
+   dialog, and afterward return to the (now refreshed) list.
 
 Selecting one execution never exposes or affects another's controls.
 
