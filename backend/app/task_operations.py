@@ -96,6 +96,22 @@ class InvalidTaskInputError(TaskOperationError):
         self.message = message
 
 
+class ChildNotFoundError(TaskOperationError):
+    """No eligible Child exists with this id for assignment (Issue #32) --
+    covers both "doesn't exist" and "exists but isn't a Child", collapsed
+    into one error so a crafted callback can't distinguish the two
+    (matching the UserNotFoundError precedent in user_operations.py).
+    """
+
+
+class TaskAlreadyOpenForChildError(TaskOperationError):
+    """The target Child already has an open (ASSIGNED/IN_PROGRESS/
+    AWAITING_CONFIRMATION) execution of this Task (Issue #32) -- the same
+    one-open-execution-per-(task,user) invariant claim_task protects,
+    caught here via the same partial unique index.
+    """
+
+
 def _get_task_for_update(db: Session, task_id: uuid.UUID) -> Task | None:
     """Loads a Task with its row lock held for the rest of the transaction.
     Same rationale as routers.tasks._get_task_for_update (Issue #17/#19):
@@ -532,3 +548,106 @@ def return_execution_to_work(
     child = db.get(User, execution.user_id)
     assert child is not None
     return execution, task, child
+
+
+def get_assignable_children(db: Session, actor: User, task_id: uuid.UUID) -> list[User]:
+    """Every Child NOT already holding an open execution of this Task
+    (Issue #32) -- the eligible-recipient list for direct assignment.
+    Adults are never eligible (assignment is Child-only); a Child who
+    already has an ASSIGNED/IN_PROGRESS/AWAITING_CONFIRMATION execution of
+    this same Task is excluded, matching the one-open-execution-per-
+    (task,user) invariant `assign_task` itself enforces -- a Child with
+    only terminal (COMPLETED/CANCELLED) executions of this Task remains
+    eligible.
+    """
+    if actor.role != UserRole.ADULT:
+        raise NotAnAdultError()
+
+    task = db.get(Task, task_id)
+    if task is None:
+        raise TaskNotFoundError()
+
+    ineligible_ids = select(TaskExecution.user_id).where(
+        TaskExecution.task_id == task_id,
+        TaskExecution.status.in_(OPEN_EXECUTION_STATUSES),
+    )
+    stmt = (
+        select(User)
+        .where(User.role == UserRole.CHILD, User.id.not_in(ineligible_ids))
+        .order_by(User.name.asc(), User.id.asc())
+    )
+    return list(db.scalars(stmt))
+
+
+def assign_task(
+    db: Session, actor: User, task_id: uuid.UUID, target_user: User
+) -> tuple[TaskExecution, Task]:
+    """Directly assigns an existing Task to a Child, creating a new
+    ASSIGNED TaskExecution (Issue #32).
+
+    Deliberately independent of `Task.is_active`: that flag means only
+    "can currently be self-claimed" (see claim_task) and is never read or
+    written here. The Task may be active or inactive, and may already
+    have any number of other open executions for other Children -- none
+    of that is touched.
+
+    Concurrency: unlike claim_task (which locks the Task row because it
+    reads-then-conditionally-writes `Task.is_active`), this operation only
+    ever establishes a new uniqueness fact -- at most one open execution
+    per (task_id, user_id) -- so per this project's established
+    distinction between the two concurrency patterns, the existing partial
+    unique index is the right (and sufficient) boundary: two concurrent
+    assignments to the same Child and Task (or an assignment racing a
+    self-claim) can both attempt the insert, but at most one commits,
+    caught here via IntegrityError exactly like claim_task's own race
+    against itself.
+    """
+    if actor.role != UserRole.ADULT:
+        raise NotAnAdultError()
+    if target_user.role != UserRole.CHILD:
+        raise ChildNotFoundError()
+
+    task = db.get(Task, task_id)
+    if task is None:
+        raise TaskNotFoundError()
+
+    execution = TaskExecution(
+        task_id=task.id,
+        user_id=target_user.id,
+        status=TaskExecutionStatus.ASSIGNED,
+        reward_points=task.reward_points,
+    )
+    db.add(execution)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise TaskAlreadyOpenForChildError() from exc
+    db.refresh(execution)
+    db.refresh(task)
+    return execution, task
+
+
+def start_execution(db: Session, user: User, execution_id: uuid.UUID) -> tuple[TaskExecution, Task]:
+    """ASSIGNED -> IN_PROGRESS (Issue #32): the Child's Start action on a
+    directly-assigned execution. No new TaskExecution is created -- the
+    existing row is updated in place, the same shape as
+    mark_execution_ready's IN_PROGRESS -> AWAITING_CONFIRMATION transition.
+    """
+    if user.role != UserRole.CHILD:
+        raise NotAChildError()
+
+    execution = _get_execution_for_update(db, execution_id)
+    if execution is None or execution.user_id != user.id:
+        raise TaskExecutionNotActionableError()
+    if execution.status != TaskExecutionStatus.ASSIGNED:
+        raise TaskExecutionNotActionableError()
+
+    execution.status = TaskExecutionStatus.IN_PROGRESS
+    execution.updated_at = utcnow()
+    db.commit()
+    db.refresh(execution)
+
+    task = db.get(Task, execution.task_id)
+    assert task is not None
+    return execution, task

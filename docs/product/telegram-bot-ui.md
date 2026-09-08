@@ -47,10 +47,17 @@ removes the Task from Tasks, and makes it visible in My Tasks.
 ### My Tasks
 
 The Child's own non-terminal executions (`ASSIGNED`, `IN_PROGRESS`,
-`AWAITING_CONFIRMATION`), newest first. An `IN_PROGRESS` item has `Done`;
-an `AWAITING_CONFIRMATION` item shows "waiting for confirmation" and no
-action. Completed/cancelled executions never appear here or suppress a
-Task's future availability.
+`AWAITING_CONFIRMATION`), newest first. An `ASSIGNED` item — created when
+an Adult directly assigns a Task to this Child, never by the Child's own
+Take — shows "assigned to you" and a `Start` action; an `IN_PROGRESS` item
+has `Done`; an `AWAITING_CONFIRMATION` item shows "waiting for
+confirmation" and no action. Completed/cancelled executions never appear
+here or suppress a Task's future availability.
+
+### Start
+
+Transitions `ASSIGNED → IN_PROGRESS` on the same `TaskExecution` the Adult
+created — no new execution, no confirmation dialog.
 
 ### Done
 
@@ -106,7 +113,9 @@ Manages the reusable Task-definition catalog — distinct from Child Tasks,
 which is about claiming, not defining. Any Adult may manage any Task;
 there is no per-Adult ownership in Telegram.
 
-Each Task in the list shows its name, current reward, and availability:
+Each Task in the list shows its name, current reward, and availability for
+**self-claim** — `is_active` and its own single self-claim slot, not
+whether the Task has any executions at all:
 
 - an active Task with no current open execution is **Available**;
 - an active Task *with* one, or an inactive Task, is **Not available** —
@@ -115,6 +124,11 @@ Each Task in the list shows its name, current reward, and availability:
 - terminal (completed/cancelled) executions never affect availability and
   are never shown here — this is not a history view.
 
+A Task can have more than one open execution at once for different
+Children (one self-claimed, others directly assigned); the list and
+details screens summarize only one such execution for context, never a
+full history.
+
 Opening a Task shows its details: reward, availability, and (when one
 exists) the current execution summary. From here an Adult can:
 
@@ -122,12 +136,28 @@ exists) the current execution summary. From here an Adult can:
   execution;
 - **Activate** an inactive Task, or **Deactivate** an active one — again,
   only with no current open execution;
-- there is no direct assignment of a Task to a Child from Telegram, and no
-  execution action (confirm/return) here — that stays in the separate
-  Confirmation workflow.
+- **Assign** the Task directly to a Child — always available, regardless
+  of `is_active` or of any other open execution, since direct assignment
+  is independent of both;
+- there is no execution action (confirm/return) here — that stays in the
+  separate Confirmation workflow.
 
 Editing a Task's reward only changes future claims; every existing
-`TaskExecution`'s reward snapshot is immutable.
+`TaskExecution`'s reward snapshot is immutable. Assigning a Task never
+changes `is_active`, never touches any other `TaskExecution`, and never
+changes the Task's reward — it only creates one new `ASSIGNED` execution
+for the chosen Child, with the Task's *current* reward snapshotted into it.
+
+### Assign
+
+Shows every Child eligible to receive this Task — every Child except one
+who already has an open (`ASSIGNED`/`IN_PROGRESS`/`AWAITING_CONFIRMATION`)
+execution of it; a Child whose only executions of this Task are terminal
+remains eligible. If no Child is eligible, the screen says so plainly
+rather than showing an empty list. Selecting a Child assigns the Task to
+them immediately — a new `ASSIGNED` `TaskExecution` — and confirms with
+the Child's name; there is no separate confirmation dialog. Assignment is
+one Child at a time; there is no bulk or recurring assignment.
 
 **Add task** collects a name and a reward-points amount, in that order,
 validated the same way as everywhere else in the app (non-blank title,
@@ -247,9 +277,10 @@ history.
 
 ### Out of scope (tracked, not yet built)
 
-- Direct assignment of a Task to a specific Child from Telegram.
+- Bulk or recurring/scheduled assignment of a Task to multiple Children.
 - Task/description editing beyond title and reward points.
-- Task, execution, or redemption history views.
+- Task, execution, or redemption history views (including an assignment
+  history separate from the current-execution summary).
 - Reward deletion or an activate/deactivate lifecycle for Rewards.
 - Adult-side User editing (name, avatar) or deletion.
 - Reconnecting/replacing a Telegram account already linked to a User, or

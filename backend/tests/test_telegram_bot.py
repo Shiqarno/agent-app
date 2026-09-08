@@ -36,6 +36,8 @@ from app.telegram.handlers.adult_rewards import (
 from app.telegram.handlers.adult_tasks import (
     handle_activate_task,
     handle_add_task,
+    handle_assign_menu,
+    handle_assign_to_child,
     handle_deactivate_task,
     handle_edit_menu,
     handle_edit_name,
@@ -62,7 +64,12 @@ from app.telegram.handlers.confirmations import (
 from app.telegram.handlers.points import handle_older_points
 from app.telegram.handlers.rewards import handle_get_reward
 from app.telegram.handlers.start import handle_start
-from app.telegram.handlers.tasks import handle_mark_ready, handle_my_tasks_command, handle_take_task
+from app.telegram.handlers.tasks import (
+    handle_mark_ready,
+    handle_my_tasks_command,
+    handle_start_execution,
+    handle_take_task,
+)
 
 
 @pytest.fixture
@@ -84,6 +91,7 @@ def test_build_application_registers_every_handler(fake_token: None) -> None:
     assert handle_my_tasks_command in callbacks
     assert handle_take_task in callbacks
     assert handle_mark_ready in callbacks
+    assert handle_start_execution in callbacks
     assert handle_confirmations_command in callbacks
     assert handle_confirm_execution in callbacks
     assert handle_return_execution in callbacks
@@ -108,6 +116,8 @@ def test_build_application_registers_every_handler(fake_token: None) -> None:
     assert handle_edit_reward in callbacks
     assert handle_activate_task in callbacks
     assert handle_deactivate_task in callbacks
+    assert handle_assign_menu in callbacks
+    assert handle_assign_to_child in callbacks
     assert handle_users_command in callbacks
     assert handle_open_user in callbacks
     assert handle_list_users in callbacks

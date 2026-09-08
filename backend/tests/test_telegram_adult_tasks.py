@@ -16,11 +16,15 @@ from app.models import (
     UserRole,
 )
 from app.telegram.handlers.adult_tasks import (
+    _ALREADY_OPEN_TEXT,
+    _CHILD_NOT_FOUND_TEXT,
     _NOT_AN_ADULT_TEXT,
     _NOT_CONNECTED_TEXT,
     _TASK_NOT_EDITABLE_TEXT,
     _TASK_NOT_FOUND_TEXT,
     _adult_tasks_list_view,
+    _assign_menu_view,
+    _finish_assign,
     _finish_create,
     _finish_edit_reward,
     _finish_edit_title,
@@ -34,6 +38,8 @@ from app.telegram.handlers.adult_tasks import (
 )
 from app.telegram.keyboards.adult_tasks import (
     ACTIVATE_CALLBACK_PREFIX,
+    ASSIGN_CALLBACK_PREFIX,
+    ASSIGN_TO_CALLBACK_PREFIX,
     DEACTIVATE_CALLBACK_PREFIX,
     EDIT_CALLBACK_PREFIX,
     LIST_CALLBACK_DATA,
@@ -552,3 +558,147 @@ def test_open_and_edit_callback_prefixes_do_not_collide() -> None:
     assert not "adulttask:editreward:123".startswith(EDIT_CALLBACK_PREFIX)
     assert not "adulttask:deactivate:123".startswith(ACTIVATE_CALLBACK_PREFIX)
     assert not "adulttask:activate:123".startswith(DEACTIVATE_CALLBACK_PREFIX)
+
+
+def test_assign_and_assignchild_prefixes_do_not_collide() -> None:
+    assert not "adulttask:assignchild:123:456".startswith(ASSIGN_CALLBACK_PREFIX)
+    assert not "adulttask:assign:123".startswith(ASSIGN_TO_CALLBACK_PREFIX)
+
+
+# =========================================================================================
+# Issue #32: direct assignment
+# =========================================================================================
+
+
+def test_assign_menu_lists_eligible_children(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult)
+    free_child = real.make_user(CHILD, "Free Child")
+    busy_child = real.make_user(CHILD, "Busy Child")
+    real.make_execution(task, busy_child, TaskExecutionStatus.IN_PROGRESS)
+
+    text, keyboard = _assign_menu_view(telegram_id, str(task.id))
+
+    assert keyboard is not None
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+    assert any(free_child.name in label for label in labels)
+    assert not any(busy_child.name in label for label in labels)
+
+
+def test_assign_menu_shows_a_message_when_no_children_are_eligible(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult)
+
+    text, keyboard = _assign_menu_view(telegram_id, str(task.id))
+
+    assert "No eligible children" in text
+
+
+def test_child_cannot_open_the_assign_menu(real: RealData) -> None:
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(child, telegram_id)
+    other_adult = real.make_user(ADULT)
+    task = real.make_task(other_adult)
+
+    text, keyboard = _assign_menu_view(telegram_id, str(task.id))
+
+    assert text == _NOT_AN_ADULT_TEXT
+
+
+def test_assigning_a_task_creates_an_assigned_execution(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult, title="Clean room")
+    child = real.make_user(CHILD, "Alex")
+
+    text, keyboard = _finish_assign(telegram_id, str(task.id), str(child.id))
+
+    assert "Alex" in text
+    assert "Clean room" in text
+    session = SessionLocal()
+    try:
+        execution = session.query(TaskExecution).filter_by(task_id=task.id, user_id=child.id).one()
+        assert execution.status == TaskExecutionStatus.ASSIGNED
+        assert execution.reward_points == task.reward_points
+    finally:
+        session.close()
+
+
+def test_assigning_a_task_does_not_change_is_active(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult, is_active=True)
+    child = real.make_user(CHILD, "Alex")
+
+    _finish_assign(telegram_id, str(task.id), str(child.id))
+
+    session = SessionLocal()
+    try:
+        refreshed = session.get(Task, task.id)
+        assert refreshed is not None
+        assert refreshed.is_active is True
+    finally:
+        session.close()
+
+
+def test_assigning_to_a_child_with_an_open_execution_is_rejected(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult)
+    child = real.make_user(CHILD, "Alex")
+    real.make_execution(task, child, TaskExecutionStatus.IN_PROGRESS)
+
+    text, keyboard = _finish_assign(telegram_id, str(task.id), str(child.id))
+
+    assert text == _ALREADY_OPEN_TEXT
+    session = SessionLocal()
+    try:
+        count = session.query(TaskExecution).filter_by(task_id=task.id, user_id=child.id).count()
+        assert count == 1
+    finally:
+        session.close()
+
+
+def test_crafted_callback_cannot_assign_a_task_to_an_adult(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult)
+    other_adult = real.make_user(ADULT, "Other Adult")
+
+    text, keyboard = _finish_assign(telegram_id, str(task.id), str(other_adult.id))
+
+    assert text == _CHILD_NOT_FOUND_TEXT
+    session = SessionLocal()
+    try:
+        count = session.query(TaskExecution).filter_by(task_id=task.id).count()
+        assert count == 0
+    finally:
+        session.close()
+
+
+def test_child_cannot_assign_a_task_even_with_a_crafted_call(real: RealData) -> None:
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(child, telegram_id)
+    other_adult = real.make_user(ADULT)
+    task = real.make_task(other_adult)
+    other_child = real.make_user(CHILD, "Other Child")
+
+    text, keyboard = _finish_assign(telegram_id, str(task.id), str(other_child.id))
+
+    assert text == _NOT_AN_ADULT_TEXT
+    session = SessionLocal()
+    try:
+        count = session.query(TaskExecution).filter_by(task_id=task.id).count()
+        assert count == 0
+    finally:
+        session.close()

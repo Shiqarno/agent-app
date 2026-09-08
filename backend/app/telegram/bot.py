@@ -45,6 +45,8 @@ from app.telegram.handlers.adult_rewards import (
 from app.telegram.handlers.adult_tasks import (
     handle_activate_task,
     handle_add_task,
+    handle_assign_menu,
+    handle_assign_to_child,
     handle_deactivate_task,
     handle_edit_menu,
     handle_edit_name,
@@ -71,7 +73,12 @@ from app.telegram.handlers.confirmations import (
 from app.telegram.handlers.points import handle_older_points
 from app.telegram.handlers.rewards import handle_get_reward
 from app.telegram.handlers.start import handle_start
-from app.telegram.handlers.tasks import handle_mark_ready, handle_my_tasks_command, handle_take_task
+from app.telegram.handlers.tasks import (
+    handle_mark_ready,
+    handle_my_tasks_command,
+    handle_start_execution,
+    handle_take_task,
+)
 from app.telegram.keyboards.adult_points import (
     ADD_CALLBACK_PREFIX as ADULT_POINTS_ADD_CALLBACK_PREFIX,
 )
@@ -111,6 +118,8 @@ from app.telegram.keyboards.adult_rewards import (
 from app.telegram.keyboards.adult_tasks import (
     ACTIVATE_CALLBACK_PREFIX,
     ADD_CALLBACK_DATA,
+    ASSIGN_CALLBACK_PREFIX,
+    ASSIGN_TO_CALLBACK_PREFIX,
     DEACTIVATE_CALLBACK_PREFIX,
     EDIT_CALLBACK_PREFIX,
     EDIT_NAME_CALLBACK_PREFIX,
@@ -128,7 +137,11 @@ from app.telegram.keyboards.confirmations import (
 )
 from app.telegram.keyboards.points import OLDER_CALLBACK_PREFIX
 from app.telegram.keyboards.rewards import GET_CALLBACK_PREFIX as REWARD_GET_CALLBACK_PREFIX
-from app.telegram.keyboards.tasks import EXECUTION_DONE_CALLBACK_PREFIX, TASKS_CALLBACK_PREFIX
+from app.telegram.keyboards.tasks import (
+    EXECUTION_DONE_CALLBACK_PREFIX,
+    EXECUTION_START_CALLBACK_PREFIX,
+    TASKS_CALLBACK_PREFIX,
+)
 from app.telegram.keyboards.users import (
     ADD_CHILD_CALLBACK_DATA,
     GET_LINK_CALLBACK_PREFIX,
@@ -202,6 +215,9 @@ def build_application() -> BotApplication:
     application.add_handler(
         CallbackQueryHandler(handle_mark_ready, pattern=f"^{EXECUTION_DONE_CALLBACK_PREFIX}")
     )
+    application.add_handler(
+        CallbackQueryHandler(handle_start_execution, pattern=f"^{EXECUTION_START_CALLBACK_PREFIX}")
+    )
     application.add_handler(CommandHandler("confirmations", handle_confirmations_command))
     application.add_handler(
         CallbackQueryHandler(handle_confirm_execution, pattern=f"^{CONFIRM_CALLBACK_PREFIX}")
@@ -267,6 +283,12 @@ def build_application() -> BotApplication:
     )
     application.add_handler(
         CallbackQueryHandler(handle_deactivate_task, pattern=f"^{DEACTIVATE_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_assign_to_child, pattern=f"^{ASSIGN_TO_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_assign_menu, pattern=f"^{ASSIGN_CALLBACK_PREFIX}")
     )
     application.add_handler(CommandHandler("users", handle_users_command))
     application.add_handler(

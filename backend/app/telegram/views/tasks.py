@@ -24,7 +24,9 @@ def render_my_tasks(items: list[tuple[TaskExecution, Task]]) -> str:
     blocks = []
     for execution, task in items:
         block = f"{task.title} · {execution.reward_points} pts"
-        if execution.status == TaskExecutionStatus.AWAITING_CONFIRMATION:
+        if execution.status == TaskExecutionStatus.ASSIGNED:
+            block += "\nAssigned to you"
+        elif execution.status == TaskExecutionStatus.AWAITING_CONFIRMATION:
             block += "\nWaiting for confirmation"
         blocks.append(block)
     return "\n\n".join(blocks)

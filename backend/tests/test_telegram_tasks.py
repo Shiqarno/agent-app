@@ -21,10 +21,15 @@ from app.telegram.handlers.tasks import (
     _TASK_UNAVAILABLE_TEXT,
     _mark_ready,
     _my_tasks_view,
+    _start_execution,
     _take_task,
     _tasks_view,
 )
-from app.telegram.keyboards.tasks import EXECUTION_DONE_CALLBACK_PREFIX, TASKS_CALLBACK_PREFIX
+from app.telegram.keyboards.tasks import (
+    EXECUTION_DONE_CALLBACK_PREFIX,
+    EXECUTION_START_CALLBACK_PREFIX,
+    TASKS_CALLBACK_PREFIX,
+)
 from app.telegram.views.tasks import NO_TASKS_AVAILABLE_TEXT, NO_TASKS_IN_PROGRESS_TEXT
 from app.telegram_identity import activate_telegram_identity
 
@@ -303,6 +308,81 @@ def test_done_on_a_stale_execution_is_a_friendly_error(real: RealData) -> None:
 
     assert toast == _EXECUTION_UNACTIONABLE_TEXT
     assert keyboard is not None
+
+
+# =========================================================================================
+# Issue #32: assigned executions in My Tasks, and the Start action
+# =========================================================================================
+
+
+def test_my_tasks_view_renders_assigned_with_start_button(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(child, telegram_id)
+    task = real.make_task(adult)
+    real.make_execution(task, child, TaskExecutionStatus.ASSIGNED)
+
+    text, keyboard = _my_tasks_view(telegram_id)
+
+    assert "Assigned to you" in text
+    assert keyboard is not None
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+    assert any("Start" in label for label in labels)
+
+
+def test_start_routes_to_start_execution(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(child, telegram_id)
+    task = real.make_task(adult)
+    execution = real.make_execution(task, child, TaskExecutionStatus.ASSIGNED)
+
+    toast, text, keyboard = _start_execution(telegram_id, str(execution.id))
+
+    assert toast == "Clean room started."
+    real.session.expire_all()
+    refreshed = real.session.get(TaskExecution, execution.id)
+    assert refreshed is not None
+    assert refreshed.status == TaskExecutionStatus.IN_PROGRESS
+    assert keyboard is not None
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+    assert any("Done" in label for label in labels)
+
+
+def test_start_does_not_create_a_second_execution_via_telegram(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(child, telegram_id)
+    task = real.make_task(adult)
+    execution = real.make_execution(task, child, TaskExecutionStatus.ASSIGNED)
+
+    _start_execution(telegram_id, str(execution.id))
+
+    real.session.expire_all()
+    count = real.session.query(TaskExecution).filter_by(task_id=task.id).count()
+    assert count == 1
+
+
+def test_start_on_a_stale_execution_is_a_friendly_error(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(child, telegram_id)
+    task = real.make_task(adult)
+    execution = real.make_execution(task, child, TaskExecutionStatus.IN_PROGRESS)
+
+    toast, _, keyboard = _start_execution(telegram_id, str(execution.id))
+
+    assert toast == _EXECUTION_UNACTIONABLE_TEXT
+    assert keyboard is not None
+
+
+def test_start_and_done_prefixes_do_not_collide() -> None:
+    assert not "execution:start:123".startswith(EXECUTION_DONE_CALLBACK_PREFIX)
+    assert not "execution:done:123".startswith(EXECUTION_START_CALLBACK_PREFIX)
 
 
 def test_handlers_do_not_bypass_the_application_layer(real: RealData) -> None:

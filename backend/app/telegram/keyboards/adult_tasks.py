@@ -1,3 +1,5 @@
+import uuid
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.models import Task, TaskExecution, User
@@ -11,6 +13,8 @@ EDIT_NAME_CALLBACK_PREFIX = "adulttask:editname:"
 EDIT_REWARD_CALLBACK_PREFIX = "adulttask:editreward:"
 ACTIVATE_CALLBACK_PREFIX = "adulttask:activate:"
 DEACTIVATE_CALLBACK_PREFIX = "adulttask:deactivate:"
+ASSIGN_CALLBACK_PREFIX = "adulttask:assign:"
+ASSIGN_TO_CALLBACK_PREFIX = "adulttask:assignchild:"
 
 
 def tasks_list_keyboard(
@@ -36,7 +40,11 @@ def tasks_list_keyboard(
 def task_details_keyboard(task: Task, has_current_execution: bool) -> InlineKeyboardMarkup:
     """Edit/Activate/Deactivate only when there is no current open
     execution (Issue #28 section 5) -- hiding the button is presentation
-    only, the Application layer refuses the action regardless.
+    only, the Application layer refuses the action regardless. `Assign`
+    (Issue #32) is deliberately always available, current execution or
+    not: direct assignment is independent of `Task.is_active` and of any
+    other Child's open execution -- a Task may have any number of open
+    executions for different Children simultaneously.
     """
     rows = []
     if not has_current_execution:
@@ -59,7 +67,27 @@ def task_details_keyboard(task: Task, has_current_execution: bool) -> InlineKeyb
                     )
                 ]
             )
+    rows.append(
+        [InlineKeyboardButton("Assign", callback_data=f"{ASSIGN_CALLBACK_PREFIX}{task.id}")]
+    )
     rows.append([InlineKeyboardButton("← Tasks", callback_data=LIST_CALLBACK_DATA)])
+    return InlineKeyboardMarkup(rows)
+
+
+def assign_children_keyboard(task_id: uuid.UUID, children: list[User]) -> InlineKeyboardMarkup:
+    """One row per eligible Child (Issue #32 "Adult UX") -- the callback
+    payload only identifies the Task and Child for routing; the
+    Application layer re-verifies eligibility on every call.
+    """
+    rows = [
+        [
+            InlineKeyboardButton(
+                child.name, callback_data=f"{ASSIGN_TO_CALLBACK_PREFIX}{task_id}:{child.id}"
+            )
+        ]
+        for child in children
+    ]
+    rows.append([InlineKeyboardButton("← Back", callback_data=f"{OPEN_CALLBACK_PREFIX}{task_id}")])
     return InlineKeyboardMarkup(rows)
 
 

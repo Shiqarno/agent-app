@@ -4,6 +4,7 @@ from app.models import Task, TaskExecution, TaskExecutionStatus
 
 TASKS_CALLBACK_PREFIX = "task:take:"
 EXECUTION_DONE_CALLBACK_PREFIX = "execution:done:"
+EXECUTION_START_CALLBACK_PREFIX = "execution:start:"
 
 
 def available_tasks_keyboard(tasks: list[Task]) -> InlineKeyboardMarkup:
@@ -23,17 +24,28 @@ def available_tasks_keyboard(tasks: list[Task]) -> InlineKeyboardMarkup:
 
 
 def my_tasks_keyboard(items: list[tuple[TaskExecution, Task]]) -> InlineKeyboardMarkup:
-    """A `Done` row only for IN_PROGRESS executions -- AWAITING_CONFIRMATION
-    items get no CTA at all (Issue #24 section 3).
+    """A `Start` row for ASSIGNED executions (Issue #32) and a `Done` row
+    for IN_PROGRESS ones (Issue #24 section 3) -- AWAITING_CONFIRMATION
+    items get no CTA at all.
     """
-    rows = [
-        [
-            InlineKeyboardButton(
-                f"Done · {task.title}",
-                callback_data=f"{EXECUTION_DONE_CALLBACK_PREFIX}{execution.id}",
+    rows = []
+    for execution, task in items:
+        if execution.status == TaskExecutionStatus.ASSIGNED:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        f"Start · {task.title}",
+                        callback_data=f"{EXECUTION_START_CALLBACK_PREFIX}{execution.id}",
+                    )
+                ]
             )
-        ]
-        for execution, task in items
-        if execution.status == TaskExecutionStatus.IN_PROGRESS
-    ]
+        elif execution.status == TaskExecutionStatus.IN_PROGRESS:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        f"Done · {task.title}",
+                        callback_data=f"{EXECUTION_DONE_CALLBACK_PREFIX}{execution.id}",
+                    )
+                ]
+            )
     return InlineKeyboardMarkup(rows)

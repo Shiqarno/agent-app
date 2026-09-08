@@ -6,15 +6,19 @@ from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from app.db import SessionLocal
-from app.models import UserRole
+from app.models import User, UserRole
 from app.task_operations import (
+    ChildNotFoundError,
     InvalidTaskInputError,
     NotAnAdultError,
+    TaskAlreadyOpenForChildError,
     TaskNotEditableError,
     TaskNotFoundError,
     activate_task,
+    assign_task,
     create_task,
     deactivate_task,
+    get_assignable_children,
     get_task,
     get_tasks,
     update_task,
@@ -23,22 +27,27 @@ from app.telegram.handlers.start import _resolve_home
 from app.telegram.handlers.tasks import _tasks_view
 from app.telegram.keyboards.adult_tasks import (
     ACTIVATE_CALLBACK_PREFIX,
+    ASSIGN_CALLBACK_PREFIX,
+    ASSIGN_TO_CALLBACK_PREFIX,
     DEACTIVATE_CALLBACK_PREFIX,
     EDIT_CALLBACK_PREFIX,
     EDIT_NAME_CALLBACK_PREFIX,
     EDIT_REWARD_CALLBACK_PREFIX,
     OPEN_CALLBACK_PREFIX,
+    assign_children_keyboard,
     back_to_tasks_keyboard,
     edit_menu_keyboard,
     task_details_keyboard,
     tasks_list_keyboard,
 )
 from app.telegram.views.adult_tasks import (
+    render_assign_children,
     render_create_prompt_reward,
     render_create_prompt_title,
     render_edit_menu,
     render_edit_prompt_reward,
     render_edit_prompt_title,
+    render_task_assigned,
     render_task_details,
     render_tasks_list,
 )
@@ -53,6 +62,8 @@ _TASK_NOT_FOUND_TEXT = "Task not found."
 _TASK_NOT_EDITABLE_TEXT = (
     "This task cannot be edited while it is being worked on. Please open Tasks again."
 )
+_CHILD_NOT_FOUND_TEXT = "Child not found."
+_ALREADY_OPEN_TEXT = "This child already has an open execution of this task."
 
 # Per-chat, in-memory only (Issue #28 section 14): tracks which single text
 # prompt, if any, is currently open for this Adult ("what's the next text
@@ -309,6 +320,65 @@ def _toggle_active(
         db.close()
 
 
+def _assign_menu_view(
+    telegram_user_id: int, raw_task_id: str
+) -> tuple[str, InlineKeyboardMarkup | None]:
+    db = SessionLocal()
+    try:
+        user = resolve_user_by_telegram_id(db, telegram_user_id)
+        if user is None:
+            return _NOT_CONNECTED_TEXT, None
+        try:
+            task_id = uuid.UUID(raw_task_id)
+        except ValueError:
+            return _TASK_NOT_FOUND_TEXT, back_to_tasks_keyboard()
+        try:
+            task, _execution, _child = get_task(db, user, task_id)
+            children = get_assignable_children(db, user, task_id)
+        except NotAnAdultError:
+            return _NOT_AN_ADULT_TEXT, None
+        except TaskNotFoundError:
+            return _TASK_NOT_FOUND_TEXT, back_to_tasks_keyboard()
+        return render_assign_children(task, children), assign_children_keyboard(task.id, children)
+    finally:
+        db.close()
+
+
+def _finish_assign(
+    telegram_user_id: int, raw_task_id: str, raw_child_id: str
+) -> tuple[str, InlineKeyboardMarkup | None]:
+    db = SessionLocal()
+    try:
+        user = resolve_user_by_telegram_id(db, telegram_user_id)
+        if user is None:
+            return _NOT_CONNECTED_TEXT, None
+        try:
+            task_id = uuid.UUID(raw_task_id)
+            child_id = uuid.UUID(raw_child_id)
+        except ValueError:
+            return _TASK_NOT_FOUND_TEXT, back_to_tasks_keyboard()
+
+        child = db.get(User, child_id)
+        if child is None:
+            return _CHILD_NOT_FOUND_TEXT, back_to_tasks_keyboard()
+
+        try:
+            _execution, task = assign_task(db, user, task_id, child)
+        except NotAnAdultError:
+            return _NOT_AN_ADULT_TEXT, None
+        except TaskNotFoundError:
+            return _TASK_NOT_FOUND_TEXT, back_to_tasks_keyboard()
+        except ChildNotFoundError:
+            return _CHILD_NOT_FOUND_TEXT, back_to_tasks_keyboard()
+        except TaskAlreadyOpenForChildError:
+            return _ALREADY_OPEN_TEXT, back_to_tasks_keyboard()
+
+        task, execution, _current_child = get_task(db, user, task.id)
+        return render_task_assigned(task, child), task_details_keyboard(task, execution is not None)
+    finally:
+        db.close()
+
+
 def _parse_reward_points(text: str) -> tuple[int | None, str | None]:
     try:
         value = int(text.strip())
@@ -438,6 +508,33 @@ async def handle_deactivate_task(update: Update, context: ContextTypes.DEFAULT_T
         _toggle_active, update.effective_user.id, raw_task_id, activate=False
     )
     await query.answer(text=toast)
+    if query.message is not None:
+        await query.edit_message_text(text, reply_markup=keyboard)
+
+
+async def handle_assign_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None or update.effective_user is None or query.data is None:
+        return
+    raw_task_id = query.data.removeprefix(ASSIGN_CALLBACK_PREFIX)
+    text, keyboard = await asyncio.to_thread(
+        _assign_menu_view, update.effective_user.id, raw_task_id
+    )
+    await query.answer()
+    if query.message is not None:
+        await query.edit_message_text(text, reply_markup=keyboard)
+
+
+async def handle_assign_to_child(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None or update.effective_user is None or query.data is None:
+        return
+    raw = query.data.removeprefix(ASSIGN_TO_CALLBACK_PREFIX)
+    raw_task_id, _, raw_child_id = raw.partition(":")
+    text, keyboard = await asyncio.to_thread(
+        _finish_assign, update.effective_user.id, raw_task_id, raw_child_id
+    )
+    await query.answer()
     if query.message is not None:
         await query.edit_message_text(text, reply_markup=keyboard)
 

@@ -1,6 +1,7 @@
 from app.models import Task, TaskExecution, TaskExecutionStatus, User
 
 NO_TASKS_TEXT = "No tasks yet."
+NO_ELIGIBLE_CHILDREN_TEXT = "No eligible children right now."
 
 _EXECUTION_STATE_LABELS = {
     TaskExecutionStatus.ASSIGNED: "assigned",
@@ -64,3 +65,18 @@ def render_edit_prompt_title(task: Task) -> str:
 
 def render_edit_prompt_reward(task: Task) -> str:
     return f"Current reward:\n{task.reward_points}\n\nSend the new reward, in points."
+
+
+def render_assign_children(task: Task, children: list[User]) -> str:
+    """Issue #32 "Adult UX": the eligible-Children screen behind Task
+    Details' Assign action -- makes the reason for an empty list clear
+    rather than showing a bare empty screen.
+    """
+    header = f"Assign · {task.title}"
+    if not children:
+        return f"{header}\n\n{NO_ELIGIBLE_CHILDREN_TEXT}"
+    return f"{header}\n\nChoose a child:"
+
+
+def render_task_assigned(task: Task, child: User) -> str:
+    return f"{task.title} assigned to {child.name}."
