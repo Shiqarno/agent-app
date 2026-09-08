@@ -1,9 +1,19 @@
 import uuid
 
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import PointTransaction, PointTransactionReason, Reward, RewardRedemption, User
+from app.models import (
+    PointTransaction,
+    PointTransactionReason,
+    Reward,
+    RewardRedemption,
+    User,
+    UserRole,
+    utcnow,
+)
+from app.schemas import RewardCreate, RewardUpdate
 
 
 class RewardOperationError(Exception):
@@ -21,6 +31,30 @@ class InsufficientPointsError(RewardOperationError):
     """The User's current ledger balance is less than the Reward's current
     cost.
     """
+
+
+class NotAnAdultError(RewardOperationError):
+    """Only an Adult may manage the Reward catalog (create/update)."""
+
+
+class InvalidRewardInputError(RewardOperationError):
+    """name/cost_points failed validation. Carries a human-readable message
+    (reusing the existing RewardCreate/RewardUpdate Pydantic validation,
+    matching Issue #28's TaskCreate/TaskUpdate reuse) so the Telegram
+    adapter can show exactly why, without re-deriving the rules.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+def _first_error_message(exc: ValidationError) -> str:
+    message: str = exc.errors()[0]["msg"]
+    # Pydantic prefixes a field_validator's own ValueError with "Value
+    # error, "; the Field(gt=0) constraint message doesn't have that
+    # prefix. Strip it so Telegram never shows the internal wrapper text.
+    return message.removeprefix("Value error, ")
 
 
 def get_balance(db: Session, user_id: uuid.UUID) -> int:
@@ -110,3 +144,80 @@ def redeem_reward(
     db.refresh(redemption)
 
     return redemption, reward, balance - reward.cost_points
+
+
+def create_reward(
+    db: Session, actor: User, *, name: str, description: str | None, cost_points: int
+) -> Reward:
+    """Creates a new Reward (Issue #30). Extracted from the existing Web
+    `POST /api/rewards` (routers/rewards.py), which already implements
+    exactly this behavior -- Adult-only, no ownership beyond audit metadata
+    -- so the Web router now calls this directly instead of duplicating the
+    logic. Reuses the existing `RewardCreate` Pydantic validation (name
+    non-blank, cost_points > 0) rather than re-deriving the same rules.
+    """
+    if actor.role != UserRole.ADULT:
+        raise NotAnAdultError()
+
+    try:
+        payload = RewardCreate(name=name, description=description, cost_points=cost_points)
+    except ValidationError as exc:
+        raise InvalidRewardInputError(_first_error_message(exc)) from exc
+
+    reward = Reward(
+        name=payload.name,
+        description=payload.description,
+        cost_points=payload.cost_points,
+        created_by=actor.id,
+    )
+    db.add(reward)
+    db.commit()
+    db.refresh(reward)
+    return reward
+
+
+def update_reward(
+    db: Session,
+    actor: User,
+    reward_id: uuid.UUID,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    cost_points: int | None = None,
+) -> Reward:
+    """Edits name/description/cost_points (Issue #30). Extracted from the
+    existing Web `PATCH /api/rewards/{id}` (routers/rewards.py), which
+    already has exactly this behavior -- Adult-only, any Adult may edit any
+    Reward (created_by is audit metadata, not ownership), partial update
+    (a field left as None is left untouched, matching the existing
+    RewardUpdate/PATCH semantics exactly -- this is also what lets a
+    Telegram Edit flow's optional description step mean "keep the current
+    value" for free).
+
+    `created_by` and `created_at` are never touched. Every existing
+    `RewardRedemption.cost_points` snapshot is immutable -- only future
+    redemptions see a changed `cost_points`.
+    """
+    if actor.role != UserRole.ADULT:
+        raise NotAnAdultError()
+
+    reward = db.get(Reward, reward_id)
+    if reward is None:
+        raise RewardNotFoundError()
+
+    try:
+        payload = RewardUpdate(name=name, description=description, cost_points=cost_points)
+    except ValidationError as exc:
+        raise InvalidRewardInputError(_first_error_message(exc)) from exc
+
+    if payload.name is not None:
+        reward.name = payload.name
+    if payload.description is not None:
+        reward.description = payload.description
+    if payload.cost_points is not None:
+        reward.cost_points = payload.cost_points
+    reward.updated_at = utcnow()
+
+    db.commit()
+    db.refresh(reward)
+    return reward

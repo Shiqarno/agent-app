@@ -78,13 +78,6 @@ def _redeem(
         db.close()
 
 
-async def handle_rewards_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.effective_user is None or update.message is None:
-        return
-    text, keyboard = await asyncio.to_thread(_rewards_view, update.effective_user.id)
-    await update.message.reply_text(text, reply_markup=keyboard)
-
-
 async def handle_get_reward(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if query is None or update.effective_user is None or query.data is None:

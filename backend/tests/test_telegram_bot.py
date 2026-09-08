@@ -5,6 +5,22 @@ import pytest
 from app.config import settings
 from app.telegram import bot as bot_module
 from app.telegram.bot import build_application
+from app.telegram.handlers.adult_rewards import (
+    handle_add_reward,
+    handle_open_reward,
+)
+from app.telegram.handlers.adult_rewards import (
+    handle_edit_reward as handle_edit_reward_entry,
+)
+from app.telegram.handlers.adult_rewards import (
+    handle_list_rewards as handle_list_rewards_catalog,
+)
+from app.telegram.handlers.adult_rewards import (
+    handle_rewards_command as handle_rewards_command_dispatch,
+)
+from app.telegram.handlers.adult_rewards import (
+    handle_rewards_home as handle_rewards_home_catalog,
+)
 from app.telegram.handlers.adult_tasks import (
     handle_activate_task,
     handle_add_task,
@@ -32,7 +48,7 @@ from app.telegram.handlers.confirmations import (
     handle_view_all_confirmations,
 )
 from app.telegram.handlers.points import handle_older_points, handle_points_command
-from app.telegram.handlers.rewards import handle_get_reward, handle_rewards_command
+from app.telegram.handlers.rewards import handle_get_reward
 from app.telegram.handlers.start import handle_start
 from app.telegram.handlers.tasks import handle_mark_ready, handle_my_tasks_command, handle_take_task
 
@@ -60,7 +76,7 @@ def test_build_application_registers_every_handler(fake_token: None) -> None:
     assert handle_confirm_execution in callbacks
     assert handle_return_execution in callbacks
     assert handle_view_all_confirmations in callbacks
-    assert handle_rewards_command in callbacks
+    assert handle_rewards_command_dispatch in callbacks
     assert handle_get_reward in callbacks
     assert handle_points_command in callbacks
     assert handle_older_points in callbacks
@@ -79,6 +95,11 @@ def test_build_application_registers_every_handler(fake_token: None) -> None:
     assert handle_users_home in callbacks
     assert handle_add_child in callbacks
     assert handle_get_activation_link in callbacks
+    assert handle_open_reward in callbacks
+    assert handle_list_rewards_catalog in callbacks
+    assert handle_rewards_home_catalog in callbacks
+    assert handle_add_reward in callbacks
+    assert handle_edit_reward_entry in callbacks
     assert bot_module._handle_text_input in callbacks
 
 
@@ -101,17 +122,24 @@ class _FakeContext:
         self.user_data = user_data
 
 
-def test_text_input_dispatches_to_the_open_task_flow(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[str] = []
-
+def _patch_all_flow_handlers(monkeypatch: pytest.MonkeyPatch, calls: list[str]) -> None:
     async def fake_task_handler(update: object, context: object) -> None:
         calls.append("task")
 
     async def fake_user_handler(update: object, context: object) -> None:
         calls.append("user")
 
+    async def fake_reward_handler(update: object, context: object) -> None:
+        calls.append("reward")
+
     monkeypatch.setattr(bot_module.adult_tasks, "handle_task_flow_text", fake_task_handler)
     monkeypatch.setattr(bot_module.adult_users, "handle_user_flow_text", fake_user_handler)
+    monkeypatch.setattr(bot_module.adult_rewards, "handle_reward_flow_text", fake_reward_handler)
+
+
+def test_text_input_dispatches_to_the_open_task_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    _patch_all_flow_handlers(monkeypatch, calls)
 
     context = _FakeContext(user_data={bot_module.adult_tasks._FLOW_KEY: {}})
     asyncio.run(bot_module._handle_text_input(None, context))  # type: ignore[arg-type]
@@ -121,15 +149,7 @@ def test_text_input_dispatches_to_the_open_task_flow(monkeypatch: pytest.MonkeyP
 
 def test_text_input_dispatches_to_the_open_user_flow(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
-
-    async def fake_task_handler(update: object, context: object) -> None:
-        calls.append("task")
-
-    async def fake_user_handler(update: object, context: object) -> None:
-        calls.append("user")
-
-    monkeypatch.setattr(bot_module.adult_tasks, "handle_task_flow_text", fake_task_handler)
-    monkeypatch.setattr(bot_module.adult_users, "handle_user_flow_text", fake_user_handler)
+    _patch_all_flow_handlers(monkeypatch, calls)
 
     context = _FakeContext(user_data={bot_module.adult_users._FLOW_KEY: {}})
     asyncio.run(bot_module._handle_text_input(None, context))  # type: ignore[arg-type]
@@ -137,17 +157,19 @@ def test_text_input_dispatches_to_the_open_user_flow(monkeypatch: pytest.MonkeyP
     assert calls == ["user"]
 
 
+def test_text_input_dispatches_to_the_open_reward_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    _patch_all_flow_handlers(monkeypatch, calls)
+
+    context = _FakeContext(user_data={bot_module.adult_rewards._FLOW_KEY: {}})
+    asyncio.run(bot_module._handle_text_input(None, context))  # type: ignore[arg-type]
+
+    assert calls == ["reward"]
+
+
 def test_text_input_does_nothing_with_no_active_flow(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
-
-    async def fake_task_handler(update: object, context: object) -> None:
-        calls.append("task")
-
-    async def fake_user_handler(update: object, context: object) -> None:
-        calls.append("user")
-
-    monkeypatch.setattr(bot_module.adult_tasks, "handle_task_flow_text", fake_task_handler)
-    monkeypatch.setattr(bot_module.adult_users, "handle_user_flow_text", fake_user_handler)
+    _patch_all_flow_handlers(monkeypatch, calls)
 
     context = _FakeContext(user_data={})
     asyncio.run(bot_module._handle_text_input(None, context))  # type: ignore[arg-type]

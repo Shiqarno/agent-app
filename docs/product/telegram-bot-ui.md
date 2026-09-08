@@ -78,7 +78,7 @@ amount — never the internal ledger reason code.
 Home
 Tasks
 Users
-Rewards      — Adult catalog management not yet implemented in Telegram
+Rewards
 Points       — Adult view not yet implemented in Telegram
 ```
 
@@ -176,12 +176,44 @@ first one was lost or expired) shows the same kind of message, without the
 before it — only one activation link is ever valid for a given User at a
 time.
 
+### Rewards (Adult)
+
+Manages the global Reward catalog shown to every Child — distinct from
+Child Rewards, which is about redeeming, not defining. Any Adult may
+manage any Reward; there is no per-Adult ownership in Telegram (who
+originally created a Reward is recorded for audit purposes only).
+
+Each Reward in the list shows its name and current cost. Opening one shows
+its full details — name, cost, and description — with an **Edit** action.
+There is no Delete and no activate/deactivate control: a Reward has no
+such lifecycle concept at all.
+
+**Add Reward** and **Edit** both collect the same three fields, in the
+same order:
+
+1. name;
+2. cost, in points;
+3. description (optional).
+
+Name and cost are validated the same way as everywhere else in the app
+(non-blank name, positive integer cost) — invalid input is rejected with a
+plain message and the Adult can simply try again. Description can always
+be left blank. When editing, each prompt shows the Reward's *current*
+value first, so the flow is never a surprise; skipping the description
+step while editing leaves the existing description untouched rather than
+erasing it.
+
+Changing a Reward's cost only affects *future* redemptions — every
+existing `RewardRedemption`'s recorded cost is a permanent historical
+snapshot and is never rewritten.
+
 ## Out of scope (tracked, not yet built)
 
-- Adult Rewards/Points views, and manual point adjustments.
+- Adult Points view, and manual point adjustments.
 - Direct assignment of a Task to a specific Child from Telegram.
 - Task/description editing beyond title and reward points.
 - Task, execution, or redemption history views.
+- Reward deletion or an activate/deactivate lifecycle for Rewards.
 - Adult-side User editing (name, avatar) or deletion.
 - Reconnecting/replacing a Telegram account already linked to a User, or
   disconnecting one — the existing activation mechanism's reconnect rules

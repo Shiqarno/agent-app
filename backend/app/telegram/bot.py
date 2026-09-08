@@ -13,7 +13,23 @@ from telegram.ext import (
 )
 
 from app.config import settings
-from app.telegram.handlers import adult_tasks, adult_users
+from app.telegram.handlers import adult_rewards, adult_tasks, adult_users
+from app.telegram.handlers.adult_rewards import (
+    handle_add_reward,
+    handle_open_reward,
+)
+from app.telegram.handlers.adult_rewards import (
+    handle_edit_reward as handle_edit_reward_entry,
+)
+from app.telegram.handlers.adult_rewards import (
+    handle_list_rewards as handle_list_rewards_catalog,
+)
+from app.telegram.handlers.adult_rewards import (
+    handle_rewards_command as handle_rewards_command_dispatch,
+)
+from app.telegram.handlers.adult_rewards import (
+    handle_rewards_home as handle_rewards_home_catalog,
+)
 from app.telegram.handlers.adult_tasks import (
     handle_activate_task,
     handle_add_task,
@@ -41,9 +57,24 @@ from app.telegram.handlers.confirmations import (
     handle_view_all_confirmations,
 )
 from app.telegram.handlers.points import handle_older_points, handle_points_command
-from app.telegram.handlers.rewards import handle_get_reward, handle_rewards_command
+from app.telegram.handlers.rewards import handle_get_reward
 from app.telegram.handlers.start import handle_start
 from app.telegram.handlers.tasks import handle_mark_ready, handle_my_tasks_command, handle_take_task
+from app.telegram.keyboards.adult_rewards import (
+    ADD_CALLBACK_DATA as ADD_REWARD_CALLBACK_DATA,
+)
+from app.telegram.keyboards.adult_rewards import (
+    EDIT_CALLBACK_PREFIX as REWARD_EDIT_CALLBACK_PREFIX,
+)
+from app.telegram.keyboards.adult_rewards import (
+    HOME_CALLBACK_DATA as REWARDS_HOME_CALLBACK_DATA,
+)
+from app.telegram.keyboards.adult_rewards import (
+    LIST_CALLBACK_DATA as REWARDS_LIST_CALLBACK_DATA,
+)
+from app.telegram.keyboards.adult_rewards import (
+    OPEN_CALLBACK_PREFIX as ADULT_REWARD_OPEN_CALLBACK_PREFIX,
+)
 from app.telegram.keyboards.adult_tasks import (
     ACTIVATE_CALLBACK_PREFIX,
     ADD_CALLBACK_DATA,
@@ -100,6 +131,8 @@ async def _handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await adult_tasks.handle_task_flow_text(update, context)
     elif adult_users._FLOW_KEY in data:
         await adult_users.handle_user_flow_text(update, context)
+    elif adult_rewards._FLOW_KEY in data:
+        await adult_rewards.handle_reward_flow_text(update, context)
 
 
 async def _on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -143,7 +176,7 @@ def build_application() -> BotApplication:
     application.add_handler(
         CallbackQueryHandler(handle_view_all_confirmations, pattern=f"^{VIEW_ALL_CALLBACK_DATA}$")
     )
-    application.add_handler(CommandHandler("rewards", handle_rewards_command))
+    application.add_handler(CommandHandler("rewards", handle_rewards_command_dispatch))
     application.add_handler(
         CallbackQueryHandler(handle_get_reward, pattern=f"^{REWARD_GET_CALLBACK_PREFIX}")
     )
@@ -189,6 +222,21 @@ def build_application() -> BotApplication:
     )
     application.add_handler(
         CallbackQueryHandler(handle_get_activation_link, pattern=f"^{GET_LINK_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_open_reward, pattern=f"^{ADULT_REWARD_OPEN_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_list_rewards_catalog, pattern=f"^{REWARDS_LIST_CALLBACK_DATA}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_rewards_home_catalog, pattern=f"^{REWARDS_HOME_CALLBACK_DATA}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_add_reward, pattern=f"^{ADD_REWARD_CALLBACK_DATA}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_edit_reward_entry, pattern=f"^{REWARD_EDIT_CALLBACK_PREFIX}")
     )
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _handle_text_input))
     application.add_error_handler(_on_error)
