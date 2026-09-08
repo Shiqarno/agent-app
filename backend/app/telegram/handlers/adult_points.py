@@ -237,7 +237,7 @@ async def handle_points_home(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if query is None or update.effective_user is None:
         return
     _user_data(context).pop(_FLOW_KEY, None)
-    text, keyboard = await asyncio.to_thread(_resolve_home, update.effective_user.id)
+    text, keyboard, _role = await asyncio.to_thread(_resolve_home, update.effective_user.id)
     await query.answer()
     if query.message is not None:
         await query.edit_message_text(text, reply_markup=keyboard)

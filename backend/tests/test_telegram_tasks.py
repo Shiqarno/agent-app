@@ -30,7 +30,12 @@ from app.telegram.keyboards.tasks import (
     EXECUTION_START_CALLBACK_PREFIX,
     TASKS_CALLBACK_PREFIX,
 )
-from app.telegram.views.tasks import NO_TASKS_AVAILABLE_TEXT, NO_TASKS_IN_PROGRESS_TEXT
+from app.telegram.views.tasks import (
+    AVAILABLE_TASKS_HEADING,
+    MY_TASKS_HEADING,
+    NO_TASKS_AVAILABLE_TEXT,
+    NO_TASKS_IN_PROGRESS_TEXT,
+)
 from app.telegram_identity import activate_telegram_identity
 
 ADULT = UserRole.ADULT
@@ -142,11 +147,13 @@ def test_tasks_view_renders_available_tasks(real: RealData) -> None:
 
     text, keyboard = _tasks_view(telegram_id)
 
+    assert text.startswith(AVAILABLE_TASKS_HEADING)
     assert "Clean room" in text
     assert "20" in text
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 1
     assert keyboard.inline_keyboard[0][0].callback_data == f"{TASKS_CALLBACK_PREFIX}{task.id}"
+    assert keyboard.inline_keyboard[0][0].text == "Take · Clean room · 20 pts"
 
 
 def test_tasks_view_with_no_tasks(real: RealData) -> None:
@@ -156,7 +163,7 @@ def test_tasks_view_with_no_tasks(real: RealData) -> None:
 
     text, keyboard = _tasks_view(telegram_id)
 
-    assert text == NO_TASKS_AVAILABLE_TEXT
+    assert text == f"{AVAILABLE_TASKS_HEADING}\n\n{NO_TASKS_AVAILABLE_TEXT}"
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 0
 
@@ -178,12 +185,14 @@ def test_my_tasks_view_renders_in_progress_with_done_button(real: RealData) -> N
 
     text, keyboard = _my_tasks_view(telegram_id)
 
+    assert text.startswith(MY_TASKS_HEADING)
     assert "Clean room" in text
     assert "Waiting for confirmation" not in text
     assert keyboard is not None
     assert keyboard.inline_keyboard[0][0].callback_data == (
         f"{EXECUTION_DONE_CALLBACK_PREFIX}{execution.id}"
     )
+    assert keyboard.inline_keyboard[0][0].text == "Done · Clean room · 20 pts"
 
 
 def test_my_tasks_view_awaiting_confirmation_has_no_cta(real: RealData) -> None:
@@ -208,7 +217,7 @@ def test_my_tasks_view_with_no_tasks(real: RealData) -> None:
 
     text, _ = _my_tasks_view(telegram_id)
 
-    assert text == NO_TASKS_IN_PROGRESS_TEXT
+    assert text == f"{MY_TASKS_HEADING}\n\n{NO_TASKS_IN_PROGRESS_TEXT}"
 
 
 # =========================================================================================
@@ -230,7 +239,7 @@ def test_take_routes_to_claim_task_and_creates_in_progress_execution(real: RealD
     execution = real.session.query(TaskExecution).filter_by(task_id=task.id, user_id=child.id).one()
     assert execution.status == TaskExecutionStatus.IN_PROGRESS
     # The refreshed Tasks view no longer offers the just-claimed task.
-    assert text == NO_TASKS_AVAILABLE_TEXT
+    assert text == f"{AVAILABLE_TASKS_HEADING}\n\n{NO_TASKS_AVAILABLE_TEXT}"
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 0
 
@@ -249,7 +258,7 @@ def test_take_on_already_claimed_task_is_a_friendly_error(real: RealData) -> Non
     assert toast == _TASK_UNAVAILABLE_TEXT
     # Handler leaves the user in a usable navigation state -- the refreshed
     # list, not a crash or a stale message.
-    assert text == NO_TASKS_AVAILABLE_TEXT
+    assert text == f"{AVAILABLE_TASKS_HEADING}\n\n{NO_TASKS_AVAILABLE_TEXT}"
     assert keyboard is not None
 
 
@@ -329,6 +338,33 @@ def test_my_tasks_view_renders_assigned_with_start_button(real: RealData) -> Non
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
     assert any("Start" in label for label in labels)
+    assert any("20 pts" in label for label in labels)
+
+
+def test_my_tasks_buttons_use_the_execution_reward_snapshot_not_the_current_task_reward(
+    real: RealData,
+) -> None:
+    """Issue #35: if the Task's reward changed after an execution started,
+    the Start/Done button must still show the execution's own immutable
+    snapshot, not the Task's current (different) value.
+    """
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(child, telegram_id)
+    task = real.make_task(adult, reward_points=20)
+    execution = real.make_execution(task, child, TaskExecutionStatus.IN_PROGRESS, reward_points=20)
+    task.reward_points = 99
+    real.session.commit()
+
+    text, keyboard = _my_tasks_view(telegram_id)
+
+    assert keyboard is not None
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+    assert any("20 pts" in label for label in labels)
+    assert not any("99 pts" in label for label in labels)
+    assert f"{execution.reward_points} pts" in text
+    assert "99 pts" not in text
 
 
 def test_start_routes_to_start_execution(real: RealData) -> None:

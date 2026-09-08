@@ -140,6 +140,40 @@ def test_build_application_fails_clearly_without_a_token(monkeypatch: pytest.Mon
 
 
 # =========================================================================================
+# Issue #35: native command-menu registration
+# =========================================================================================
+
+
+def test_build_application_registers_the_default_command_menu_hook(fake_token: None) -> None:
+    """Setting the default command menu is deferred to PTB's `post_init`
+    hook, run once at process startup -- never at `build_application()`
+    time, which must stay network-call-free (see the fake_token fixture's
+    own docstring).
+    """
+    application = build_application()
+
+    assert application.post_init is bot_module._set_default_commands
+
+
+def test_set_default_commands_sets_the_global_command_menu() -> None:
+    calls: list[tuple[object, object]] = []
+
+    class _FakeBot:
+        async def set_my_commands(self, commands: object, scope: object = None) -> None:
+            calls.append((commands, scope))
+
+    class _FakeApplication:
+        bot = _FakeBot()
+
+    asyncio.run(bot_module._set_default_commands(_FakeApplication()))  # type: ignore[arg-type]
+
+    assert len(calls) == 1
+    commands, scope = calls[0]
+    assert commands == bot_module.DEFAULT_COMMANDS
+    assert scope is None
+
+
+# =========================================================================================
 # Shared free-text dispatch (Issue #29): only one generic-text MessageHandler
 # can ever fire per update, so it must route to whichever feature's flow is
 # currently open, based on which context.user_data flow key is present.

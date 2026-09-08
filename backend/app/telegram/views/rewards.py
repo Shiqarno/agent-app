@@ -1,13 +1,14 @@
 from app.models import Reward
 
-NO_REWARDS_TEXT_PREFIX = "No rewards available right now."
+AVAILABLE_REWARDS_HEADING = "Доступные награды"
+NO_REWARDS_TEXT_PREFIX = "Нет доступных наград."
 
 
 def render_rewards(rewards: list[Reward], balance: int) -> str:
-    """Issue #26 "Rewards list": name, cost, and an affordability line --
-    no description, no technical status.
+    """Issue #26 "Rewards list" / Issue #35: heading, balance, name, cost,
+    and an affordability line -- no description, no technical status.
     """
-    header = f"Rewards\nYou have {balance} points"
+    header = f"{AVAILABLE_REWARDS_HEADING}\nYou have {balance} points"
     if not rewards:
         return f"{header}\n\n{NO_REWARDS_TEXT_PREFIX}"
 

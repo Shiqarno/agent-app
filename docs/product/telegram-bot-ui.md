@@ -30,6 +30,16 @@ eligibility, and vice versa; nor does role.
 `/start` with no token opens **Home**, whose content depends on the
 connected User's role.
 
+### Command panel
+
+Telegram's own command menu (the "/" button) is role-aware: a connected
+Child sees `/start`, `/tasks`, `/mytasks`, `/rewards`, `/points`; a
+connected Adult sees `/start`, `/users`, `/tasks`, `/confirmations`,
+`/rewards`, `/points` — never the other role's commands. An account not
+yet connected to any User sees only `/start`. The menu is refreshed every
+time `/start` is used, so it always matches the currently-connected
+User's role.
+
 ## Child navigation
 
 ```
@@ -42,9 +52,11 @@ Points
 
 ### Tasks
 
-The list of active Task definitions the Child can currently self-claim —
-name and reward points only, no description, no history. Each has a
-`Take` action.
+Headed "Доступные задачи". The list of active Task definitions the Child
+can currently self-claim — name and reward points only, no description,
+no history. Each has a `Take` action, and the button itself already shows
+the Task's name and reward points, so the Child can see what a Task is
+worth without opening anything.
 
 ### Take
 
@@ -54,13 +66,17 @@ removes the Task from Tasks, and makes it visible in My Tasks.
 
 ### My Tasks
 
-The Child's own non-terminal executions (`ASSIGNED`, `IN_PROGRESS`,
-`AWAITING_CONFIRMATION`), newest first. An `ASSIGNED` item — created when
-an Adult directly assigns a Task to this Child, never by the Child's own
-Take — shows "assigned to you" and a `Start` action; an `IN_PROGRESS` item
-has `Done`; an `AWAITING_CONFIRMATION` item shows "waiting for
-confirmation" and no action. Completed/cancelled executions never appear
-here or suppress a Task's future availability.
+Headed "Твои задачи". The Child's own non-terminal executions
+(`ASSIGNED`, `IN_PROGRESS`, `AWAITING_CONFIRMATION`), newest first. An
+`ASSIGNED` item — created when an Adult directly assigns a Task to this
+Child, never by the Child's own Take — shows "assigned to you" and a
+`Start` action; an `IN_PROGRESS` item has `Done`; an
+`AWAITING_CONFIRMATION` item shows "waiting for confirmation" and no
+action. Both the `Start` and `Done` buttons show the Task's name and its
+reward — always the amount actually snapshotted onto *this* execution
+when it began, never a Task's reward if it was edited since. Completed/
+cancelled executions never appear here or suppress a Task's future
+availability.
 
 ### Start
 
@@ -75,10 +91,12 @@ confirms.
 
 ### Rewards
 
-The global reward catalog (not scoped by who created it), each showing
-name, cost, and current balance context: `Get` when affordable, "Not
-enough points" when not. `Get` redeems immediately at the reward's
-*current* cost — never a cost cached from when the screen was rendered.
+Headed "Доступные награды", followed by the Child's current balance. The
+global reward catalog (not scoped by who created it), each showing name,
+cost, and current balance context: `Get` when affordable, "Not enough
+points" when not — the `Get` button itself also shows the reward's name
+and cost. `Get` redeems immediately at the reward's *current* cost — never
+a cost cached from when the screen was rendered.
 
 ### Points
 
@@ -110,20 +128,24 @@ does not attempt to summarize everything at once.
 A queue of `TaskExecution`s currently `AWAITING_CONFIRMATION` — not a
 separate domain entity, just that status. Any connected Adult may act on
 any awaiting execution; there is no Adult↔Child ownership. Each item shows
-the Task, the Child, and the reward snapshot, with `Confirm` (→
-`COMPLETED`, exactly one `TASK_COMPLETED` point transaction) and `Return
-to work` (→ back to `IN_PROGRESS`, no points). Both act immediately, no
-confirmation dialog. There is no separate Confirmation Details screen.
+the Task, the Child, and the reward snapshot, immediately followed by its
+own `Confirm` (→ `COMPLETED`, exactly one `TASK_COMPLETED` point
+transaction) and `Return to work` (→ back to `IN_PROGRESS`, no points)
+pair — one item, one pair of buttons, in the same order top to bottom, so
+acting on one execution is never ambiguous with acting on another. Both
+act immediately, no confirmation dialog. There is no separate Confirmation
+Details screen.
 
 ### Tasks (Adult)
 
-Manages the reusable Task-definition catalog — distinct from Child Tasks,
-which is about claiming, not defining. Any Adult may manage any Task;
-there is no per-Adult ownership in Telegram.
+Headed "Все задачи". Manages the reusable Task-definition catalog —
+distinct from Child Tasks, which is about claiming, not defining. Any
+Adult may manage any Task; there is no per-Adult ownership in Telegram.
 
 Each Task in the list shows its name, current reward, and availability for
 **self-claim** — `is_active` and its own single self-claim slot, not
-whether the Task has any executions at all:
+whether the Task has any executions at all — right on the button itself,
+so the Adult can scan the whole catalog without opening each Task:
 
 - an active Task with no current open execution is **Available**;
 - an active Task *with* one, or an inactive Task, is **Not available** —

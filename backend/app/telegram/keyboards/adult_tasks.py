@@ -20,17 +20,24 @@ ASSIGN_TO_CALLBACK_PREFIX = "adulttask:assignchild:"
 def tasks_list_keyboard(
     items: list[tuple[Task, TaskExecution | None, User | None]],
 ) -> InlineKeyboardMarkup:
-    """One `Open` row per Task, plus `+ Add task` and `← Home` (Issue #28
-    section 4). The callback payload only identifies the Task for routing
-    -- the Application layer re-verifies role/existence/state on every call.
+    """One row per Task, plus `+ Add task` and `← Home` (Issue #28 section
+    4). Each button shows self-claim availability, name, and reward
+    (Issue #35) so the Adult doesn't need to open every Task to see them --
+    availability here means only "currently self-claimable" (Task.is_active
+    with no current open execution), the same semantics as the view below,
+    never whether the Task has ever had executions. The callback payload
+    only identifies the Task for routing -- the Application layer
+    re-verifies role/existence/state on every call.
     """
     rows = [
         [
             InlineKeyboardButton(
-                f"Open · {task.title}", callback_data=f"{OPEN_CALLBACK_PREFIX}{task.id}"
+                f"{'Available' if execution is None and task.is_active else 'Unavailable'} · "
+                f"{task.title} · {task.reward_points} pts",
+                callback_data=f"{OPEN_CALLBACK_PREFIX}{task.id}",
             )
         ]
-        for task, _, _ in items
+        for task, execution, _child in items
     ]
     rows.append([InlineKeyboardButton("+ Add task", callback_data=ADD_CALLBACK_DATA)])
     rows.append([InlineKeyboardButton("← Home", callback_data=HOME_CALLBACK_DATA)])

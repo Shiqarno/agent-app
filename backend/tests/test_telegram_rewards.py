@@ -28,7 +28,7 @@ from app.telegram.handlers.rewards import (
     _rewards_view,
 )
 from app.telegram.keyboards.rewards import GET_CALLBACK_PREFIX
-from app.telegram.views.rewards import NO_REWARDS_TEXT_PREFIX
+from app.telegram.views.rewards import AVAILABLE_REWARDS_HEADING, NO_REWARDS_TEXT_PREFIX
 from app.telegram_identity import activate_telegram_identity
 
 ADULT = UserRole.ADULT
@@ -154,12 +154,14 @@ def test_child_can_render_rewards(real: RealData) -> None:
 
     text, keyboard = _rewards_view(telegram_id)
 
+    assert text.startswith(AVAILABLE_REWARDS_HEADING)
     assert "Ice cream" in text
     assert "100" in text
     assert "320" in text
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 1
     assert keyboard.inline_keyboard[0][0].callback_data == f"{GET_CALLBACK_PREFIX}{reward.id}"
+    assert keyboard.inline_keyboard[0][0].text == "Get · Ice cream · 100 pts"
 
 
 def test_unaffordable_reward_gets_no_button(real: RealData) -> None:

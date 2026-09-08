@@ -146,6 +146,7 @@ def test_adult_tasks_command_opens_adult_tasks_list(real: RealData) -> None:
 
     text, keyboard = _tasks_command_view(telegram_id)
 
+    assert text.startswith("Все задачи")
     assert "Clean room" in text
     assert "20 points" in text
     assert "Available" in text
@@ -155,6 +156,35 @@ def test_adult_tasks_command_opens_adult_tasks_list(real: RealData) -> None:
     assert any("Add task" in label for label in labels)
     assert any("Home" in label for label in labels)
     assert keyboard.inline_keyboard[0][0].callback_data == f"{OPEN_CALLBACK_PREFIX}{task.id}"
+    assert keyboard.inline_keyboard[0][0].text == "Available · Clean room · 20 pts"
+
+
+def test_adult_tasks_list_button_shows_unavailable_for_a_task_with_an_open_execution(
+    real: RealData,
+) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD, "Alex")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult, title="Clean room", reward_points=20)
+    real.make_execution(task, child, TaskExecutionStatus.IN_PROGRESS)
+
+    _text, keyboard = _tasks_command_view(telegram_id)
+
+    assert keyboard is not None
+    assert keyboard.inline_keyboard[0][0].text == "Unavailable · Clean room · 20 pts"
+
+
+def test_adult_tasks_list_button_shows_unavailable_for_an_inactive_task(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    real.make_task(adult, title="Clean room", reward_points=20, is_active=False)
+
+    _text, keyboard = _tasks_command_view(telegram_id)
+
+    assert keyboard is not None
+    assert keyboard.inline_keyboard[0][0].text == "Unavailable · Clean room · 20 pts"
 
 
 def test_child_tasks_command_still_opens_child_tasks(real: RealData) -> None:
@@ -545,7 +575,7 @@ def test_back_to_tasks_from_details_shows_the_list_again(real: RealData) -> None
 
     text, keyboard = _adult_tasks_list_view(telegram_id)
 
-    assert "Tasks" in text
+    assert "Все задачи" in text
     assert "Clean room" in text
     assert keyboard is not None
 

@@ -13,6 +13,7 @@ from telegram.ext import (
 )
 
 from app.config import settings
+from app.telegram.commands import DEFAULT_COMMANDS
 from app.telegram.handlers import adult_points, adult_rewards, adult_tasks, adult_users
 from app.telegram.handlers.adult_points import (
     handle_adjust_menu,
@@ -193,6 +194,17 @@ async def _on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error("Unhandled error while processing update %r", update, exc_info=context.error)
 
 
+async def _set_default_commands(application: BotApplication) -> None:
+    """Sets the bot's global command menu (Issue #35) -- shown to any chat
+    that hasn't had a role-specific menu set yet via `/start`
+    (handlers/start.py), i.e. a not-yet-connected Telegram account. Runs
+    once at process startup (PTB's `post_init` hook), not at
+    `build_application()` time, so constructing an Application for tests
+    still makes no network call.
+    """
+    await application.bot.set_my_commands(DEFAULT_COMMANDS)
+
+
 def build_application() -> BotApplication:
     """Constructs the bot Application and registers every handler. Pure
     object construction -- no network call happens here (that starts with
@@ -205,7 +217,12 @@ def build_application() -> BotApplication:
             "before starting the Telegram bot process."
         )
 
-    application = ApplicationBuilder().token(settings.telegram_bot_token).build()
+    application = (
+        ApplicationBuilder()
+        .token(settings.telegram_bot_token)
+        .post_init(_set_default_commands)
+        .build()
+    )
     application.add_handler(CommandHandler("start", handle_start))
     application.add_handler(CommandHandler("tasks", handle_tasks_command))
     application.add_handler(CommandHandler("mytasks", handle_my_tasks_command))

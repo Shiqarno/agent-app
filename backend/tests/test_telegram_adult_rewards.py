@@ -131,9 +131,9 @@ def test_child_rewards_command_still_opens_child_redemption_screen(real: RealDat
 
     text, keyboard = _rewards_command_view(telegram_id)
 
-    # The Child redemption view ("Rewards\nYou have N points...") is
-    # distinct from the Adult catalog-management view ("🎁 Rewards...").
-    assert text.startswith("Rewards\nYou have")
+    # The Child redemption view ("Доступные награды\nYou have N points...")
+    # is distinct from the Adult catalog-management view ("🎁 Rewards...").
+    assert text.startswith("Доступные награды\nYou have")
     assert "Pizza" in text
     assert keyboard is not None
 

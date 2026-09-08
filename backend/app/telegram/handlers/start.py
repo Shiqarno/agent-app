@@ -1,11 +1,12 @@
 import asyncio
 
-from telegram import InlineKeyboardMarkup, Update
+from telegram import BotCommandScopeChat, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from app.db import SessionLocal
 from app.models import UserRole
 from app.task_operations import get_pending_confirmations
+from app.telegram.commands import commands_for_role
 from app.telegram.keyboards.confirmations import confirmation_summary_keyboard
 from app.telegram.views.confirmations import render_confirmation_summary
 from app.telegram_identity import (
@@ -25,30 +26,37 @@ _INVALID_ACTIVATION_TEXT = (
 _ALREADY_LINKED_TEXT = "This Telegram account is already connected to a different profile."
 
 
-def _activate(raw_token: str, telegram_user_id: int) -> str:
+def _activate(raw_token: str, telegram_user_id: int) -> tuple[str, UserRole | None]:
     """Sync DB work run off the bot's event loop via asyncio.to_thread (see
     handle_start) -- this project's DB layer is synchronous SQLAlchemy, and
     there's no FastAPI-style per-request dependency injection here, so each
     call opens and closes its own Session, exactly one unit of work.
+
+    The returned role (Issue #35) is presentation-only signal for the
+    caller to set this chat's native command menu -- never a second
+    authorization mechanism; every command handler still re-resolves the
+    User itself.
     """
     db = SessionLocal()
     try:
         user = activate_telegram_identity(db, raw_token, telegram_user_id)
-        return f"You're connected, {user.name}! You can now use this bot."
+        return f"You're connected, {user.name}! You can now use this bot.", user.role
     except TelegramActivationInvalidError:
-        return _INVALID_ACTIVATION_TEXT
+        return _INVALID_ACTIVATION_TEXT, None
     except TelegramAccountAlreadyLinkedError:
-        return _ALREADY_LINKED_TEXT
+        return _ALREADY_LINKED_TEXT, None
     finally:
         db.close()
 
 
-def _resolve_home(telegram_user_id: int) -> tuple[str, InlineKeyboardMarkup | None]:
+def _resolve_home(
+    telegram_user_id: int,
+) -> tuple[str, InlineKeyboardMarkup | None, UserRole | None]:
     db = SessionLocal()
     try:
         user = resolve_user_by_telegram_id(db, telegram_user_id)
         if user is None:
-            return _NOT_CONNECTED_TEXT, None
+            return _NOT_CONNECTED_TEXT, None, None
         # Minimal, role-aware placeholder -- Adult Rewards/Points UX is
         # still out of scope (Issue #24 implements Child Tasks/My Tasks;
         # Issue #25 implements the Adult Task Confirmation queue below;
@@ -57,22 +65,30 @@ def _resolve_home(telegram_user_id: int) -> tuple[str, InlineKeyboardMarkup | No
         # Adult Users).
         if user.role == UserRole.CHILD:
             return (
-                f"Welcome back, {user.name}! Use /tasks to see available tasks, "
-                "/mytasks to see what you're working on, /rewards to spend your points, "
-                "or /points to see your balance and history."
-            ), None
+                (
+                    f"Welcome back, {user.name}! Use /tasks to see available tasks, "
+                    "/mytasks to see what you're working on, /rewards to spend your points, "
+                    "or /points to see your balance and history."
+                ),
+                None,
+                user.role,
+            )
 
         # Adult Home leads with the Confirmation queue when there's
         # something to act on (Issue #25 section 1) -- not a general
         # dashboard; Pending Tasks stays out of scope.
         items = get_pending_confirmations(db, user)
         if items:
-            return render_confirmation_summary(items), confirmation_summary_keyboard()
+            return render_confirmation_summary(items), confirmation_summary_keyboard(), user.role
         return (
-            f"Welcome back, {user.name}! Use /confirmations to review tasks "
-            "waiting for confirmation, /tasks to manage the task catalog, "
-            "or /users to manage Users."
-        ), None
+            (
+                f"Welcome back, {user.name}! Use /confirmations to review tasks "
+                "waiting for confirmation, /tasks to manage the task catalog, "
+                "or /users to manage Users."
+            ),
+            None,
+            user.role,
+        )
     finally:
         db.close()
 
@@ -82,14 +98,25 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     logic lives in app.telegram_identity -- this handler only extracts the
     Telegram-specific bits (the sender's id, the command argument) and
     turns the result into a reply. No task/reward/points rules here.
+
+    Also (re)sets this chat's native Telegram command menu to match the
+    resolved role (Issue #35) -- `/start` is the one place role is always
+    freshly resolved for every connected User (both on first activation
+    and every subsequent Home visit), so it's the natural, single hook for
+    this without adding a network call to every other handler.
     """
     if update.effective_user is None or update.message is None:
         return
     telegram_user_id = update.effective_user.id
 
     if context.args:
-        reply = await asyncio.to_thread(_activate, context.args[0], telegram_user_id)
+        reply, role = await asyncio.to_thread(_activate, context.args[0], telegram_user_id)
         await update.message.reply_text(reply)
     else:
-        text, keyboard = await asyncio.to_thread(_resolve_home, telegram_user_id)
+        text, keyboard, role = await asyncio.to_thread(_resolve_home, telegram_user_id)
         await update.message.reply_text(text, reply_markup=keyboard)
+
+    if role is not None:
+        await context.bot.set_my_commands(
+            commands_for_role(role), scope=BotCommandScopeChat(chat_id=telegram_user_id)
+        )

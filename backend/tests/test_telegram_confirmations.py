@@ -148,6 +148,95 @@ def test_adult_can_render_the_confirmation_queue(real: RealData) -> None:
     assert keyboard.inline_keyboard[0][1].callback_data == f"{RETURN_CALLBACK_PREFIX}{execution.id}"
 
 
+def test_each_execution_has_its_own_confirm_and_return_row_in_matching_order(
+    real: RealData,
+) -> None:
+    """Issue #35 "option A": each execution gets its own keyboard row
+    pairing Confirm+Return (not all Confirms grouped, then all Returns),
+    in the same order as the text blocks above it, so a Return button is
+    never mistakable for a different execution's row.
+    """
+    adult = real.make_user(ADULT)
+    child_a = real.make_user(CHILD, "Alex")
+    child_b = real.make_user(CHILD, "Blair")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task_a = real.make_task(adult, title="Wash dishes", reward_points=10)
+    task_b = real.make_task(adult, title="Clean room", reward_points=20)
+    execution_a = real.make_execution(task_a, child_a, TaskExecutionStatus.AWAITING_CONFIRMATION)
+    execution_b = real.make_execution(task_b, child_b, TaskExecutionStatus.AWAITING_CONFIRMATION)
+
+    text, keyboard = _queue_view(telegram_id)
+
+    # Text blocks appear in the same order as the keyboard rows below.
+    assert text.index("Wash dishes") < text.index("Clean room")
+    assert keyboard is not None
+    assert len(keyboard.inline_keyboard) == 2
+    row_a, row_b = keyboard.inline_keyboard
+    assert len(row_a) == 2
+    assert row_a[0].callback_data == f"{CONFIRM_CALLBACK_PREFIX}{execution_a.id}"
+    assert row_a[1].callback_data == f"{RETURN_CALLBACK_PREFIX}{execution_a.id}"
+    assert len(row_b) == 2
+    assert row_b[0].callback_data == f"{CONFIRM_CALLBACK_PREFIX}{execution_b.id}"
+    assert row_b[1].callback_data == f"{RETURN_CALLBACK_PREFIX}{execution_b.id}"
+    # Not the broken layout: no row mixes actions from different executions.
+    assert row_a[0].callback_data != row_b[0].callback_data
+    assert row_a[1].callback_data != row_b[1].callback_data
+
+
+def test_confirming_one_execution_does_not_affect_another(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child_a = real.make_user(CHILD, "Alex")
+    child_b = real.make_user(CHILD, "Blair")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task_a = real.make_task(adult, title="Wash dishes", reward_points=10)
+    task_b = real.make_task(adult, title="Clean room", reward_points=20)
+    execution_a = real.make_execution(task_a, child_a, TaskExecutionStatus.AWAITING_CONFIRMATION)
+    execution_b = real.make_execution(task_b, child_b, TaskExecutionStatus.AWAITING_CONFIRMATION)
+
+    toast, text, keyboard = _confirm(telegram_id, str(execution_a.id))
+
+    assert "Wash dishes" in toast
+    real.session.expire_all()
+    refreshed_a = real.session.get(TaskExecution, execution_a.id)
+    refreshed_b = real.session.get(TaskExecution, execution_b.id)
+    assert refreshed_a is not None
+    assert refreshed_a.status == TaskExecutionStatus.COMPLETED
+    assert refreshed_b is not None
+    assert refreshed_b.status == TaskExecutionStatus.AWAITING_CONFIRMATION
+    # Only execution B remains in the refreshed queue.
+    assert "Clean room" in text
+    assert "Wash dishes" not in text
+    assert keyboard is not None
+    assert len(keyboard.inline_keyboard) == 1
+    assert (
+        keyboard.inline_keyboard[0][0].callback_data == f"{CONFIRM_CALLBACK_PREFIX}{execution_b.id}"
+    )
+
+
+def test_returning_one_execution_does_not_affect_another(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child_a = real.make_user(CHILD, "Alex")
+    child_b = real.make_user(CHILD, "Blair")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task_a = real.make_task(adult, title="Wash dishes", reward_points=10)
+    task_b = real.make_task(adult, title="Clean room", reward_points=20)
+    execution_a = real.make_execution(task_a, child_a, TaskExecutionStatus.AWAITING_CONFIRMATION)
+    execution_b = real.make_execution(task_b, child_b, TaskExecutionStatus.AWAITING_CONFIRMATION)
+
+    _return_to_work(telegram_id, str(execution_a.id))
+
+    real.session.expire_all()
+    refreshed_a = real.session.get(TaskExecution, execution_a.id)
+    refreshed_b = real.session.get(TaskExecution, execution_b.id)
+    assert refreshed_a is not None
+    assert refreshed_a.status == TaskExecutionStatus.IN_PROGRESS
+    assert refreshed_b is not None
+    assert refreshed_b.status == TaskExecutionStatus.AWAITING_CONFIRMATION
+
+
 def test_child_cannot_use_confirmation_actions(real: RealData) -> None:
     child = real.make_user(CHILD)
     telegram_id = _next_telegram_id()

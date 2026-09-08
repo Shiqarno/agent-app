@@ -1,5 +1,6 @@
 from app.models import Task, TaskExecution, TaskExecutionStatus, User
 
+ALL_TASKS_HEADING = "Все задачи"
 NO_TASKS_TEXT = "No tasks yet."
 NO_ELIGIBLE_CHILDREN_TEXT = "No eligible children right now."
 
@@ -30,9 +31,9 @@ def render_task_list_item(task: Task, execution: TaskExecution | None, child: Us
 
 def render_tasks_list(items: list[tuple[Task, TaskExecution | None, User | None]]) -> str:
     if not items:
-        return f"Tasks\n\n{NO_TASKS_TEXT}"
+        return f"{ALL_TASKS_HEADING}\n\n{NO_TASKS_TEXT}"
     blocks = [render_task_list_item(task, execution, child) for task, execution, child in items]
-    return "Tasks\n\n" + "\n\n".join(blocks)
+    return f"{ALL_TASKS_HEADING}\n\n" + "\n\n".join(blocks)
 
 
 def render_task_details(task: Task, execution: TaskExecution | None, child: User | None) -> str:
