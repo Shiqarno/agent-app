@@ -53,7 +53,8 @@ def _resolve_home(telegram_user_id: int) -> tuple[str, InlineKeyboardMarkup | No
         # still out of scope (Issue #24 implements Child Tasks/My Tasks;
         # Issue #25 implements the Adult Task Confirmation queue below;
         # Issue #26 implements Child Rewards; Issue #27 implements Child
-        # Points; Issue #28 implements Adult Tasks).
+        # Points; Issue #28 implements Adult Tasks; Issue #29 implements
+        # Adult Users).
         if user.role == UserRole.CHILD:
             return (
                 f"Welcome back, {user.name}! Use /tasks to see available tasks, "
@@ -69,7 +70,8 @@ def _resolve_home(telegram_user_id: int) -> tuple[str, InlineKeyboardMarkup | No
             return render_confirmation_summary(items), confirmation_summary_keyboard()
         return (
             f"Welcome back, {user.name}! Use /confirmations to review tasks "
-            "waiting for confirmation, or /tasks to manage the task catalog."
+            "waiting for confirmation, /tasks to manage the task catalog, "
+            "or /users to manage Users."
         ), None
     finally:
         db.close()

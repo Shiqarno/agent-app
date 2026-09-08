@@ -1,6 +1,9 @@
+import asyncio
+
 import pytest
 
 from app.config import settings
+from app.telegram import bot as bot_module
 from app.telegram.bot import build_application
 from app.telegram.handlers.adult_tasks import (
     handle_activate_task,
@@ -12,8 +15,15 @@ from app.telegram.handlers.adult_tasks import (
     handle_home,
     handle_list_tasks,
     handle_open_task,
-    handle_task_flow_text,
     handle_tasks_command,
+)
+from app.telegram.handlers.adult_users import (
+    handle_add_child,
+    handle_get_activation_link,
+    handle_list_users,
+    handle_open_user,
+    handle_users_command,
+    handle_users_home,
 )
 from app.telegram.handlers.confirmations import (
     handle_confirm_execution,
@@ -63,7 +73,13 @@ def test_build_application_registers_every_handler(fake_token: None) -> None:
     assert handle_edit_reward in callbacks
     assert handle_activate_task in callbacks
     assert handle_deactivate_task in callbacks
-    assert handle_task_flow_text in callbacks
+    assert handle_users_command in callbacks
+    assert handle_open_user in callbacks
+    assert handle_list_users in callbacks
+    assert handle_users_home in callbacks
+    assert handle_add_child in callbacks
+    assert handle_get_activation_link in callbacks
+    assert bot_module._handle_text_input in callbacks
 
 
 def test_build_application_fails_clearly_without_a_token(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -71,3 +87,69 @@ def test_build_application_fails_clearly_without_a_token(monkeypatch: pytest.Mon
 
     with pytest.raises(RuntimeError, match="TELEGRAM_BOT_TOKEN"):
         build_application()
+
+
+# =========================================================================================
+# Shared free-text dispatch (Issue #29): only one generic-text MessageHandler
+# can ever fire per update, so it must route to whichever feature's flow is
+# currently open, based on which context.user_data flow key is present.
+# =========================================================================================
+
+
+class _FakeContext:
+    def __init__(self, user_data: dict[str, object]) -> None:
+        self.user_data = user_data
+
+
+def test_text_input_dispatches_to_the_open_task_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    async def fake_task_handler(update: object, context: object) -> None:
+        calls.append("task")
+
+    async def fake_user_handler(update: object, context: object) -> None:
+        calls.append("user")
+
+    monkeypatch.setattr(bot_module.adult_tasks, "handle_task_flow_text", fake_task_handler)
+    monkeypatch.setattr(bot_module.adult_users, "handle_user_flow_text", fake_user_handler)
+
+    context = _FakeContext(user_data={bot_module.adult_tasks._FLOW_KEY: {}})
+    asyncio.run(bot_module._handle_text_input(None, context))  # type: ignore[arg-type]
+
+    assert calls == ["task"]
+
+
+def test_text_input_dispatches_to_the_open_user_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    async def fake_task_handler(update: object, context: object) -> None:
+        calls.append("task")
+
+    async def fake_user_handler(update: object, context: object) -> None:
+        calls.append("user")
+
+    monkeypatch.setattr(bot_module.adult_tasks, "handle_task_flow_text", fake_task_handler)
+    monkeypatch.setattr(bot_module.adult_users, "handle_user_flow_text", fake_user_handler)
+
+    context = _FakeContext(user_data={bot_module.adult_users._FLOW_KEY: {}})
+    asyncio.run(bot_module._handle_text_input(None, context))  # type: ignore[arg-type]
+
+    assert calls == ["user"]
+
+
+def test_text_input_does_nothing_with_no_active_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    async def fake_task_handler(update: object, context: object) -> None:
+        calls.append("task")
+
+    async def fake_user_handler(update: object, context: object) -> None:
+        calls.append("user")
+
+    monkeypatch.setattr(bot_module.adult_tasks, "handle_task_flow_text", fake_task_handler)
+    monkeypatch.setattr(bot_module.adult_users, "handle_user_flow_text", fake_user_handler)
+
+    context = _FakeContext(user_data={})
+    asyncio.run(bot_module._handle_text_input(None, context))  # type: ignore[arg-type]
+
+    assert calls == []

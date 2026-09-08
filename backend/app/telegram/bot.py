@@ -13,6 +13,7 @@ from telegram.ext import (
 )
 
 from app.config import settings
+from app.telegram.handlers import adult_tasks, adult_users
 from app.telegram.handlers.adult_tasks import (
     handle_activate_task,
     handle_add_task,
@@ -23,8 +24,15 @@ from app.telegram.handlers.adult_tasks import (
     handle_home,
     handle_list_tasks,
     handle_open_task,
-    handle_task_flow_text,
     handle_tasks_command,
+)
+from app.telegram.handlers.adult_users import (
+    handle_add_child,
+    handle_get_activation_link,
+    handle_list_users,
+    handle_open_user,
+    handle_users_command,
+    handle_users_home,
 )
 from app.telegram.handlers.confirmations import (
     handle_confirm_execution,
@@ -57,6 +65,19 @@ from app.telegram.keyboards.confirmations import (
 from app.telegram.keyboards.points import OLDER_CALLBACK_PREFIX
 from app.telegram.keyboards.rewards import GET_CALLBACK_PREFIX as REWARD_GET_CALLBACK_PREFIX
 from app.telegram.keyboards.tasks import EXECUTION_DONE_CALLBACK_PREFIX, TASKS_CALLBACK_PREFIX
+from app.telegram.keyboards.users import (
+    ADD_CHILD_CALLBACK_DATA,
+    GET_LINK_CALLBACK_PREFIX,
+)
+from app.telegram.keyboards.users import (
+    HOME_CALLBACK_DATA as USERS_HOME_CALLBACK_DATA,
+)
+from app.telegram.keyboards.users import (
+    LIST_CALLBACK_DATA as USERS_LIST_CALLBACK_DATA,
+)
+from app.telegram.keyboards.users import (
+    OPEN_CALLBACK_PREFIX as ADULT_USER_OPEN_CALLBACK_PREFIX,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +85,21 @@ logger = logging.getLogger(__name__)
 # never needs anything beyond the library's own defaults, so the type
 # parameters are left open rather than pinned to internal library types.
 BotApplication = Application[Any, Any, Any, Any, Any, Any]
+
+
+async def _handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Dispatches a free-text message to whichever short-lived input flow
+    (Adult Tasks Create/Edit, Adult Users Add Child) is currently open for
+    this Adult, based on which `context.user_data` flow key is present.
+    PTB only ever runs the first matching handler for a given update within
+    a handler group, so a single generic-text MessageHandler must own this
+    routing rather than registering one per feature.
+    """
+    data = context.user_data or {}
+    if adult_tasks._FLOW_KEY in data:
+        await adult_tasks.handle_task_flow_text(update, context)
+    elif adult_users._FLOW_KEY in data:
+        await adult_users.handle_user_flow_text(update, context)
 
 
 async def _on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -138,7 +174,23 @@ def build_application() -> BotApplication:
     application.add_handler(
         CallbackQueryHandler(handle_deactivate_task, pattern=f"^{DEACTIVATE_CALLBACK_PREFIX}")
     )
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_task_flow_text))
+    application.add_handler(CommandHandler("users", handle_users_command))
+    application.add_handler(
+        CallbackQueryHandler(handle_open_user, pattern=f"^{ADULT_USER_OPEN_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_list_users, pattern=f"^{USERS_LIST_CALLBACK_DATA}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_users_home, pattern=f"^{USERS_HOME_CALLBACK_DATA}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_add_child, pattern=f"^{ADD_CHILD_CALLBACK_DATA}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_get_activation_link, pattern=f"^{GET_LINK_CALLBACK_PREFIX}")
+    )
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _handle_text_input))
     application.add_error_handler(_on_error)
     return application
 

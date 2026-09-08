@@ -7,7 +7,8 @@ structure — see `app/telegram/` and its own docstrings for that).
 
 Business rules, authorization, and concurrency guarantees live in the
 Application layer (`app/task_operations.py`, `app/reward_operations.py`,
-`app/points_operations.py`); Telegram is presentation only.
+`app/points_operations.py`, `app/user_operations.py`); Telegram is
+presentation only.
 
 ## Identity and connection
 
@@ -76,7 +77,7 @@ amount — never the internal ledger reason code.
 ```
 Home
 Tasks
-Users        — not yet implemented in Telegram
+Users
 Rewards      — Adult catalog management not yet implemented in Telegram
 Points       — Adult view not yet implemented in Telegram
 ```
@@ -139,12 +140,52 @@ meantime), the action is re-validated against current state and refused
 cleanly if it's no longer valid — the displayed screen is never trusted as
 the source of truth.
 
+### Users
+
+An identity/onboarding surface — not a dashboard. It shows every User's
+name, role, and whether their Telegram account is connected; it does not
+show task history, points balance, reward history, or any Telegram-internal
+detail like a numeric account id or an activation token. Any Adult may
+manage any User; there is no per-Adult ownership in Telegram, and there is
+still no permanent Adult↔Child relationship anywhere in the product.
+
+Opening a User shows the same three facts (name, role, connection) on
+their own. For an unconnected Child, this is also where an Adult gets
+**Get activation link** — never shown once that Child is connected, and
+never usable to reconnect or replace an already-connected account (that
+stays out of scope; the existing activation/identity rules are unchanged).
+
+**Add Child** collects just a name, validated the same way as everywhere
+else (non-blank) — invalid input is rejected with a plain message and the
+Adult can simply try again. Creating a Child immediately produces an
+activation link to send them:
+
+```
+Alex was created.
+
+Send this activation link to Alex:
+
+https://t.me/<bot>?start=<token>
+
+The link expires in 72 hours.
+```
+
+Generating a fresh link for an existing unconnected Child (because the
+first one was lost or expired) shows the same kind of message, without the
+"was created" line, and immediately invalidates whatever link existed
+before it — only one activation link is ever valid for a given User at a
+time.
+
 ## Out of scope (tracked, not yet built)
 
 - Adult Rewards/Points views, and manual point adjustments.
 - Direct assignment of a Task to a specific Child from Telegram.
 - Task/description editing beyond title and reward points.
 - Task, execution, or redemption history views.
+- Adult-side User editing (name, avatar) or deletion.
+- Reconnecting/replacing a Telegram account already linked to a User, or
+  disconnecting one — the existing activation mechanism's reconnect rules
+  apply, but there is no Telegram UI for triggering them.
 - Notifications, reminders, comments/reasons, attachments.
 - Any Adult↔Child ownership or family-grouping concept — deliberately not
   part of this product's model.

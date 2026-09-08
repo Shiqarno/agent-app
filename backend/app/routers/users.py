@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.activation import create_activation, regenerate_activation
+from app import user_operations
+from app.activation import regenerate_activation
 from app.db import get_db
 from app.errors import UserAlreadyActivatedError, UserNotFoundError
 from app.identity import get_current_user, require_adult
@@ -52,13 +53,13 @@ def list_users(
 def create_user(
     payload: UserCreate, user: User = Depends(require_adult), db: Session = Depends(get_db)
 ) -> UserCreateResponse:
-    new_user_id = uuid.uuid4()
-    new_user = User(id=new_user_id, name=payload.name, role=payload.role)
-    db.add(new_user)
-    db.flush()
-    raw_activation_token = create_activation(db, new_user_id)
-    db.commit()
-    db.refresh(new_user)
+    """User + activation creation lives in app.user_operations (Issue #29)
+    -- shared with Telegram's create_child, which needs the exact same
+    atomic behavior. This endpoint's request/response shape is unchanged.
+    """
+    new_user, raw_activation_token = user_operations.create_user_with_activation(
+        db, name=payload.name, role=payload.role
+    )
     return UserCreateResponse(
         id=new_user.id,
         name=new_user.name,
