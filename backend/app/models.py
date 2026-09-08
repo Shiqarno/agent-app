@@ -179,6 +179,7 @@ class TaskExecution(Base):
 class PointTransactionReason(StrEnum):
     TASK_COMPLETED = "TASK_COMPLETED"
     REWARD_REDEEMED = "REWARD_REDEEMED"
+    MANUAL_ADJUSTMENT = "MANUAL_ADJUSTMENT"
 
 
 class PointTransaction(Base):
@@ -204,6 +205,10 @@ class PointTransaction(Base):
         SAEnum(PointTransactionReason, native_enum=False, length=32, values_callable=_enum_values),
         nullable=False,
     )
+    # Only populated for MANUAL_ADJUSTMENT rows (Issue #31) -- a
+    # TASK_COMPLETED/REWARD_REDEEMED row's human-readable description is
+    # derived from its Task/Reward join instead, so this stays NULL there.
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

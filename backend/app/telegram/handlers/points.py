@@ -26,23 +26,18 @@ def _points_view(
         user = resolve_user_by_telegram_id(db, telegram_user_id)
         if user is None:
             return _NOT_CONNECTED_TEXT, None
-        # Adult Points UX is a separate, not-yet-implemented workflow
-        # (Issue #27) -- a presentation-level choice here, not a new
-        # Application-layer rule: get_points already scopes strictly to
-        # the resolved User regardless of role.
+        # Adult Points UX is a separate management workflow, dispatched by
+        # `/points`'s role-aware handler in adult_points.py (Issue #31) --
+        # this function stays the Child-only self-service view, reused
+        # from there for the Child branch. A presentation-level choice
+        # here, not a new Application-layer rule: get_points already
+        # scopes strictly to the resolved User regardless of role.
         if user.role != UserRole.CHILD:
             return _NOT_A_CHILD_TEXT, None
         view = get_points(db, user, cursor=cursor)
         return render_points(view, utcnow()), points_keyboard(view)
     finally:
         db.close()
-
-
-async def handle_points_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.effective_user is None or update.message is None:
-        return
-    text, keyboard = await asyncio.to_thread(_points_view, update.effective_user.id, None)
-    await update.message.reply_text(text, reply_markup=keyboard)
 
 
 async def handle_older_points(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

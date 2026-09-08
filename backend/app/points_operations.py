@@ -7,17 +7,56 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     PointTransaction,
+    PointTransactionReason,
     Reward,
     RewardRedemption,
     Task,
     TaskExecution,
     User,
+    UserRole,
 )
 
 # A page this small keeps each Telegram message short (Issue #27 "Page
 # size") while still making pagination exercise-able in tests without huge
 # fixtures.
 PAGE_SIZE = 5
+
+# Defensive fallback only -- adjust_points always requires a non-blank
+# description, so a MANUAL_ADJUSTMENT row's description is never actually
+# None in practice.
+_MANUAL_ADJUSTMENT_FALLBACK_TEXT = "Points adjustment"
+
+
+class PointsOperationError(Exception):
+    """Base for every Points Application-layer failure (Issue #31).
+    Framework-agnostic on purpose -- this module knows nothing about
+    FastAPI or the Telegram bot library.
+    """
+
+
+class NotAuthorizedError(PointsOperationError):
+    """The actor may not view or adjust this target User's Points (Issue
+    #31 authorization matrix): self-view is always allowed for both roles;
+    any cross-user access -- viewing or adjusting -- is Adult-acting-on-a-
+    Child only. One check covers both read and write: an Adult adjusting a
+    Child is never also a self-view case, so there is no overlap to
+    special-case.
+    """
+
+
+class InvalidAdjustmentError(PointsOperationError):
+    """amount/description failed validation. Carries a human-readable
+    message (matching the RewardOperationError/UserOperationError
+    convention) so the Telegram adapter can show exactly why.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+class InsufficientBalanceError(PointsOperationError):
+    """A deduction would take the target User's balance below zero."""
 
 
 @dataclass(frozen=True)
@@ -69,24 +108,41 @@ def _resolve_cursor_position(
     return anchor.created_at, anchor.id
 
 
-def get_points(db: Session, user: User, *, cursor: uuid.UUID | None = None) -> PointsView:
-    """Balance plus one page of the User's own transaction history, newest
+def get_points(
+    db: Session,
+    actor: User,
+    *,
+    target_user: User | None = None,
+    cursor: uuid.UUID | None = None,
+) -> PointsView:
+    """Balance plus one page of a User's own transaction history, newest
     first (Issue #27). Both are read via a single SQL statement (the
     balance as a correlated scalar subquery alongside each history row) so
-    a concurrent redemption or task completion cannot produce a response
-    where the displayed balance and the displayed history disagree --
-    exactly the inconsistency the spec calls out, without needing a
-    non-default transaction isolation level.
+    a concurrent redemption, task completion, or manual adjustment cannot
+    produce a response where the displayed balance and the displayed
+    history disagree -- exactly the inconsistency the spec calls out,
+    without needing a non-default transaction isolation level.
 
-    Ownership is enforced here, not by the caller: every row -- and the
-    balance subquery -- is filtered by `user.id`, regardless of what a
-    Telegram callback's cursor claims.
+    `target_user` defaults to `actor` (self-view, the pre-existing Issue
+    #27 behavior). Passing a different `target_user` is an Adult viewing a
+    Child's Points (Issue #31) -- one check covers the full authorization
+    matrix: self-view is always allowed for both roles, and any other
+    cross-user view requires the actor to be an Adult and the target to be
+    a Child. Ownership of the *query* is enforced here, not by the caller:
+    every row -- and the balance subquery -- is filtered by `target.id`,
+    regardless of what a Telegram callback's cursor claims.
     """
-    position = _resolve_cursor_position(db, user.id, cursor)
+    target = target_user if target_user is not None else actor
+    is_cross_user = target.id != actor.id
+    is_adult_viewing_child = actor.role == UserRole.ADULT and target.role == UserRole.CHILD
+    if is_cross_user and not is_adult_viewing_child:
+        raise NotAuthorizedError()
+
+    position = _resolve_cursor_position(db, target.id, cursor)
 
     balance_subquery = (
         select(func.coalesce(func.sum(PointTransaction.amount), 0))
-        .where(PointTransaction.user_id == user.id)
+        .where(PointTransaction.user_id == target.id)
         .scalar_subquery()
     )
     stmt = (
@@ -95,7 +151,7 @@ def get_points(db: Session, user: User, *, cursor: uuid.UUID | None = None) -> P
         .outerjoin(Task, Task.id == TaskExecution.task_id)
         .outerjoin(RewardRedemption, RewardRedemption.id == PointTransaction.redemption_id)
         .outerjoin(Reward, Reward.id == RewardRedemption.reward_id)
-        .where(PointTransaction.user_id == user.id)
+        .where(PointTransaction.user_id == target.id)
     )
     if position is not None:
         stmt = stmt.where(tuple_(PointTransaction.created_at, PointTransaction.id) < position)
@@ -110,7 +166,7 @@ def get_points(db: Session, user: User, *, cursor: uuid.UUID | None = None) -> P
         # genuinely empty or this cursor is past the last page.
         balance = db.scalar(
             select(func.coalesce(func.sum(PointTransaction.amount), 0)).where(
-                PointTransaction.user_id == user.id
+                PointTransaction.user_id == target.id
             )
         )
         assert balance is not None  # COALESCE guarantees a non-null row
@@ -123,7 +179,7 @@ def get_points(db: Session, user: User, *, cursor: uuid.UUID | None = None) -> P
     transactions = [
         PointHistoryItem(
             amount=transaction.amount,
-            description=task_title if task_title is not None else reward_name,
+            description=_describe_transaction(transaction, task_title, reward_name),
             created_at=transaction.created_at,
         )
         for transaction, task_title, reward_name, _ in page_rows
@@ -131,3 +187,72 @@ def get_points(db: Session, user: User, *, cursor: uuid.UUID | None = None) -> P
     next_cursor = page_rows[-1][0].id if has_next_page else None
 
     return PointsView(balance=balance, transactions=transactions, next_cursor=next_cursor)
+
+
+def _describe_transaction(
+    transaction: PointTransaction, task_title: str | None, reward_name: str | None
+) -> str:
+    """Human-readable source, never the raw `PointTransactionReason`
+    (Issue #27): the Task title for a completion, the Reward name for a
+    redemption, and -- new in Issue #31 -- the Adult-provided description
+    for a manual adjustment, which has neither join match.
+    """
+    if task_title is not None:
+        return task_title
+    if reward_name is not None:
+        return reward_name
+    return transaction.description or _MANUAL_ADJUSTMENT_FALLBACK_TEXT
+
+
+def adjust_points(
+    db: Session, actor: User, target_user: User, *, amount: int, description: str
+) -> tuple[PointTransaction, int]:
+    """Manually adds or removes Points for a Child (Issue #31) -- an
+    ordinary immutable `PointTransaction` with `reason=MANUAL_ADJUSTMENT`,
+    never a mutable balance field. Adult-only, Child-target-only,
+    Application-layer authorization (not just a Telegram-UI restriction).
+
+    Concurrency mirrors `reward_operations.redeem_reward`'s established
+    pattern exactly: locks the target User row for the duration of the
+    transaction, so the balance check and the write are atomic with
+    respect to any other adjustment *or* redemption by this same User --
+    coexisting safely with, and not weakening, `redeem_reward`'s existing
+    guarantee (both lock the same User row).
+    """
+    if actor.role != UserRole.ADULT or target_user.role != UserRole.CHILD:
+        raise NotAuthorizedError()
+
+    if amount == 0:
+        raise InvalidAdjustmentError("Amount must not be zero.")
+
+    normalized_description = description.strip()
+    if not normalized_description:
+        raise InvalidAdjustmentError("Please enter a description.")
+
+    # A plain SELECT ... FOR UPDATE (not Session.get, which may
+    # short-circuit via the identity map) guarantees a real round-trip that
+    # acquires the row lock.
+    db.execute(select(User).where(User.id == target_user.id).with_for_update()).scalar_one()
+
+    balance = db.scalar(
+        select(func.coalesce(func.sum(PointTransaction.amount), 0)).where(
+            PointTransaction.user_id == target_user.id
+        )
+    )
+    assert balance is not None  # COALESCE guarantees a non-null row
+
+    new_balance = balance + amount
+    if new_balance < 0:
+        raise InsufficientBalanceError()
+
+    transaction = PointTransaction(
+        user_id=target_user.id,
+        amount=amount,
+        reason=PointTransactionReason.MANUAL_ADJUSTMENT,
+        description=normalized_description,
+    )
+    db.add(transaction)
+    db.commit()
+    db.refresh(transaction)
+
+    return transaction, new_balance

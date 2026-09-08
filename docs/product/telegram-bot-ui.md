@@ -79,7 +79,7 @@ Home
 Tasks
 Users
 Rewards
-Points       — Adult view not yet implemented in Telegram
+Points
 ```
 
 ### Home
@@ -207,9 +207,46 @@ Changing a Reward's cost only affects *future* redemptions — every
 existing `RewardRedemption`'s recorded cost is a permanent historical
 snapshot and is never rewritten.
 
-## Out of scope (tracked, not yet built)
+### Points (Adult)
 
-- Adult Points view, and manual point adjustments.
+A management surface over every Child's Point ledger — distinct from
+Child Points, which is a self-service balance/history view. Any Adult may
+view or adjust any Child's Points; there is no per-Adult ownership in
+Telegram, and there is still no permanent Adult↔Child relationship
+anywhere in the product.
+
+The Points list shows only Children, each with their current balance —
+Adults never appear here, since there is nothing to manage about an
+Adult's own Points from this screen.
+
+Opening a Child shows their balance and recent transaction history,
+newest first, paginated ("Older" loads more) — the same shape as the
+Child's own Points screen, just for someone else's ledger. Each entry
+shows a human-readable source and a signed amount, exactly like the
+Child's own view; a manual adjustment shows the description the Adult
+gave it at the time.
+
+**Adjust points** offers two directions:
+
+- **+ Add points** — increases the Child's balance;
+- **- Remove points** — decreases it, and can never take the balance
+  below zero; an attempt to remove more than the Child currently has is
+  rejected outright, with no partial adjustment and no transaction
+  created.
+
+Both directions collect the same two things, in order:
+
+1. an amount, as a positive whole number of points (the direction, not
+   the number, decides the sign);
+2. a description — always required, never blank. There is no way to skip
+   it; a manual adjustment with no explanation is never created.
+
+A successful adjustment shows the Child's new balance and returns to
+their Points details, where the new entry is immediately visible in the
+history.
+
+### Out of scope (tracked, not yet built)
+
 - Direct assignment of a Task to a specific Child from Telegram.
 - Task/description editing beyond title and reward points.
 - Task, execution, or redemption history views.

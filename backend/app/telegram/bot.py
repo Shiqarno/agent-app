@@ -13,7 +13,19 @@ from telegram.ext import (
 )
 
 from app.config import settings
-from app.telegram.handlers import adult_rewards, adult_tasks, adult_users
+from app.telegram.handlers import adult_points, adult_rewards, adult_tasks, adult_users
+from app.telegram.handlers.adult_points import (
+    handle_adjust_menu,
+    handle_list_children,
+    handle_older_child_points,
+    handle_open_child_points,
+    handle_points_home,
+    handle_start_add,
+    handle_start_remove,
+)
+from app.telegram.handlers.adult_points import (
+    handle_points_command as handle_points_command_dispatch,
+)
 from app.telegram.handlers.adult_rewards import (
     handle_add_reward,
     handle_open_reward,
@@ -56,10 +68,31 @@ from app.telegram.handlers.confirmations import (
     handle_return_execution,
     handle_view_all_confirmations,
 )
-from app.telegram.handlers.points import handle_older_points, handle_points_command
+from app.telegram.handlers.points import handle_older_points
 from app.telegram.handlers.rewards import handle_get_reward
 from app.telegram.handlers.start import handle_start
 from app.telegram.handlers.tasks import handle_mark_ready, handle_my_tasks_command, handle_take_task
+from app.telegram.keyboards.adult_points import (
+    ADD_CALLBACK_PREFIX as ADULT_POINTS_ADD_CALLBACK_PREFIX,
+)
+from app.telegram.keyboards.adult_points import (
+    ADJUST_CALLBACK_PREFIX as ADULT_POINTS_ADJUST_CALLBACK_PREFIX,
+)
+from app.telegram.keyboards.adult_points import (
+    HOME_CALLBACK_DATA as ADULT_POINTS_HOME_CALLBACK_DATA,
+)
+from app.telegram.keyboards.adult_points import (
+    LIST_CALLBACK_DATA as ADULT_POINTS_LIST_CALLBACK_DATA,
+)
+from app.telegram.keyboards.adult_points import (
+    OLDER_CALLBACK_PREFIX as ADULT_POINTS_OLDER_CALLBACK_PREFIX,
+)
+from app.telegram.keyboards.adult_points import (
+    OPEN_CALLBACK_PREFIX as ADULT_POINTS_OPEN_CALLBACK_PREFIX,
+)
+from app.telegram.keyboards.adult_points import (
+    REMOVE_CALLBACK_PREFIX as ADULT_POINTS_REMOVE_CALLBACK_PREFIX,
+)
 from app.telegram.keyboards.adult_rewards import (
     ADD_CALLBACK_DATA as ADD_REWARD_CALLBACK_DATA,
 )
@@ -120,11 +153,12 @@ BotApplication = Application[Any, Any, Any, Any, Any, Any]
 
 async def _handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Dispatches a free-text message to whichever short-lived input flow
-    (Adult Tasks Create/Edit, Adult Users Add Child) is currently open for
-    this Adult, based on which `context.user_data` flow key is present.
-    PTB only ever runs the first matching handler for a given update within
-    a handler group, so a single generic-text MessageHandler must own this
-    routing rather than registering one per feature.
+    (Adult Tasks Create/Edit, Adult Users Add Child, Adult Rewards
+    Add/Edit, Adult Points Adjust) is currently open for this Adult, based
+    on which `context.user_data` flow key is present. PTB only ever runs
+    the first matching handler for a given update within a handler group,
+    so a single generic-text MessageHandler must own this routing rather
+    than registering one per feature.
     """
     data = context.user_data or {}
     if adult_tasks._FLOW_KEY in data:
@@ -133,6 +167,8 @@ async def _handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await adult_users.handle_user_flow_text(update, context)
     elif adult_rewards._FLOW_KEY in data:
         await adult_rewards.handle_reward_flow_text(update, context)
+    elif adult_points._FLOW_KEY in data:
+        await adult_points.handle_points_flow_text(update, context)
 
 
 async def _on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -180,9 +216,34 @@ def build_application() -> BotApplication:
     application.add_handler(
         CallbackQueryHandler(handle_get_reward, pattern=f"^{REWARD_GET_CALLBACK_PREFIX}")
     )
-    application.add_handler(CommandHandler("points", handle_points_command))
+    application.add_handler(CommandHandler("points", handle_points_command_dispatch))
     application.add_handler(
         CallbackQueryHandler(handle_older_points, pattern=f"^{OLDER_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            handle_open_child_points, pattern=f"^{ADULT_POINTS_OPEN_CALLBACK_PREFIX}"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_list_children, pattern=f"^{ADULT_POINTS_LIST_CALLBACK_DATA}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_points_home, pattern=f"^{ADULT_POINTS_HOME_CALLBACK_DATA}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            handle_older_child_points, pattern=f"^{ADULT_POINTS_OLDER_CALLBACK_PREFIX}"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_adjust_menu, pattern=f"^{ADULT_POINTS_ADJUST_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_start_add, pattern=f"^{ADULT_POINTS_ADD_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_start_remove, pattern=f"^{ADULT_POINTS_REMOVE_CALLBACK_PREFIX}")
     )
     application.add_handler(
         CallbackQueryHandler(handle_open_task, pattern=f"^{ADULT_TASK_OPEN_CALLBACK_PREFIX}")
