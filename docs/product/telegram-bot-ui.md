@@ -172,12 +172,12 @@ currently open for **self-claim** — `is_active`, its own single
 self-claim slot, never whether the Task has any executions at all —
 decides the button's whole shape, not just a word on it:
 
-- an active Task's button shows its name and current reward (💰
-  notation), plain;
-- an inactive Task's button shows *only* its struck-through name, as one
-  visually unbroken line across the whole name — no reward amount at
-  all, since the button represents an unavailable self-claim offer, not
-  a reward-bearing action;
+- an active Task's button shows its name and current reward, plain:
+  `Task name · 💰 reward`;
+- an inactive Task's button shows a `❌` marker followed by its plain
+  name, with no reward amount at all: `❌ Task name` — the reward is
+  intentionally omitted, since the button represents an unavailable
+  self-claim offer, not a reward-bearing action;
 - this reflects `is_active` alone — a Task can be active with a current
   open execution (e.g. directly assigned) and still shows plain with its
   reward, since self-claim availability and execution state are

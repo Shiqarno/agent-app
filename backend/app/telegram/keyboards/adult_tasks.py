@@ -17,44 +17,18 @@ ASSIGN_CALLBACK_PREFIX = "adulttask:assign:"
 ASSIGN_TO_CALLBACK_PREFIX = "adulttask:assignchild:"
 
 
-# Telegram inline keyboard button labels are always plain text -- there is
-# no Markdown/HTML rendering inside a button, unlike message text. A
-# strikethrough Task name (for an inactive Task) is therefore rendered
-# with a Unicode combining long-stroke-overlay character (U+0336) baked
-# directly into the label string, the standard technique for this
-# platform limitation.
-_STRIKETHROUGH_COMBINING_CHAR = "̶"
-
-
-def _strikethrough(text: str) -> str:
-    """Applies the combining mark after every non-space character, so the
-    whole name reads as one visually unbroken strikethrough span rather
-    than character-by-character marks (Issue #36's rendering fix).
-    Deliberately skips spaces: a combining mark has no glyph to attach to
-    over a space, so decorating one there renders as a disconnected dash
-    floating between words -- exactly the artifact that breaks a
-    multi-word name's strikethrough into separate-looking segments at
-    each word boundary. Leaving spaces plain keeps each word's
-    strikethrough continuous while the name overall still reads as fully
-    struck through.
-    """
-    return "".join(
-        char if char.isspace() else f"{char}{_STRIKETHROUGH_COMBINING_CHAR}" for char in text
-    )
-
-
 def _task_button_label(task: Task) -> str:
     """An active Task shows its name and current reward (Issue #35); an
-    inactive one shows only its struck-through name, no reward at all
-    (Issue #37) -- the button represents an unavailable self-claim offer,
-    not a reward-bearing action, so showing a reward on it would be
+    inactive one shows its plain name prefixed with `❌`, no reward at all
+    (Issue #37/#38) -- the button represents an unavailable self-claim
+    offer, not a reward-bearing action, so showing a reward on it would be
     misleading. Driven by `is_active` alone, never by whether a current
     execution exists, matching this Task's own established, execution-
     independent meaning (Issue #32).
     """
     if task.is_active:
         return f"{task.title} · 💰 {task.reward_points}"
-    return _strikethrough(task.title)
+    return f"❌ {task.title}"
 
 
 def tasks_list_keyboard(
