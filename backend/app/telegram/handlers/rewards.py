@@ -10,10 +10,10 @@ from app.reward_operations import (
     InsufficientPointsError,
     RewardNotFoundError,
     get_rewards,
-    redeem_reward,
+    request_reward_redemption,
 )
-from app.telegram.keyboards.rewards import GET_CALLBACK_PREFIX, rewards_keyboard
-from app.telegram.views.rewards import render_redemption_success, render_rewards
+from app.telegram.keyboards.rewards import REQUEST_CALLBACK_PREFIX, rewards_keyboard
+from app.telegram.views.rewards import render_reward_requested, render_rewards
 from app.telegram_identity import resolve_user_by_telegram_id
 
 _NOT_CONNECTED_TEXT = (
@@ -31,27 +31,34 @@ def _rewards_view(telegram_user_id: int) -> tuple[str, InlineKeyboardMarkup | No
         user = resolve_user_by_telegram_id(db, telegram_user_id)
         if user is None:
             return _NOT_CONNECTED_TEXT, None
-        # Rewards redemption is a Child workflow in Telegram (Issue #26
+        # Rewards requesting is a Child workflow in Telegram (Issue #26
         # Authorization) -- a presentation-level choice, not a new
         # Application-layer role rule: app.reward_operations mirrors the
         # existing Web endpoints, which have no role restriction.
         if user.role != UserRole.CHILD:
             return _NOT_A_CHILD_TEXT, None
-        rewards, balance = get_rewards(db, user)
-        return render_rewards(rewards, balance), rewards_keyboard(rewards, balance)
+        rewards, available_balance = get_rewards(db, user)
+        return (
+            render_rewards(rewards, available_balance),
+            rewards_keyboard(rewards, available_balance),
+        )
     finally:
         db.close()
 
 
-def _redeem(
+def _request(
     telegram_user_id: int, raw_reward_id: str
 ) -> tuple[str, bool, str, InlineKeyboardMarkup | None]:
     """Returns (toast text, whether it was a success, refreshed Rewards
-    message text, refreshed keyboard). A stale/invalid Get is handled the
-    same way as any other rejection (Issue #26 "Stale Telegram
+    message text, refreshed keyboard). A stale/invalid request is handled
+    the same way as any other rejection (Issue #26 "Stale Telegram
     interaction"): the Application operation is called anyway, its
     rejection becomes a friendly toast, and the view underneath is
     refreshed to current state rather than left stale.
+
+    Issue #39: this only *requests* the Reward now (PENDING_CONFIRMATION,
+    cost frozen) -- it never redeems it. An Adult confirms or rejects it
+    from /confirmations (see app/telegram/handlers/confirmations.py).
     """
     db = SessionLocal()
     try:
@@ -64,27 +71,32 @@ def _redeem(
         success = False
         try:
             reward_id = uuid.UUID(raw_reward_id)
-            _, reward, remaining_balance = redeem_reward(db, user, reward_id)
-            toast = render_redemption_success(reward, remaining_balance)
+            _, reward, available_balance = request_reward_redemption(db, user, reward_id)
+            toast = render_reward_requested(reward, available_balance)
             success = True
         except (ValueError, RewardNotFoundError):
             toast = _REWARD_UNAVAILABLE_TEXT
         except InsufficientPointsError:
             toast = _INSUFFICIENT_POINTS_TEXT
 
-        rewards, balance = get_rewards(db, user)
-        return toast, success, render_rewards(rewards, balance), rewards_keyboard(rewards, balance)
+        rewards, available_balance = get_rewards(db, user)
+        return (
+            toast,
+            success,
+            render_rewards(rewards, available_balance),
+            rewards_keyboard(rewards, available_balance),
+        )
     finally:
         db.close()
 
 
-async def handle_get_reward(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_request_reward(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if query is None or update.effective_user is None or query.data is None:
         return
-    raw_reward_id = query.data.removeprefix(GET_CALLBACK_PREFIX)
+    raw_reward_id = query.data.removeprefix(REQUEST_CALLBACK_PREFIX)
     toast, success, text, keyboard = await asyncio.to_thread(
-        _redeem, update.effective_user.id, raw_reward_id
+        _request, update.effective_user.id, raw_reward_id
     )
     await query.answer(text=toast, show_alert=success)
     if query.message is not None:

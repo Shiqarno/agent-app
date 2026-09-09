@@ -188,6 +188,19 @@ class PointTransaction(Base):
         UniqueConstraint(
             "task_execution_id", "reason", name="uq_point_transactions_task_execution_id_reason"
         ),
+        # Same concurrency backstop as the constraint above, for the
+        # symmetric case (Issue #39): confirming a Reward request holds a
+        # row lock on the RewardRedemption for its status check, exactly
+        # like confirming a TaskExecution does, but this constraint is the
+        # database-level defense-in-depth against a duplicate
+        # REWARD_REDEEMED row for the same redemption, the way the
+        # task_execution_id constraint already is for TASK_COMPLETED.
+        # NULL task_execution_id/redemption_id rows never collide with each
+        # other under either constraint (Postgres treats each NULL as
+        # distinct), so this coexists safely with all existing rows.
+        UniqueConstraint(
+            "redemption_id", "reason", name="uq_point_transactions_redemption_id_reason"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -226,7 +239,35 @@ class Reward(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class RewardRedemptionStatus(StrEnum):
+    PENDING_CONFIRMATION = "PENDING_CONFIRMATION"
+    CONFIRMED = "CONFIRMED"
+    REJECTED = "REJECTED"
+
+
 class RewardRedemption(Base):
+    """A Child's request for a Reward (Issue #39). `status` distinguishes a
+    still-pending request from a terminal one:
+
+    - `PENDING_CONFIRMATION` -- requested, `cost_points` frozen against the
+      requester's available balance, no ledger entry yet.
+    - `CONFIRMED` -- an Adult approved it; exactly one `REWARD_REDEEMED`
+      `PointTransaction` exists for this redemption's `id`, and the freeze
+      is released (it no longer counts toward "active frozen" -- the cost
+      is now a real ledger deduction instead).
+    - `REJECTED` -- an Adult declined it; the freeze is released and no
+      `PointTransaction` is ever created for it.
+
+    The direct-redemption path (`reward_operations.redeem_reward`, used by
+    the Web `/redeem` endpoint and left otherwise unchanged by Issue #39)
+    creates a redemption already `CONFIRMED`, atomically with its
+    `PointTransaction` -- there is no pending phase for that path, matching
+    its pre-existing, unchanged contract. Only the Telegram request flow
+    (`request_reward_redemption` / `confirm_reward_redemption` /
+    `reject_reward_redemption`) ever creates or transitions a
+    `PENDING_CONFIRMATION` row.
+    """
+
     __tablename__ = "reward_redemptions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -237,6 +278,11 @@ class RewardRedemption(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
     cost_points: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[RewardRedemptionStatus] = mapped_column(
+        SAEnum(RewardRedemptionStatus, native_enum=False, length=32, values_callable=_enum_values),
+        nullable=False,
+        default=RewardRedemptionStatus.CONFIRMED,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

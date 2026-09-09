@@ -67,13 +67,16 @@ from app.telegram.handlers.adult_users import (
 )
 from app.telegram.handlers.confirmations import (
     handle_confirm_execution,
+    handle_confirm_reward,
     handle_confirmations_command,
     handle_open_confirmation,
+    handle_open_reward_confirmation,
     handle_return_execution,
+    handle_return_reward,
     handle_view_all_confirmations,
 )
 from app.telegram.handlers.points import handle_older_points
-from app.telegram.handlers.rewards import handle_get_reward
+from app.telegram.handlers.rewards import handle_request_reward
 from app.telegram.handlers.start import handle_start
 from app.telegram.handlers.tasks import (
     handle_mark_ready,
@@ -134,14 +137,19 @@ from app.telegram.keyboards.adult_tasks import (
 )
 from app.telegram.keyboards.confirmations import (
     CONFIRM_CALLBACK_PREFIX,
+    CONFIRM_REWARD_CALLBACK_PREFIX,
     RETURN_CALLBACK_PREFIX,
+    RETURN_REWARD_CALLBACK_PREFIX,
     VIEW_ALL_CALLBACK_DATA,
 )
 from app.telegram.keyboards.confirmations import (
     OPEN_CALLBACK_PREFIX as CONFIRMATION_OPEN_CALLBACK_PREFIX,
 )
+from app.telegram.keyboards.confirmations import (
+    OPEN_REWARD_CALLBACK_PREFIX as CONFIRMATION_OPEN_REWARD_CALLBACK_PREFIX,
+)
 from app.telegram.keyboards.points import OLDER_CALLBACK_PREFIX
-from app.telegram.keyboards.rewards import GET_CALLBACK_PREFIX as REWARD_GET_CALLBACK_PREFIX
+from app.telegram.keyboards.rewards import REQUEST_CALLBACK_PREFIX as REWARD_REQUEST_CALLBACK_PREFIX
 from app.telegram.keyboards.tasks import (
     EXECUTION_DONE_CALLBACK_PREFIX,
     EXECUTION_START_CALLBACK_PREFIX,
@@ -254,9 +262,20 @@ def build_application() -> BotApplication:
             handle_open_confirmation, pattern=f"^{CONFIRMATION_OPEN_CALLBACK_PREFIX}"
         )
     )
+    application.add_handler(
+        CallbackQueryHandler(handle_confirm_reward, pattern=f"^{CONFIRM_REWARD_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_return_reward, pattern=f"^{RETURN_REWARD_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            handle_open_reward_confirmation, pattern=f"^{CONFIRMATION_OPEN_REWARD_CALLBACK_PREFIX}"
+        )
+    )
     application.add_handler(CommandHandler("rewards", handle_rewards_command_dispatch))
     application.add_handler(
-        CallbackQueryHandler(handle_get_reward, pattern=f"^{REWARD_GET_CALLBACK_PREFIX}")
+        CallbackQueryHandler(handle_request_reward, pattern=f"^{REWARD_REQUEST_CALLBACK_PREFIX}")
     )
     application.add_handler(CommandHandler("points", handle_points_command_dispatch))
     application.add_handler(

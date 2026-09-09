@@ -57,13 +57,16 @@ from app.telegram.handlers.adult_users import (
 )
 from app.telegram.handlers.confirmations import (
     handle_confirm_execution,
+    handle_confirm_reward,
     handle_confirmations_command,
     handle_open_confirmation,
+    handle_open_reward_confirmation,
     handle_return_execution,
+    handle_return_reward,
     handle_view_all_confirmations,
 )
 from app.telegram.handlers.points import handle_older_points
-from app.telegram.handlers.rewards import handle_get_reward
+from app.telegram.handlers.rewards import handle_request_reward
 from app.telegram.handlers.start import handle_start
 from app.telegram.handlers.tasks import (
     handle_mark_ready,
@@ -98,8 +101,11 @@ def test_build_application_registers_every_handler(fake_token: None) -> None:
     assert handle_return_execution in callbacks
     assert handle_view_all_confirmations in callbacks
     assert handle_open_confirmation in callbacks
+    assert handle_confirm_reward in callbacks
+    assert handle_return_reward in callbacks
+    assert handle_open_reward_confirmation in callbacks
     assert handle_rewards_command_dispatch in callbacks
-    assert handle_get_reward in callbacks
+    assert handle_request_reward in callbacks
     assert handle_points_command_dispatch in callbacks
     assert handle_older_points in callbacks
     assert handle_open_child_points in callbacks

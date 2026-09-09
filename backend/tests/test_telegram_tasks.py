@@ -154,7 +154,8 @@ def test_tasks_view_renders_available_tasks(real: RealData) -> None:
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 1
     assert keyboard.inline_keyboard[0][0].callback_data == f"{TASKS_CALLBACK_PREFIX}{task.id}"
-    assert keyboard.inline_keyboard[0][0].text == "Clean room · 💰 20"
+    # Issue #39: reward leads the label on Child /tasks specifically.
+    assert keyboard.inline_keyboard[0][0].text == "20💰 · Clean room"
 
 
 def test_tasks_view_renders_multiple_tasks_as_separate_buttons(real: RealData) -> None:
@@ -171,7 +172,7 @@ def test_tasks_view_renders_multiple_tasks_as_separate_buttons(real: RealData) -
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 2
     labels = {row[0].text for row in keyboard.inline_keyboard}
-    assert labels == {"Wash dishes · 💰 10", "Walk the dog · 💰 15"}
+    assert labels == {"10💰 · Wash dishes", "15💰 · Walk the dog"}
     callback_datas = {row[0].callback_data for row in keyboard.inline_keyboard}
     assert callback_datas == {
         f"{TASKS_CALLBACK_PREFIX}{task_a.id}",

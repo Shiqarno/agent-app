@@ -11,6 +11,7 @@ from app.models import (
     PointTransactionReason,
     Reward,
     RewardRedemption,
+    RewardRedemptionStatus,
     Task,
     TaskExecution,
     TaskExecutionStatus,
@@ -24,10 +25,10 @@ from app.telegram.handlers.rewards import (
     _NOT_A_CHILD_TEXT,
     _NOT_CONNECTED_TEXT,
     _REWARD_UNAVAILABLE_TEXT,
-    _redeem,
+    _request,
     _rewards_view,
 )
-from app.telegram.keyboards.rewards import GET_CALLBACK_PREFIX
+from app.telegram.keyboards.rewards import REQUEST_CALLBACK_PREFIX
 from app.telegram.views.rewards import AVAILABLE_REWARDS_HEADING, NO_REWARDS_TEXT_PREFIX
 from app.telegram_identity import activate_telegram_identity
 
@@ -160,7 +161,7 @@ def test_child_can_render_rewards(real: RealData) -> None:
     assert "Ice cream" not in text
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 1
-    assert keyboard.inline_keyboard[0][0].callback_data == f"{GET_CALLBACK_PREFIX}{reward.id}"
+    assert keyboard.inline_keyboard[0][0].callback_data == f"{REQUEST_CALLBACK_PREFIX}{reward.id}"
     assert keyboard.inline_keyboard[0][0].text == "Ice cream · 💰 100"
 
 
@@ -175,6 +176,31 @@ def test_unaffordable_reward_gets_no_button(real: RealData) -> None:
 
     assert "New game" in text
     assert "Not enough points" in text
+    assert keyboard is not None
+    assert len(keyboard.inline_keyboard) == 0
+
+
+def test_a_pending_request_reduces_available_balance_and_affordability(real: RealData) -> None:
+    """Issue #39: affordability and the displayed balance both reflect
+    *available* balance (ledger minus this Child's own active pending
+    requests), not raw ledger balance.
+    """
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(child, telegram_id)
+    real.grant_points(child, 100)
+    reward_a = real.make_reward(child, name="Reward A", cost_points=70)
+    real.make_reward(child, name="Reward B", cost_points=40)
+
+    _request(telegram_id, str(reward_a.id))
+    text, keyboard = _rewards_view(telegram_id)
+
+    # Available = 100 - 70 = 30, so neither Reward A (already requested,
+    # still costs 70) nor Reward B (40) is affordable any more.
+    assert text.startswith(f"{AVAILABLE_REWARDS_HEADING}\nYou have 30 points")
+    assert "Reward A" in text
+    assert "Reward B" in text
+    assert text.count("Not enough points") == 2
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 0
 
@@ -211,40 +237,52 @@ def test_rewards_view_for_unconnected_account() -> None:
 
 
 # =========================================================================================
-# Get / redemption
+# Request
 # =========================================================================================
 
 
-def test_get_redeems_and_shows_remaining_balance(real: RealData) -> None:
+def test_request_creates_a_pending_request_not_an_immediate_redemption(real: RealData) -> None:
+    """Issue #39: tapping a Reward now only requests it -- no
+    REWARD_REDEEMED transaction, no points actually deducted, until an
+    Adult confirms it.
+    """
     child = real.make_user(CHILD)
     telegram_id = _next_telegram_id()
     real.connect(child, telegram_id)
     real.grant_points(child, 320)
     reward = real.make_reward(child, name="Ice cream", cost_points=100)
 
-    toast, success, text, keyboard = _redeem(telegram_id, str(reward.id))
+    toast, success, text, keyboard = _request(telegram_id, str(reward.id))
 
     assert success is True
     assert "Ice cream" in toast
+    assert "requested" in toast.lower()
     assert "220" in toast
     real.session.expire_all()
     redemption = (
         real.session.query(RewardRedemption).filter_by(reward_id=reward.id, user_id=child.id).one()
     )
     assert redemption.cost_points == 100
-    # Refreshed view reflects the new balance.
+    assert redemption.status == RewardRedemptionStatus.PENDING_CONFIRMATION
+    assert (
+        real.session.query(PointTransaction)
+        .filter_by(user_id=child.id, reason=PointTransactionReason.REWARD_REDEEMED)
+        .count()
+        == 0
+    )
+    # Refreshed view reflects the frozen available balance.
     assert "220" in text
     assert keyboard is not None
 
 
-def test_get_with_insufficient_points_is_a_friendly_error(real: RealData) -> None:
+def test_request_with_insufficient_available_points_is_a_friendly_error(real: RealData) -> None:
     child = real.make_user(CHILD)
     telegram_id = _next_telegram_id()
     real.connect(child, telegram_id)
     real.grant_points(child, 50)
     reward = real.make_reward(child, name="New game", cost_points=500)
 
-    toast, success, text, keyboard = _redeem(telegram_id, str(reward.id))
+    toast, success, text, keyboard = _request(telegram_id, str(reward.id))
 
     assert success is False
     assert toast == _INSUFFICIENT_POINTS_TEXT
@@ -258,40 +296,40 @@ def test_get_with_insufficient_points_is_a_friendly_error(real: RealData) -> Non
     assert keyboard is not None
 
 
-def test_get_on_a_stale_reward_id_is_a_friendly_error(real: RealData) -> None:
+def test_request_on_a_stale_reward_id_is_a_friendly_error(real: RealData) -> None:
     child = real.make_user(CHILD)
     telegram_id = _next_telegram_id()
     real.connect(child, telegram_id)
     real.grant_points(child, 100)
 
-    toast, success, _, keyboard = _redeem(telegram_id, str(uuid.uuid4()))
+    toast, success, _, keyboard = _request(telegram_id, str(uuid.uuid4()))
 
     assert success is False
     assert toast == _REWARD_UNAVAILABLE_TEXT
     assert keyboard is not None
 
 
-def test_get_with_a_bogus_reward_id_does_not_crash(real: RealData) -> None:
+def test_request_with_a_bogus_reward_id_does_not_crash(real: RealData) -> None:
     child = real.make_user(CHILD)
     telegram_id = _next_telegram_id()
     real.connect(child, telegram_id)
 
-    toast, success, _, keyboard = _redeem(telegram_id, "not-a-uuid")
+    toast, success, _, keyboard = _request(telegram_id, "not-a-uuid")
 
     assert success is False
     assert toast == _REWARD_UNAVAILABLE_TEXT
     assert keyboard is not None
 
 
-def test_get_for_unconnected_account() -> None:
-    toast, success, _, keyboard = _redeem(_next_telegram_id(), str(uuid.uuid4()))
+def test_request_for_unconnected_account() -> None:
+    toast, success, _, keyboard = _request(_next_telegram_id(), str(uuid.uuid4()))
 
     assert success is False
     assert toast == _NOT_CONNECTED_TEXT
     assert keyboard is None
 
 
-def test_adult_cannot_redeem_via_a_crafted_callback(real: RealData) -> None:
+def test_adult_cannot_request_via_a_crafted_callback(real: RealData) -> None:
     """Issue #26 Authorization: the Telegram gate is presentation-only, but
     a manually crafted callback must still be rejected -- here the handler
     itself gates by role before ever calling the Application layer.
@@ -302,7 +340,7 @@ def test_adult_cannot_redeem_via_a_crafted_callback(real: RealData) -> None:
     real.grant_points(adult, 100)
     reward = real.make_reward(adult, cost_points=100)
 
-    toast, success, _, _ = _redeem(telegram_id, str(reward.id))
+    toast, success, _, _ = _request(telegram_id, str(reward.id))
 
     assert success is False
     assert toast == _NOT_A_CHILD_TEXT
@@ -315,9 +353,9 @@ def test_adult_cannot_redeem_via_a_crafted_callback(real: RealData) -> None:
     )
 
 
-def test_get_uses_the_current_reward_cost_not_a_stale_one(real: RealData) -> None:
+def test_request_uses_the_current_reward_cost_not_a_stale_one(real: RealData) -> None:
     """Issue #26 "Stale reward cost": the callback only identifies the
-    reward; the redeemed cost must come from current state, not whatever
+    reward; the frozen cost must come from current state, not whatever
     was true when the button was rendered.
     """
     child = real.make_user(CHILD)
@@ -326,11 +364,11 @@ def test_get_uses_the_current_reward_cost_not_a_stale_one(real: RealData) -> Non
     real.grant_points(child, 100)
     reward = real.make_reward(child, cost_points=100)
     # Simulate the cost changing after the Rewards screen was rendered but
-    # before the (still-valid-looking) Get callback is handled.
+    # before the (still-valid-looking) Request callback is handled.
     reward.cost_points = 150
     real.session.commit()
 
-    toast, success, _, _ = _redeem(telegram_id, str(reward.id))
+    toast, success, _, _ = _request(telegram_id, str(reward.id))
 
     assert success is False
     assert toast == _INSUFFICIENT_POINTS_TEXT

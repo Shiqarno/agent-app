@@ -12,6 +12,10 @@ def available_tasks_keyboard(tasks: list[Task]) -> InlineKeyboardMarkup:
     (Issue #35) so the Child can see it without opening Task Details --
     the Task is represented only by its button (Issue #36), so no `Take`
     verb or separate name text; tapping it is self-evidently the action.
+    The reward leads the label (Issue #39: `<reward>💰 · <name>`) rather
+    than trailing it, so the Child scans amounts first -- deliberately
+    different from every other Task/Reward button in the app, which keep
+    name-first (`Name · 💰 amount`); this is scoped to Child `/tasks` only.
     The callback payload only identifies the Task (Issue #24 section 15)
     -- it is never treated as authorization, the Application layer
     re-verifies everything when the callback is handled.
@@ -19,7 +23,7 @@ def available_tasks_keyboard(tasks: list[Task]) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(
-                f"{task.title} · 💰 {task.reward_points}",
+                f"{task.reward_points}💰 · {task.title}",
                 callback_data=f"{TASKS_CALLBACK_PREFIX}{task.id}",
             )
         ]

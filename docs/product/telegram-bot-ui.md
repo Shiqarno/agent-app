@@ -79,7 +79,10 @@ Headed "Доступные задачи". The list of active Task definitions th
 can currently self-claim — no description, no history. A Task's name
 appears nowhere but its own button, alongside its reward (💰 notation) —
 no verb on the button either, since tapping it is self-evidently the
-action, so nothing is ever shown twice.
+action, so nothing is ever shown twice. The reward leads the label here
+specifically — `<reward>💰 · <Task name>` — the one place in the app
+where amount comes before name; every other Task/Reward button (My
+Tasks, Adult Tasks, Rewards) keeps name first.
 
 ### Take
 
@@ -115,16 +118,33 @@ confirms.
 
 ### Rewards
 
-Headed "Доступные награды", followed by the Child's current balance ("You
-have N points" — this particular banner is explanatory text and uses the
-spelled-out word, unlike the Points screens' 💰 balance). The global
-reward catalog (not scoped by who created it): an affordable
+Headed "Доступные награды", followed by the Child's current *available*
+balance ("You have N points" — this particular banner is explanatory text
+and uses the spelled-out word, unlike the Points screens' 💰 balance). The
+global reward catalog (not scoped by who created it): an affordable
 Reward is fully represented by its own button (name + cost, 💰 notation,
-no verb) — tapping it redeems immediately at the reward's *current* cost,
-never a cost cached from when the screen was rendered. A Reward the Child
-can't currently afford gets no button (nothing to tap), so it's shown as
-text instead — name, cost, and "Not enough points" — the only case a
-Reward's name appears anywhere but a button.
+no verb) — tapping it **requests** the Reward at its *current* cost, never
+a cost cached from when the screen was rendered. A Reward the Child can't
+currently afford gets no button (nothing to tap), so it's shown as text
+instead — name, cost, and "Not enough points" — the only case a Reward's
+name appears anywhere but a button.
+
+Tapping a Reward does not hand it out immediately: it creates a pending
+request, freezes the Reward's cost against the Child's balance, and waits
+for an Adult to confirm or decline it via Confirmation (below). The Child
+gets an on-screen confirmation that the request was sent and the cost
+reserved; the Reward itself, and the actual points deduction, only happen
+once an Adult confirms it.
+
+**Available balance** — what the banner shows, and what decides which
+Rewards get a button — is the Child's ledger balance minus the total cost
+of their own currently-pending requests, not the raw ledger balance: a
+Reward whose cost the Child could only afford by ignoring a request
+they're still waiting on shows as unaffordable, exactly like it would if
+the points were already spent. Once an Adult confirms or declines a
+pending request, the corresponding amount is no longer frozen — either
+because it's now a real, permanent deduction (confirmed) or because the
+freeze was released with nothing deducted (declined).
 
 ### Points
 
@@ -153,24 +173,38 @@ the Adult opened it.
 
 ### Confirmation
 
-A queue of `TaskExecution`s currently `AWAITING_CONFIRMATION` — not a
-separate domain entity, just that status. Any connected Adult may act on
-any awaiting execution; there is no Adult↔Child ownership. A two-step
-flow:
+One queue covering two things an Adult can act on: `TaskExecution`s
+currently `AWAITING_CONFIRMATION`, and Reward requests currently pending
+(see Child Rewards, above) — not two separate screens, one shared list
+and the same two-step shape for both. Any connected Adult may act on any
+pending item, of either kind; there is no Adult↔Child ownership. A
+two-step flow:
 
-1. **The list** — one button per awaiting execution, showing the Task's
-   name and the Child's name (needed to tell apart two Children awaiting
-   confirmation on the same Task); nothing is duplicated as separate text
-   above it.
-2. **The selected execution** — tapping a Task shows its name, the Child,
-   and the reward snapshot (💰 notation), together with `Confirm` (→
-   `COMPLETED`, exactly one `TASK_COMPLETED` point transaction) and
-   `Return` (→ back to `IN_PROGRESS`, no points, sending the work back to
-   the Child). A `← Back` action returns to the list without acting. Both
-   `Confirm` and `Return` act immediately, no further confirmation
-   dialog, and afterward return to the (now refreshed) list.
+1. **The list** — one button per pending item (Task execution or Reward
+   request), oldest first regardless of kind, showing the Task's or
+   Reward's name and the Child's name (needed to tell apart two Children
+   waiting on the same Task or Reward); nothing is duplicated as separate
+   text above it.
+2. **The selected item** — tapping one shows its name, the Child, and the
+   reward/cost snapshot, together with `Confirm` and `Return`. What each
+   does depends on the kind of item:
+   - a Task execution: `Confirm` → `COMPLETED`, exactly one
+     `TASK_COMPLETED` point transaction; `Return` → back to
+     `IN_PROGRESS`, no points, sending the work back to the Child;
+   - a Reward request: `Confirm` → the request is approved, the frozen
+     cost becomes a real, permanent deduction (exactly one
+     `REWARD_REDEEMED` point transaction), and the Reward is now
+     considered handed out; `Return` → the request is declined, the
+     frozen cost is released with no deduction at all, and the Reward is
+     never handed out.
 
-Selecting one execution never exposes or affects another's controls.
+   A `← Back` action returns to the list without acting. Both `Confirm`
+   and `Return` act immediately, no further confirmation dialog, and
+   afterward return to the (now refreshed) list. Acting on an item that's
+   already been resolved (by this Adult or another one, from a different
+   session) is refused with a friendly message rather than acting twice.
+
+Selecting one item never exposes or affects another's controls.
 
 ### Tasks (Adult)
 
@@ -297,7 +331,7 @@ time.
 ### Rewards (Adult)
 
 Manages the global Reward catalog shown to every Child — distinct from
-Child Rewards, which is about redeeming, not defining. Any Adult may
+Child Rewards, which is about requesting, not defining. Any Adult may
 manage any Reward; there is no per-Adult ownership in Telegram (who
 originally created a Reward is recorded for audit purposes only).
 
@@ -371,6 +405,9 @@ history.
 - Task, execution, or redemption history views (including an assignment
   history separate from the current-execution summary).
 - Reward deletion or an activate/deactivate lifecycle for Rewards.
+- A dedicated Child screen listing their own past/pending Reward
+  requests — the on-screen confirmation at request time is the only
+  place that state is currently surfaced to the Child.
 - Adult-side User editing (name, avatar) or deletion.
 - Reconnecting/replacing a Telegram account already linked to a User, or
   disconnecting one — the existing activation mechanism's reconnect rules

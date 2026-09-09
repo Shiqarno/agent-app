@@ -8,6 +8,9 @@ from app.activation import create_activation as insert_activation
 from app.db import SessionLocal
 from app.models import (
     PointTransaction,
+    PointTransactionReason,
+    Reward,
+    RewardRedemption,
     Task,
     TaskExecution,
     TaskExecutionStatus,
@@ -16,19 +19,27 @@ from app.models import (
     UserActivation,
     UserRole,
 )
+from app.reward_operations import request_reward_redemption
 from app.telegram.handlers.confirmations import (
     _EXECUTION_UNCONFIRMABLE_TEXT,
     _NOT_AN_ADULT_TEXT,
     _NOT_CONNECTED_TEXT,
+    _REWARD_REQUEST_UNACTIONABLE_TEXT,
     _confirm,
+    _confirm_reward,
     _detail_view,
     _list_view,
+    _reject_reward,
     _return_to_work,
+    _reward_detail_view,
 )
 from app.telegram.keyboards.confirmations import (
     CONFIRM_CALLBACK_PREFIX,
+    CONFIRM_REWARD_CALLBACK_PREFIX,
     OPEN_CALLBACK_PREFIX,
+    OPEN_REWARD_CALLBACK_PREFIX,
     RETURN_CALLBACK_PREFIX,
+    RETURN_REWARD_CALLBACK_PREFIX,
     VIEW_ALL_CALLBACK_DATA,
 )
 from app.telegram.views.confirmations import CONFIRMATIONS_HEADING, NO_CONFIRMATIONS_TEXT
@@ -53,6 +64,7 @@ class RealData:
         self.session = session
         self.user_ids: list[uuid.UUID] = []
         self.task_ids: list[uuid.UUID] = []
+        self.reward_ids: list[uuid.UUID] = []
 
     def make_user(self, role: UserRole, name: str = "Test User") -> User:
         user = User(name=name, role=role)
@@ -91,6 +103,52 @@ class RealData:
         self.session.refresh(execution)
         return execution
 
+    def make_reward(
+        self, creator: User, *, name: str = "Ice cream", cost_points: int = 30
+    ) -> Reward:
+        reward = Reward(name=name, cost_points=cost_points, created_by=creator.id)
+        self.session.add(reward)
+        self.session.commit()
+        self.session.refresh(reward)
+        self.reward_ids.append(reward.id)
+        return reward
+
+    def grant_points(self, user: User, amount: int) -> None:
+        task = Task(title="Balance seed", reward_points=amount, created_by=user.id)
+        self.session.add(task)
+        self.session.commit()
+        self.session.refresh(task)
+        self.task_ids.append(task.id)
+
+        execution = TaskExecution(
+            task_id=task.id,
+            user_id=user.id,
+            status=TaskExecutionStatus.COMPLETED,
+            reward_points=amount,
+        )
+        self.session.add(execution)
+        self.session.commit()
+        self.session.refresh(execution)
+
+        self.session.add(
+            PointTransaction(
+                user_id=user.id,
+                task_execution_id=execution.id,
+                amount=amount,
+                reason=PointTransactionReason.TASK_COMPLETED,
+            )
+        )
+        self.session.commit()
+
+    def request_reward(self, child: User, reward: Reward) -> RewardRedemption:
+        """Creates a pending Reward request directly through the
+        Application layer (Issue #39) -- same rationale as make_execution
+        going straight to a TaskExecution row: setup speed, not a second
+        implementation of the request flow.
+        """
+        redemption, _, _ = request_reward_redemption(self.session, child, reward.id)
+        return redemption
+
     def connect(self, user: User, telegram_id: int) -> None:
         token = insert_activation(self.session, user.id)
         self.session.commit()
@@ -106,16 +164,22 @@ def real(db_session: Session) -> Iterator[RealData]:
         yield data
     finally:
         session.rollback()
-        if data.task_ids:
+        if data.user_ids:
             session.query(PointTransaction).filter(
-                PointTransaction.task_execution_id.in_(
-                    session.query(TaskExecution.id).filter(TaskExecution.task_id.in_(data.task_ids))
-                )
+                PointTransaction.user_id.in_(data.user_ids)
             ).delete(synchronize_session=False)
+            session.query(RewardRedemption).filter(
+                RewardRedemption.user_id.in_(data.user_ids)
+            ).delete(synchronize_session=False)
+        if data.task_ids:
             session.query(TaskExecution).filter(TaskExecution.task_id.in_(data.task_ids)).delete(
                 synchronize_session=False
             )
             session.query(Task).filter(Task.id.in_(data.task_ids)).delete(synchronize_session=False)
+        if data.reward_ids:
+            session.query(Reward).filter(Reward.id.in_(data.reward_ids)).delete(
+                synchronize_session=False
+            )
         if data.user_ids:
             session.query(TelegramIdentity).filter(
                 TelegramIdentity.user_id.in_(data.user_ids)
@@ -523,3 +587,209 @@ def test_stale_return_is_a_friendly_error(real: RealData) -> None:
 
     assert toast == _EXECUTION_UNCONFIRMABLE_TEXT
     assert keyboard is not None
+
+
+# =========================================================================================
+# Issue #39: Reward requests share the same /confirmations queue
+# =========================================================================================
+
+
+def test_pending_reward_request_appears_in_the_confirmation_list(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD, "Vova")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    real.grant_points(child, 100)
+    reward = real.make_reward(adult, name="Ice cream", cost_points=30)
+    redemption = real.request_reward(child, reward)
+
+    text, keyboard = _list_view(telegram_id)
+
+    assert text == CONFIRMATIONS_HEADING
+    assert keyboard is not None
+    assert len(keyboard.inline_keyboard) == 1
+    assert keyboard.inline_keyboard[0][0].text == "Ice cream · Vova"
+    assert (
+        keyboard.inline_keyboard[0][0].callback_data
+        == f"{OPEN_REWARD_CALLBACK_PREFIX}{redemption.id}"
+    )
+
+
+def test_mixed_list_shows_both_task_and_reward_items(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD, "Vova")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult, title="Clean room", reward_points=20)
+    execution = real.make_execution(task, child, TaskExecutionStatus.AWAITING_CONFIRMATION)
+    real.grant_points(child, 100)
+    reward = real.make_reward(adult, name="Ice cream", cost_points=30)
+    redemption = real.request_reward(child, reward)
+
+    text, keyboard = _list_view(telegram_id)
+
+    assert text == CONFIRMATIONS_HEADING
+    assert keyboard is not None
+    assert len(keyboard.inline_keyboard) == 2
+    callback_datas = {row[0].callback_data for row in keyboard.inline_keyboard}
+    assert callback_datas == {
+        f"{OPEN_CALLBACK_PREFIX}{execution.id}",
+        f"{OPEN_REWARD_CALLBACK_PREFIX}{redemption.id}",
+    }
+
+
+def test_opening_a_reward_request_shows_its_detail_and_actions(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD, "Vova")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    real.grant_points(child, 100)
+    reward = real.make_reward(adult, name="Ice cream", cost_points=30)
+    redemption = real.request_reward(child, reward)
+
+    text, keyboard = _reward_detail_view(telegram_id, str(redemption.id))
+
+    assert "Ice cream" in text
+    assert "Vova" in text
+    assert "30" in text
+    assert keyboard is not None
+    buttons = [button for row in keyboard.inline_keyboard for button in row]
+    confirm = next(b for b in buttons if b.text == "Confirm")
+    ret = next(b for b in buttons if b.text == "Return")
+    assert confirm.callback_data == f"{CONFIRM_REWARD_CALLBACK_PREFIX}{redemption.id}"
+    assert ret.callback_data == f"{RETURN_REWARD_CALLBACK_PREFIX}{redemption.id}"
+    callback_datas = [button.callback_data for row in keyboard.inline_keyboard for button in row]
+    assert VIEW_ALL_CALLBACK_DATA in callback_datas
+
+
+def test_opening_a_stale_reward_request_falls_back_to_the_list(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+
+    text, keyboard = _reward_detail_view(telegram_id, str(uuid.uuid4()))
+
+    assert text == _REWARD_REQUEST_UNACTIONABLE_TEXT
+    assert keyboard is not None
+
+
+def test_child_cannot_open_a_reward_request_detail(real: RealData) -> None:
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(child, telegram_id)
+
+    text, keyboard = _reward_detail_view(telegram_id, str(uuid.uuid4()))
+
+    assert text == _NOT_AN_ADULT_TEXT
+    assert keyboard is None
+
+
+def test_confirm_reward_routes_to_confirm_reward_redemption_and_removes_it_from_the_queue(
+    real: RealData,
+) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD, "Vova")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    real.grant_points(child, 100)
+    reward = real.make_reward(adult, name="Ice cream", cost_points=30)
+    redemption = real.request_reward(child, reward)
+
+    toast, text, keyboard = _confirm_reward(telegram_id, str(redemption.id))
+
+    assert "Ice cream" in toast
+    assert "confirmed" in toast.lower()
+    real.session.expire_all()
+    refreshed = real.session.get(RewardRedemption, redemption.id)
+    assert refreshed is not None
+    assert refreshed.status.value == "CONFIRMED"
+    transaction = real.session.query(PointTransaction).filter_by(redemption_id=redemption.id).one()
+    assert transaction.amount == -30
+    assert transaction.reason == PointTransactionReason.REWARD_REDEEMED
+    assert transaction.user_id == child.id
+    # Back on the (refreshed, now empty) list.
+    assert text == f"{CONFIRMATIONS_HEADING}\n\n{NO_CONFIRMATIONS_TEXT}"
+    assert keyboard is not None
+    assert len(keyboard.inline_keyboard) == 0
+
+
+def test_return_reward_routes_to_reject_reward_redemption_and_releases_the_freeze(
+    real: RealData,
+) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD, "Vova")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    real.grant_points(child, 100)
+    reward = real.make_reward(adult, name="Ice cream", cost_points=30)
+    redemption = real.request_reward(child, reward)
+
+    toast, text, keyboard = _reject_reward(telegram_id, str(redemption.id))
+
+    assert "Ice cream" in toast
+    real.session.expire_all()
+    refreshed = real.session.get(RewardRedemption, redemption.id)
+    assert refreshed is not None
+    assert refreshed.status.value == "REJECTED"
+    assert real.session.query(PointTransaction).filter_by(redemption_id=redemption.id).count() == 0
+    assert text == f"{CONFIRMATIONS_HEADING}\n\n{NO_CONFIRMATIONS_TEXT}"
+    assert keyboard is not None
+    assert len(keyboard.inline_keyboard) == 0
+
+
+def test_stale_confirm_reward_is_a_friendly_error(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+
+    toast, _, keyboard = _confirm_reward(telegram_id, str(uuid.uuid4()))
+
+    assert toast == _REWARD_REQUEST_UNACTIONABLE_TEXT
+    assert keyboard is not None
+
+
+def test_stale_return_reward_is_a_friendly_error(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+
+    toast, _, keyboard = _reject_reward(telegram_id, str(uuid.uuid4()))
+
+    assert toast == _REWARD_REQUEST_UNACTIONABLE_TEXT
+    assert keyboard is not None
+
+
+def test_child_cannot_confirm_a_reward_request_via_a_crafted_callback(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(child, telegram_id)
+    real.grant_points(child, 100)
+    reward = real.make_reward(adult, cost_points=30)
+    redemption = real.request_reward(child, reward)
+
+    toast, _, _ = _confirm_reward(telegram_id, str(redemption.id))
+
+    assert toast == _NOT_AN_ADULT_TEXT
+    real.session.expire_all()
+    refreshed = real.session.get(RewardRedemption, redemption.id)
+    assert refreshed is not None
+    assert refreshed.status.value == "PENDING_CONFIRMATION"
+
+
+def test_child_cannot_return_a_reward_request_via_a_crafted_callback(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(child, telegram_id)
+    real.grant_points(child, 100)
+    reward = real.make_reward(adult, cost_points=30)
+    redemption = real.request_reward(child, reward)
+
+    toast, _, _ = _reject_reward(telegram_id, str(redemption.id))
+
+    assert toast == _NOT_AN_ADULT_TEXT
+    real.session.expire_all()
+    refreshed = real.session.get(RewardRedemption, redemption.id)
+    assert refreshed is not None
+    assert refreshed.status.value == "PENDING_CONFIRMATION"
