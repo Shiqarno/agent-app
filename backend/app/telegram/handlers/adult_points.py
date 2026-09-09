@@ -15,7 +15,7 @@ from app.points_operations import (
     adjust_points,
     get_points,
 )
-from app.reward_operations import get_balance
+from app.reward_operations import get_available_balance, get_balance
 from app.telegram.handlers.points import _points_view as _child_points_self_view
 from app.telegram.handlers.start import _resolve_home
 from app.telegram.keyboards.adult_points import (
@@ -165,9 +165,14 @@ def _finish_adjust(
         except NotAuthorizedError:
             return _NOT_AN_ADULT_TEXT, None
         except InsufficientBalanceError:
-            balance = get_balance(db, child.id)
+            # Issue #40: the rejection is against *available* balance (the
+            # Child may have points frozen by a pending Reward request),
+            # so the number shown here must be the same one that actually
+            # decided the rejection -- the raw ledger balance could make
+            # this message look wrong ("but they have enough!").
+            available_balance = get_available_balance(db, child.id)
             return (
-                render_insufficient_balance(child, magnitude, balance),
+                render_insufficient_balance(child, magnitude, available_balance),
                 child_points_keyboard(child.id, get_points(db, actor, target_user=child)),
             )
         except InvalidAdjustmentError as exc:

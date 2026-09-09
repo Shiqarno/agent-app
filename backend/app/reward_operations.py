@@ -289,7 +289,7 @@ def confirm_reward_redemption(
     db: Session, actor: User, redemption_id: uuid.UUID
 ) -> tuple[RewardRedemption, Reward, User]:
     """PENDING_CONFIRMATION -> CONFIRMED, plus exactly one REWARD_REDEEMED
-    PointTransaction, atomically (Issue #39) -- the Reward analogue of
+    PointTransaction, atomically (Issue #39/#40) -- the Reward analogue of
     task_operations.confirm_execution. Releasing the freeze is implicit:
     once `status` is no longer PENDING_CONFIRMATION, `_frozen_amount` no
     longer counts this redemption, and the real ledger deduction below
@@ -297,13 +297,57 @@ def confirm_reward_redemption(
 
     Authorization is role-only, matching confirm_execution: any Adult may
     confirm any pending request, no Adult<->Child ownership.
+
+    Concurrency (Issue #40): unlike TASK_COMPLETED (always a positive
+    ledger entry, so it can never push the balance negative and never
+    needed this), a REWARD_REDEEMED entry is a real deduction -- exactly
+    the kind of change `request_reward_redemption`, `redeem_reward`, and
+    `adjust_points` all serialize against each other for by locking the
+    User row first. This must join that same serialization, or a manual
+    adjustment racing (or having already landed) between the request and
+    this confirmation could leave the ledger unable to absorb the
+    deduction. Lock order is User row, then the RewardRedemption row
+    (matching the pipeline this Issue specifies) -- the *only* place this
+    module ever holds two locks at once, so establishing "User first" here
+    (the same row every other point-mutating operation on this User locks
+    first, and the only row `request_reward_redemption`/`redeem_reward`/
+    `adjust_points` ever lock) introduces no new deadlock risk: nothing
+    else in this module locks a RewardRedemption row while also wanting a
+    User row in the other order (`reject_reward_redemption` only ever
+    locks the RewardRedemption row, never User).
+
+    The User id to lock is read from an unlocked, preliminary lookup --
+    safe because `user_id` on a RewardRedemption is set once at creation
+    and never changes; only `status` is ever mutated, and that is
+    re-validated below only *after* both locks are held.
+
+    If the ledger can no longer actually absorb this deduction (e.g. a
+    manual adjustment landed in between that ignored -- or, pre-Issue-#40,
+    could ignore -- this freeze), confirmation fails with
+    InsufficientPointsError rather than creating a negative balance, a
+    partial redemption, or silently reducing the frozen amount. The
+    request is left exactly as PENDING_CONFIRMATION -- still actionable,
+    so an Adult can Return it, or retry Confirm once the Child's balance
+    recovers -- never silently advanced to a terminal state without its
+    transaction.
     """
     if actor.role != UserRole.ADULT:
         raise NotAnAdultError()
 
+    redemption_lookup = db.get(RewardRedemption, redemption_id)
+    if redemption_lookup is None:
+        raise RewardRedemptionNotActionableError()
+
+    db.execute(
+        select(User).where(User.id == redemption_lookup.user_id).with_for_update()
+    ).scalar_one()
+
     redemption = _get_redemption_for_update(db, redemption_id)
     if redemption is None or redemption.status != RewardRedemptionStatus.PENDING_CONFIRMATION:
         raise RewardRedemptionNotActionableError()
+
+    if get_balance(db, redemption.user_id) < redemption.cost_points:
+        raise InsufficientPointsError()
 
     redemption.status = RewardRedemptionStatus.CONFIRMED
     db.add(
@@ -336,6 +380,13 @@ def reject_reward_redemption(
     PointTransaction; releasing the freeze is the same implicit effect of
     leaving PENDING_CONFIRMATION as confirm_reward_redemption's, just
     without a ledger entry to replace it.
+
+    Deliberately does not lock the User row (Issue #40, unlike
+    confirm_reward_redemption): this never reads or checks a balance and
+    never writes a PointTransaction, so there is nothing here that needs
+    serializing against `adjust_points`/`redeem_reward`/
+    `request_reward_redemption` -- the RewardRedemption row's own lock is
+    sufficient to make the status transition itself safe.
     """
     if actor.role != UserRole.ADULT:
         raise NotAnAdultError()

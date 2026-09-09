@@ -15,6 +15,7 @@ from app.models import (
     User,
     UserRole,
 )
+from app.reward_operations import get_available_balance, get_balance
 
 # A page this small keeps each Telegram message short (Issue #27 "Page
 # size") while still making pagination exercise-able in tests without huge
@@ -56,7 +57,15 @@ class InvalidAdjustmentError(PointsOperationError):
 
 
 class InsufficientBalanceError(PointsOperationError):
-    """A deduction would take the target User's balance below zero."""
+    """A deduction would take the target User's *available* balance below
+    zero (Issue #40: ledger balance minus their own active
+    PENDING_CONFIRMATION reward requests -- see
+    reward_operations.get_available_balance) -- not just the raw ledger
+    balance. A manual removal must not spend points a pending Reward
+    request already has frozen, for the same reason `redeem_reward` and
+    `request_reward_redemption` check available balance rather than raw
+    balance: they all draw from, and lock, the same User row.
+    """
 
 
 @dataclass(frozen=True)
@@ -215,9 +224,17 @@ def adjust_points(
     Concurrency mirrors `reward_operations.redeem_reward`'s established
     pattern exactly: locks the target User row for the duration of the
     transaction, so the balance check and the write are atomic with
-    respect to any other adjustment *or* redemption by this same User --
-    coexisting safely with, and not weakening, `redeem_reward`'s existing
-    guarantee (both lock the same User row).
+    respect to any other adjustment, redemption, or Reward
+    request/confirmation by this same User -- coexisting safely with, and
+    not weakening, any of their existing guarantees (all lock the same
+    User row).
+
+    The balance check (Issue #40) is against *available* balance, not raw
+    ledger balance: a Child's pending Reward requests already have their
+    cost frozen against that same balance, and a manual removal must not
+    be allowed to spend points a not-yet-decided request is holding, or a
+    later Adult confirmation of that request could push the ledger
+    negative. See `reward_operations.get_available_balance`.
     """
     if actor.role != UserRole.ADULT or target_user.role != UserRole.CHILD:
         raise NotAuthorizedError()
@@ -234,16 +251,12 @@ def adjust_points(
     # acquires the row lock.
     db.execute(select(User).where(User.id == target_user.id).with_for_update()).scalar_one()
 
-    balance = db.scalar(
-        select(func.coalesce(func.sum(PointTransaction.amount), 0)).where(
-            PointTransaction.user_id == target_user.id
-        )
-    )
-    assert balance is not None  # COALESCE guarantees a non-null row
-
-    new_balance = balance + amount
-    if new_balance < 0:
+    available_balance = get_available_balance(db, target_user.id)
+    if available_balance + amount < 0:
         raise InsufficientBalanceError()
+
+    balance = get_balance(db, target_user.id)
+    new_balance = balance + amount
 
     transaction = PointTransaction(
         user_id=target_user.id,

@@ -27,7 +27,12 @@ from app.points_operations import (
     adjust_points,
     get_points,
 )
-from app.reward_operations import redeem_reward
+from app.reward_operations import (
+    InsufficientPointsError,
+    get_available_balance,
+    redeem_reward,
+    request_reward_redemption,
+)
 
 ADULT = UserRole.ADULT
 CHILD = UserRole.CHILD
@@ -729,6 +734,210 @@ def test_deduction_that_exactly_zeroes_the_balance_is_allowed(
     _, new_balance = adjust_points(db_session, adult, child, amount=-50, description="Exact")
 
     assert new_balance == 0
+
+
+# =========================================================================================
+# Issue #40: adjust_points respects points frozen by pending Reward requests
+# =========================================================================================
+
+
+def test_adjustment_cannot_consume_frozen_points(
+    make_user: Callable[..., User], db_session: Session
+) -> None:
+    """balance=100, an 80-cost Reward request frozen (available=20): a -50
+    manual removal must be rejected even though the raw ledger (100) could
+    absorb it -- only the *available* balance (20) governs this, exactly
+    like it governs a new Reward request.
+    """
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    _make_task_completed(db_session, child, 100)
+    reward = Reward(name="Frozen reward", cost_points=80, created_by=adult.id)
+    db_session.add(reward)
+    db_session.commit()
+    db_session.refresh(reward)
+    request_reward_redemption(db_session, child, reward.id)
+
+    with pytest.raises(InsufficientBalanceError):
+        adjust_points(db_session, adult, child, amount=-50, description="Should not fit")
+
+    assert get_points(db_session, adult, target_user=child).balance == 100
+    assert get_available_balance(db_session, child.id) == 20
+    txn_count = db_session.scalar(
+        select(func.count())
+        .select_from(PointTransaction)
+        .where(
+            PointTransaction.user_id == child.id,
+            PointTransaction.reason == PointTransactionReason.MANUAL_ADJUSTMENT,
+        )
+    )
+    assert txn_count == 0
+
+
+def test_adjustment_within_available_balance_still_works(
+    make_user: Callable[..., User], db_session: Session
+) -> None:
+    """The frozen-balance check must not be overly conservative: a removal
+    that fits within *available* balance still succeeds normally.
+    """
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    _make_task_completed(db_session, child, 100)
+    reward = Reward(name="Frozen reward", cost_points=80, created_by=adult.id)
+    db_session.add(reward)
+    db_session.commit()
+    db_session.refresh(reward)
+    request_reward_redemption(db_session, child, reward.id)
+
+    _, new_balance = adjust_points(db_session, adult, child, amount=-20, description="Fits exactly")
+
+    assert new_balance == 80
+    assert get_available_balance(db_session, child.id) == 0
+
+
+def test_adjustment_rejected_when_fully_frozen_by_multiple_pending_requests(
+    make_user: Callable[..., User], db_session: Session
+) -> None:
+    """balance=100, Request A=60 + Request B=40 both pending (frozen=100,
+    available=0): any further point-consuming operation, not just a third
+    Reward request, must be rejected.
+    """
+    adult = make_user(ADULT)
+    child = make_user(CHILD)
+    _make_task_completed(db_session, child, 100)
+    reward_a = Reward(name="Reward A", cost_points=60, created_by=adult.id)
+    reward_b = Reward(name="Reward B", cost_points=40, created_by=adult.id)
+    db_session.add_all([reward_a, reward_b])
+    db_session.commit()
+    db_session.refresh(reward_a)
+    db_session.refresh(reward_b)
+    request_reward_redemption(db_session, child, reward_a.id)
+    request_reward_redemption(db_session, child, reward_b.id)
+
+    with pytest.raises(InsufficientBalanceError):
+        adjust_points(db_session, adult, child, amount=-1, description="Nothing left")
+
+
+def test_concurrent_reward_request_and_manual_adjustment_cannot_overspend() -> None:
+    """balance=100: a concurrent 70-cost Reward request and a -50 manual
+    adjustment must not both succeed -- whichever acquires the User row
+    lock first wins, and the other re-reads the now-lower available
+    balance and is cleanly rejected. Real independently-committing
+    sessions, matching this project's established concurrency test
+    pattern (Issue #40, Scenario 1).
+    """
+    setup_session = SessionLocal()
+    adult = User(name="Concurrent Adult", role=ADULT)
+    child = User(name="Concurrent Child", role=CHILD)
+    setup_session.add_all([adult, child])
+    setup_session.commit()
+    setup_session.refresh(adult)
+    setup_session.refresh(child)
+
+    task = Task(title="Balance seed", reward_points=100, created_by=adult.id)
+    setup_session.add(task)
+    setup_session.commit()
+    setup_session.refresh(task)
+
+    execution = TaskExecution(
+        task_id=task.id, user_id=child.id, status=TaskExecutionStatus.COMPLETED, reward_points=100
+    )
+    setup_session.add(execution)
+    setup_session.commit()
+    setup_session.refresh(execution)
+
+    setup_session.add(
+        PointTransaction(
+            user_id=child.id,
+            task_execution_id=execution.id,
+            amount=100,
+            reason=PointTransactionReason.TASK_COMPLETED,
+        )
+    )
+    setup_session.commit()
+
+    reward = Reward(name="Contested reward", cost_points=70, created_by=adult.id)
+    setup_session.add(reward)
+    setup_session.commit()
+    setup_session.refresh(reward)
+
+    try:
+        results: dict[str, str] = {}
+        barrier = threading.Barrier(2)
+
+        def attempt_request() -> None:
+            barrier.wait()
+            session = SessionLocal()
+            try:
+                user = session.get(User, child.id)
+                assert user is not None
+                request_reward_redemption(session, user, reward.id)
+                results["request"] = "success"
+            except InsufficientPointsError:
+                results["request"] = "rejected"
+            finally:
+                session.close()
+
+        def attempt_adjustment() -> None:
+            barrier.wait()
+            session = SessionLocal()
+            try:
+                actor = session.get(User, adult.id)
+                target = session.get(User, child.id)
+                assert actor is not None
+                assert target is not None
+                adjust_points(session, actor, target, amount=-50, description="Concurrent removal")
+                results["adjustment"] = "success"
+            except InsufficientBalanceError:
+                results["adjustment"] = "rejected"
+            finally:
+                session.close()
+
+        threads = [
+            threading.Thread(target=attempt_request),
+            threading.Thread(target=attempt_adjustment),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Exactly one of the two succeeds -- 70 (request) and 50
+        # (adjustment) together exceed 100, so both succeeding would
+        # overspend, and the available balance after either one alone
+        # (30 or 50) is too small for the other.
+        assert sorted(results.values()) == ["rejected", "success"]
+
+        setup_session.expire_all()
+        final_balance = setup_session.scalar(
+            select(func.coalesce(func.sum(PointTransaction.amount), 0)).where(
+                PointTransaction.user_id == child.id
+            )
+        )
+        assert final_balance is not None
+        assert final_balance >= 0
+
+        final_available = get_available_balance(setup_session, child.id)
+        assert final_available >= 0
+
+        if results["request"] == "success":
+            assert final_balance == 100  # request only freezes, no ledger change
+            assert final_available == 30
+        else:
+            assert final_balance == 50  # adjustment landed
+            assert final_available == 50
+    finally:
+        setup_session.rollback()
+        setup_session.query(RewardRedemption).filter_by(user_id=child.id).delete()
+        setup_session.query(PointTransaction).filter_by(user_id=child.id).delete()
+        setup_session.query(TaskExecution).filter_by(id=execution.id).delete()
+        setup_session.query(Task).filter_by(id=task.id).delete()
+        setup_session.query(Reward).filter_by(id=reward.id).delete()
+        setup_session.query(User).filter(User.id.in_([adult.id, child.id])).delete(
+            synchronize_session=False
+        )
+        setup_session.commit()
+        setup_session.close()
 
 
 # =========================================================================================

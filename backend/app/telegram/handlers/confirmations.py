@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 
 from app.db import SessionLocal
 from app.models import User
+from app.reward_operations import InsufficientPointsError as RewardInsufficientPointsError
 from app.reward_operations import NotAnAdultError as RewardNotAnAdultError
 from app.reward_operations import RewardRedemptionNotActionableError, get_pending_reward_requests
 from app.reward_operations import confirm_reward_redemption as confirm_reward_redemption_op
@@ -50,6 +51,10 @@ _NOT_CONNECTED_TEXT = (
 _NOT_AN_ADULT_TEXT = "This isn't available for your account."
 _EXECUTION_UNCONFIRMABLE_TEXT = "This task is no longer waiting for confirmation."
 _REWARD_REQUEST_UNACTIONABLE_TEXT = "This reward request is no longer waiting for confirmation."
+_REWARD_REQUEST_INSUFFICIENT_BALANCE_TEXT = (
+    "This can't be confirmed right now -- the child's balance is too low. "
+    "The request is still pending; try again once their balance recovers, or Return it."
+)
 
 
 def _combined_confirmation_items(db: Session, user: User) -> list[ConfirmationItem]:
@@ -233,7 +238,12 @@ def _return_to_work(
 def _confirm_reward(
     telegram_user_id: int, raw_redemption_id: str
 ) -> tuple[str, str, InlineKeyboardMarkup | None]:
-    """The Reward request analogue of _confirm above (Issue #39)."""
+    """The Reward request analogue of _confirm above (Issue #39). A
+    request that can no longer be safely confirmed (Issue #40: the
+    Child's balance dropped below the frozen cost, e.g. via a manual
+    adjustment) is left pending rather than acted on -- see
+    confirm_reward_redemption's own docstring.
+    """
     db = SessionLocal()
     try:
         user = resolve_user_by_telegram_id(db, telegram_user_id)
@@ -246,6 +256,8 @@ def _confirm_reward(
             toast = render_reward_redemption_confirmed(redemption, reward, child)
         except (ValueError, RewardRedemptionNotActionableError):
             toast = _REWARD_REQUEST_UNACTIONABLE_TEXT
+        except RewardInsufficientPointsError:
+            toast = _REWARD_REQUEST_INSUFFICIENT_BALANCE_TEXT
         except RewardNotAnAdultError:
             toast = _NOT_AN_ADULT_TEXT
 
