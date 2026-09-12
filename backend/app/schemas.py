@@ -221,6 +221,34 @@ class RewardRedemptionResponse(BaseModel):
     created_at: datetime
 
 
+class GoalCreate(BaseModel):
+    name: str
+    cost_points: int = Field(gt=0)
+
+    @field_validator("name")
+    @classmethod
+    def name_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("name must not be empty or whitespace-only")
+        return stripped
+
+
+class GoalUpdate(BaseModel):
+    name: str | None = None
+    cost_points: int | None = Field(default=None, gt=0)
+
+    @field_validator("name")
+    @classmethod
+    def name_must_not_be_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("name must not be empty or whitespace-only")
+        return stripped
+
+
 class BalanceResponse(BaseModel):
     balance: int
 
@@ -233,6 +261,7 @@ class PointTransactionResponse(BaseModel):
     reason: PointTransactionReason
     task_execution_id: uuid.UUID | None
     redemption_id: uuid.UUID | None
+    goal_contribution_id: uuid.UUID | None
     created_at: datetime
 
 

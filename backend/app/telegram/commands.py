@@ -14,6 +14,7 @@ CHILD_COMMANDS: list[BotCommand] = [
     BotCommand("mytasks", "Твои задачи"),
     BotCommand("rewards", "Доступные награды"),
     BotCommand("points", "Твои баллы"),
+    BotCommand("goals", "Цели"),
 ]
 
 ADULT_COMMANDS: list[BotCommand] = [
@@ -23,6 +24,7 @@ ADULT_COMMANDS: list[BotCommand] = [
     BotCommand("confirmations", "Подтверждения"),
     BotCommand("rewards", "Награды"),
     BotCommand("points", "Баллы"),
+    BotCommand("goals", "Цели"),
 ]
 
 # Shown to a Telegram account before it's connected to any User -- the only

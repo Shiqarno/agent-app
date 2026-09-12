@@ -76,7 +76,7 @@ Domain (SQLAlchemy models)
 PostgreSQL
 ```
 
-- `app/telegram/handlers/` — one module per feature area, translating a Telegram `Update`/callback into a call against the shared Application-layer operations (`app/task_operations.py`, `app/reward_operations.py`, `app/points_operations.py`, `app/user_operations.py`, `app/telegram_identity.py`), the same operations the FastAPI routers call. Each handler function opens its own synchronous SQLAlchemy session and runs the DB work in a thread (`asyncio.to_thread`), since `python-telegram-bot` is async and this project's DB layer is not.
+- `app/telegram/handlers/` — one module per feature area, translating a Telegram `Update`/callback into a call against the shared Application-layer operations (`app/task_operations.py`, `app/reward_operations.py`, `app/points_operations.py`, `app/goal_operations.py`, `app/user_operations.py`, `app/telegram_identity.py`), the same operations the FastAPI routers call. Each handler function opens its own synchronous SQLAlchemy session and runs the DB work in a thread (`asyncio.to_thread`), since `python-telegram-bot` is async and this project's DB layer is not.
 - `app/telegram/views/` — pure functions turning domain state into message text.
 - `app/telegram/keyboards/` — pure functions building inline keyboards; callback data identifies an entity for routing only and is never trusted for authorization — the Application layer re-verifies role/existence/state on every call, exactly as it does for an HTTP request.
 

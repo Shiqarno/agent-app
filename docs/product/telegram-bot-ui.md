@@ -7,8 +7,8 @@ structure — see `app/telegram/` and its own docstrings for that).
 
 Business rules, authorization, and concurrency guarantees live in the
 Application layer (`app/task_operations.py`, `app/reward_operations.py`,
-`app/points_operations.py`, `app/user_operations.py`); Telegram is
-presentation only.
+`app/points_operations.py`, `app/goal_operations.py`,
+`app/user_operations.py`); Telegram is presentation only.
 
 ## Identity and connection
 
@@ -34,12 +34,12 @@ connected User's role.
 ### Command panel
 
 Telegram's own command menu (the "/" button) is role-aware: a connected
-Child sees `/start`, `/tasks`, `/mytasks`, `/rewards`, `/points`; a
-connected Adult sees `/start`, `/users`, `/tasks`, `/confirmations`,
-`/rewards`, `/points` — never the other role's commands. An account not
-yet connected to any User sees only `/start`. The menu is refreshed every
-time `/start` is used, so it always matches the currently-connected
-User's role.
+Child sees `/start`, `/tasks`, `/mytasks`, `/rewards`, `/points`,
+`/goals`; a connected Adult sees `/start`, `/users`, `/tasks`,
+`/confirmations`, `/rewards`, `/points`, `/goals` — never the other
+role's commands. An account not yet connected to any User sees only
+`/start`. The menu is refreshed every time `/start` is used, so it always
+matches the currently-connected User's role.
 
 ## Child navigation
 
@@ -49,6 +49,7 @@ Tasks
 My Tasks
 Rewards
 Points
+Goals
 ```
 
 ### Home
@@ -154,6 +155,52 @@ Current balance plus transaction history, newest first, paginated
 (the Task title for a completion, the Reward name for a redemption) and a
 signed amount — never the internal ledger reason code.
 
+### Goals
+
+Headed "Цели". A Goal is a distinct concept from a Reward: it is not
+claimed or redeemed by one Child, it is something every connected Child
+contributes their own points toward together, until its nominal cost is
+fully covered. There is no Adult↔Child ownership over a Goal, exactly
+like Tasks and Rewards. The list shows only currently-ACTIVE Goals (a
+completed one no longer needs contributions and is not offered here); a
+Goal is fully represented by its own button — name and nominal cost, 💰
+notation, no verb — nothing duplicated as separate text above the list.
+
+Opening a Goal shows its name, its nominal cost, how many points have
+been accumulated toward it so far, and its contribution history —
+newest first, paginated ("Ранее" loads more) — each entry showing the
+amount transferred, which Child transferred it, and when. A Goal's
+history is never cleared or hidden once it's reached its target: a
+completed Goal keeps its full history, shown with a "✓ Цель достигнута"
+marker in place of any transfer action.
+
+**Перевести баллы** starts a transfer, offered only while the Goal is
+still ACTIVE:
+
+1. the Child is prompted for an amount, shown alongside their own
+   currently *available* balance (the same available-balance concept
+   Rewards uses — ledger balance minus the Child's own pending Reward
+   requests) and how many points remain before the Goal is reached;
+2. the amount must be a positive whole number, at most the remaining
+   amount, and at most the Child's available balance — any violation is
+   rejected with a plain message and the Child can simply try again;
+3. a valid amount shows a confirmation — the amount, the Goal's name,
+   and the Child's balance after the transfer — before anything happens;
+4. confirming performs the transfer immediately and atomically: the
+   amount is deducted from the Child's Points ledger (a signed, negative
+   entry, sourced back to this Goal, exactly like any other ledger
+   entry) and added to the Goal's accumulated total in the same step —
+   there is no separate Adult approval step, unlike a Reward request.
+
+Because a Goal is shared, its remaining capacity can be claimed by
+whichever Child's transfer completes first: a transfer that would push
+the accumulated total past the nominal cost is rejected before anything
+is deducted, telling the Child to try a smaller amount, and the same is
+true if the Goal reaches its target from another Child's transfer in the
+meantime. Reaching the nominal cost exactly completes the Goal
+immediately — it is shown as achieved on the very screen the completing
+transfer lands on, and it drops off every Child's Goals list from then on.
+
 ## Adult navigation
 
 ```
@@ -162,6 +209,7 @@ Tasks
 Users
 Rewards
 Points
+Goals
 ```
 
 ### Home
@@ -399,6 +447,43 @@ A successful adjustment shows the Child's new balance and returns to
 their Points details, where the new entry is immediately visible in the
 history.
 
+### Goals (Adult)
+
+Manages the global Goal catalog every Child contributes toward — distinct
+from Child Goals, which is about contributing, not defining. Any Adult
+may manage any Goal; there is no per-Adult ownership in Telegram, and no
+Adult↔Child ownership over who may contribute to it.
+
+Unlike the Child list, this one shows every Goal — active and completed
+— since managing the catalog means seeing all of it, not just what's
+currently open for contribution. Each Goal is fully represented by its
+own button — name and nominal cost (💰 notation) — with a `✓` marker
+ahead of a completed Goal's name; nothing duplicated as separate text
+alongside the list.
+
+Opening a Goal shows the same details screen the Child sees — name,
+nominal cost, accumulated points, and paginated contribution history —
+with an **Изменить** action, offered only while the Goal is still
+ACTIVE. Once a Goal is COMPLETED it can no longer be edited at all —
+there is no way to reopen it or change its terms after the fact.
+
+**Add goal** and **Edit** both collect the same two fields, in the same
+order:
+
+1. name;
+2. nominal cost, in points.
+
+Both are validated the same way as everywhere else in the app (non-blank
+name, positive integer cost) — invalid input is rejected with a plain
+message and the Adult can simply try again. When editing, each prompt
+shows the Goal's *current* value first, so the flow is never a surprise.
+
+Lowering a Goal's cost to at or below its already-accumulated total
+completes it immediately, in the same edit — exactly as if a Child's
+transfer had just reached the target. Raising or lowering the cost above
+the accumulated total simply leaves the Goal ACTIVE with its new,
+still-remaining amount.
+
 ### Out of scope (tracked, not yet built)
 
 - Bulk or recurring/scheduled assignment of a Task to multiple Children.
@@ -417,13 +502,19 @@ history.
   what *is* built).
 - Any Adult↔Child ownership or family-grouping concept — deliberately not
   part of this product's model.
+- Notifications for any Goal event (a new Goal becoming available, a
+  transfer, or a Goal being reached) — Goals currently have no proactive
+  messaging of their own; see Notifications, below, for the events that
+  *are* built.
+- Goal deletion, or any lifecycle beyond ACTIVE → COMPLETED.
 
 ## Notifications
 
 Telegram proactively messages a User when one of six specific business
 events happens — never merely because a screen was opened (opening
-`/tasks`, `/mytasks`, `/rewards`, `/confirmations`, or `/points` never
-itself sends anything). A notification is sent only once its triggering
+`/tasks`, `/mytasks`, `/rewards`, `/confirmations`, `/points`, or
+`/goals` never itself sends anything). A notification is sent only once
+its triggering
 action has already fully succeeded, never before, and never if that
 action was rejected or failed; delivery itself is best-effort and never
 required for the action to succeed — an unconnected recipient, a blocked

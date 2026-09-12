@@ -180,6 +180,7 @@ class PointTransactionReason(StrEnum):
     TASK_COMPLETED = "TASK_COMPLETED"
     REWARD_REDEEMED = "REWARD_REDEEMED"
     MANUAL_ADJUSTMENT = "MANUAL_ADJUSTMENT"
+    GOAL_CONTRIBUTION = "GOAL_CONTRIBUTION"
 
 
 class PointTransaction(Base):
@@ -201,6 +202,18 @@ class PointTransaction(Base):
         UniqueConstraint(
             "redemption_id", "reason", name="uq_point_transactions_redemption_id_reason"
         ),
+        # Same rationale again for GoalContribution (Issue: Goals): a
+        # database-level guarantee that a given contribution can never end
+        # up with two GOAL_CONTRIBUTION rows, even though (unlike the two
+        # constraints above) contribute_to_goal creates both rows in one
+        # single-step transaction rather than a later, separate confirm
+        # step -- defense-in-depth against a future duplicate-processing
+        # bug, not a currently-reachable race.
+        UniqueConstraint(
+            "goal_contribution_id",
+            "reason",
+            name="uq_point_transactions_goal_contribution_id_reason",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -213,14 +226,18 @@ class PointTransaction(Base):
     redemption_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("reward_redemptions.id"), nullable=True
     )
+    goal_contribution_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("goal_contributions.id"), nullable=True
+    )
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
     reason: Mapped[PointTransactionReason] = mapped_column(
         SAEnum(PointTransactionReason, native_enum=False, length=32, values_callable=_enum_values),
         nullable=False,
     )
     # Only populated for MANUAL_ADJUSTMENT rows (Issue #31) -- a
-    # TASK_COMPLETED/REWARD_REDEEMED row's human-readable description is
-    # derived from its Task/Reward join instead, so this stays NULL there.
+    # TASK_COMPLETED/REWARD_REDEEMED/GOAL_CONTRIBUTION row's human-readable
+    # description is derived from its Task/Reward/Goal join instead, so
+    # this stays NULL there.
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -283,6 +300,71 @@ class RewardRedemption(Base):
         nullable=False,
         default=RewardRedemptionStatus.CONFIRMED,
     )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class GoalStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+
+
+class Goal(Base):
+    """A global savings target a Child accumulates points toward (Issue:
+    Goals) -- not a Reward: a Reward is *spent* out of a Child's balance in
+    one step, a Goal is *accumulated* into over any number of transfers,
+    by any number of Children, via GoalContribution below. `accumulated_points`
+    is a denormalized running total for cheap reads (Goal details, the
+    Child `/goals` list); GoalContribution rows remain the source of truth
+    for how it got there, exactly like PointTransaction is for a User's own
+    balance -- `goal_operations.contribute_to_goal` is the only place that
+    ever advances it, always in the same transaction as the
+    GoalContribution/PointTransaction pair that justifies the change.
+
+    `status` starts `ACTIVE` and becomes `COMPLETED` once
+    `accumulated_points >= cost_points` -- never re-opened afterward (no
+    `ACTIVE`-`COMPLETED` back-transition exists in this Issue). A
+    `COMPLETED` Goal is refused for further edits or contributions but is
+    never deleted -- it remains visible, with its full history intact.
+    """
+
+    __tablename__ = "goals"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    cost_points: Mapped[int] = mapped_column(Integer, nullable=False)
+    accumulated_points: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[GoalStatus] = mapped_column(
+        SAEnum(GoalStatus, native_enum=False, length=16, values_callable=_enum_values),
+        nullable=False,
+        default=GoalStatus.ACTIVE,
+    )
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class GoalContribution(Base):
+    """One Child's single point transfer into a Goal (Issue: Goals) --
+    immutable once created, exactly like PointTransaction: never updated or
+    deleted by normal application operations, and it is the source of a
+    Goal's transfer history. Deliberately its own table, not a reuse of
+    RewardRedemption -- a Goal accumulates from any number of these over
+    time, across any number of different Children, unlike a
+    RewardRedemption's one-Child, one-shot request/resolve shape.
+    """
+
+    __tablename__ = "goal_contributions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    goal_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("goals.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

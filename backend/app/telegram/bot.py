@@ -14,7 +14,27 @@ from telegram.ext import (
 
 from app.config import settings
 from app.telegram.commands import DEFAULT_COMMANDS
-from app.telegram.handlers import adult_points, adult_rewards, adult_tasks, adult_users
+from app.telegram.handlers import (
+    adult_goals,
+    adult_points,
+    adult_rewards,
+    adult_tasks,
+    adult_users,
+    goals,
+)
+from app.telegram.handlers.adult_goals import (
+    handle_add_goal,
+    handle_edit_cost,
+    handle_goals_command,
+    handle_goals_home,
+)
+from app.telegram.handlers.adult_goals import handle_edit_menu as handle_goal_edit_menu
+from app.telegram.handlers.adult_goals import handle_edit_name as handle_goal_edit_name
+from app.telegram.handlers.adult_goals import handle_list_goals as handle_list_goals_adult
+from app.telegram.handlers.adult_goals import (
+    handle_older_goal_contributions as handle_older_goal_contributions_adult,
+)
+from app.telegram.handlers.adult_goals import handle_open_goal as handle_open_goal_adult
 from app.telegram.handlers.adult_points import (
     handle_adjust_menu,
     handle_list_children,
@@ -77,6 +97,15 @@ from app.telegram.handlers.confirmations import (
     handle_return_reward,
     handle_view_all_confirmations,
 )
+from app.telegram.handlers.goals import (
+    handle_confirm_transfer,
+    handle_start_transfer,
+)
+from app.telegram.handlers.goals import handle_list_goals as handle_list_goals_child
+from app.telegram.handlers.goals import (
+    handle_older_goal_contributions as handle_older_goal_contributions_child,
+)
+from app.telegram.handlers.goals import handle_open_goal as handle_open_goal_child
 from app.telegram.handlers.points import handle_older_points, handle_points_list
 from app.telegram.handlers.rewards import handle_request_reward, handle_rewards_list
 from app.telegram.handlers.start import handle_start
@@ -87,6 +116,30 @@ from app.telegram.handlers.tasks import (
     handle_start_execution,
     handle_take_task,
     handle_tasks_list,
+)
+from app.telegram.keyboards.adult_goals import (
+    ADD_CALLBACK_DATA as ADD_GOAL_CALLBACK_DATA,
+)
+from app.telegram.keyboards.adult_goals import (
+    EDIT_CALLBACK_PREFIX as GOAL_EDIT_CALLBACK_PREFIX,
+)
+from app.telegram.keyboards.adult_goals import (
+    EDIT_COST_CALLBACK_PREFIX as GOAL_EDIT_COST_CALLBACK_PREFIX,
+)
+from app.telegram.keyboards.adult_goals import (
+    EDIT_NAME_CALLBACK_PREFIX as GOAL_EDIT_NAME_CALLBACK_PREFIX,
+)
+from app.telegram.keyboards.adult_goals import (
+    HOME_CALLBACK_DATA as ADULT_GOALS_HOME_CALLBACK_DATA,
+)
+from app.telegram.keyboards.adult_goals import (
+    LIST_CALLBACK_DATA as ADULT_GOALS_LIST_CALLBACK_DATA,
+)
+from app.telegram.keyboards.adult_goals import (
+    OLDER_CALLBACK_PREFIX as ADULT_GOALS_OLDER_CALLBACK_PREFIX,
+)
+from app.telegram.keyboards.adult_goals import (
+    OPEN_CALLBACK_PREFIX as ADULT_GOALS_OPEN_CALLBACK_PREFIX,
 )
 from app.telegram.keyboards.adult_points import (
     ADD_CALLBACK_PREFIX as ADULT_POINTS_ADD_CALLBACK_PREFIX,
@@ -154,6 +207,15 @@ from app.telegram.keyboards.confirmations import (
 from app.telegram.keyboards.confirmations import (
     OPEN_REWARD_CALLBACK_PREFIX as CONFIRMATION_OPEN_REWARD_CALLBACK_PREFIX,
 )
+from app.telegram.keyboards.goals import LIST_CALLBACK_DATA as CHILD_GOALS_LIST_CALLBACK_DATA
+from app.telegram.keyboards.goals import OLDER_CALLBACK_PREFIX as CHILD_GOALS_OLDER_CALLBACK_PREFIX
+from app.telegram.keyboards.goals import OPEN_CALLBACK_PREFIX as CHILD_GOALS_OPEN_CALLBACK_PREFIX
+from app.telegram.keyboards.goals import (
+    TRANSFER_CALLBACK_PREFIX as GOAL_TRANSFER_CALLBACK_PREFIX,
+)
+from app.telegram.keyboards.goals import (
+    TRANSFER_CONFIRM_CALLBACK_DATA as GOAL_TRANSFER_CONFIRM_CALLBACK_DATA,
+)
 from app.telegram.keyboards.points import LIST_CALLBACK_DATA as CHILD_POINTS_LIST_CALLBACK_DATA
 from app.telegram.keyboards.points import OLDER_CALLBACK_PREFIX
 from app.telegram.keyboards.rewards import LIST_CALLBACK_DATA as CHILD_REWARDS_LIST_CALLBACK_DATA
@@ -190,11 +252,12 @@ BotApplication = Application[Any, Any, Any, Any, Any, Any]
 async def _handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Dispatches a free-text message to whichever short-lived input flow
     (Adult Tasks Create/Edit, Adult Users Add Child, Adult Rewards
-    Add/Edit, Adult Points Adjust) is currently open for this Adult, based
-    on which `context.user_data` flow key is present. PTB only ever runs
-    the first matching handler for a given update within a handler group,
-    so a single generic-text MessageHandler must own this routing rather
-    than registering one per feature.
+    Add/Edit, Adult Points Adjust, Adult Goals Create/Edit, Child Goal
+    Transfer) is currently open for this User, based on which
+    `context.user_data` flow key is present. PTB only ever runs the first
+    matching handler for a given update within a handler group, so a
+    single generic-text MessageHandler must own this routing rather than
+    registering one per feature.
     """
     data = context.user_data or {}
     if adult_tasks._FLOW_KEY in data:
@@ -205,6 +268,10 @@ async def _handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await adult_rewards.handle_reward_flow_text(update, context)
     elif adult_points._FLOW_KEY in data:
         await adult_points.handle_points_flow_text(update, context)
+    elif adult_goals._FLOW_KEY in data:
+        await adult_goals.handle_goal_flow_text(update, context)
+    elif goals._FLOW_KEY in data:
+        await goals.handle_goal_flow_text(update, context)
 
 
 async def _on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -362,6 +429,52 @@ def build_application() -> BotApplication:
     )
     application.add_handler(
         CallbackQueryHandler(handle_cancel_menu, pattern=f"^{CANCEL_CALLBACK_PREFIX}")
+    )
+    application.add_handler(CommandHandler("goals", handle_goals_command))
+    application.add_handler(
+        CallbackQueryHandler(handle_start_transfer, pattern=f"^{GOAL_TRANSFER_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            handle_confirm_transfer, pattern=f"^{GOAL_TRANSFER_CONFIRM_CALLBACK_DATA}$"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            handle_older_goal_contributions_child, pattern=f"^{CHILD_GOALS_OLDER_CALLBACK_PREFIX}"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_open_goal_child, pattern=f"^{CHILD_GOALS_OPEN_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_list_goals_child, pattern=f"^{CHILD_GOALS_LIST_CALLBACK_DATA}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            handle_older_goal_contributions_adult, pattern=f"^{ADULT_GOALS_OLDER_CALLBACK_PREFIX}"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_open_goal_adult, pattern=f"^{ADULT_GOALS_OPEN_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_list_goals_adult, pattern=f"^{ADULT_GOALS_LIST_CALLBACK_DATA}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_goals_home, pattern=f"^{ADULT_GOALS_HOME_CALLBACK_DATA}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_add_goal, pattern=f"^{ADD_GOAL_CALLBACK_DATA}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_goal_edit_menu, pattern=f"^{GOAL_EDIT_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_goal_edit_name, pattern=f"^{GOAL_EDIT_NAME_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_edit_cost, pattern=f"^{GOAL_EDIT_COST_CALLBACK_PREFIX}")
     )
     application.add_handler(CommandHandler("users", handle_users_command))
     application.add_handler(

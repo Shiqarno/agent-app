@@ -17,13 +17,13 @@ def _names(commands: list[object]) -> set[str]:
 def test_child_command_panel_has_the_expected_commands() -> None:
     names = _names(CHILD_COMMANDS)
 
-    assert names == {"start", "tasks", "mytasks", "rewards", "points"}
+    assert names == {"start", "tasks", "mytasks", "rewards", "points", "goals"}
 
 
 def test_adult_command_panel_has_the_expected_commands() -> None:
     names = _names(ADULT_COMMANDS)
 
-    assert names == {"start", "users", "tasks", "confirmations", "rewards", "points"}
+    assert names == {"start", "users", "tasks", "confirmations", "rewards", "points", "goals"}
 
 
 def test_child_panel_never_exposes_adult_only_commands() -> None:
