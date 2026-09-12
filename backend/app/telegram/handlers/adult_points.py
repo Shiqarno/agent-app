@@ -27,6 +27,7 @@ from app.telegram.keyboards.adult_points import (
     adjust_menu_keyboard,
     back_to_children_keyboard,
     child_points_keyboard,
+    decode_uuid,
     points_children_keyboard,
 )
 from app.telegram.views.adult_points import (
@@ -266,13 +267,17 @@ async def handle_older_child_points(update: Update, context: ContextTypes.DEFAUL
     if query is None or update.effective_user is None or query.data is None:
         return
     raw = query.data.removeprefix(OLDER_CALLBACK_PREFIX)
-    raw_child_id, _, raw_cursor = raw.partition(":")
-    try:
-        cursor: uuid.UUID | None = uuid.UUID(raw_cursor)
-    except ValueError:
-        # A stale/malformed cursor gracefully falls back to the first page
-        # (matching the Child Points precedent) rather than erroring.
-        cursor = None
+    raw_child_token, _, raw_cursor_token = raw.partition(":")
+    # Both ids arrive base64-packed (see child_points_keyboard) so the
+    # combined payload fits Telegram's 64-byte callback_data limit; decoding
+    # here is defense-in-depth only -- authorization and scoping are still
+    # fully re-checked below by _resolve_child/get_points, never trusted
+    # from the callback itself.
+    child_id = decode_uuid(raw_child_token)
+    cursor = decode_uuid(raw_cursor_token)
+    # A stale/malformed/undecodable cursor gracefully falls back to the
+    # first page (matching the Child Points precedent) rather than erroring.
+    raw_child_id = str(child_id) if child_id is not None else ""
     text, keyboard = await asyncio.to_thread(
         _child_points_view, update.effective_user.id, raw_child_id, cursor
     )

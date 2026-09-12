@@ -17,7 +17,7 @@ from app.models import (
     UserActivation,
     UserRole,
 )
-from app.points_operations import PAGE_SIZE
+from app.points_operations import PAGE_SIZE, PointsView
 from app.telegram.handlers.adult_points import (
     _CHILD_NOT_FOUND_TEXT,
     _NOT_AN_ADULT_TEXT,
@@ -36,6 +36,8 @@ from app.telegram.keyboards.adult_points import (
     OLDER_CALLBACK_PREFIX,
     OPEN_CALLBACK_PREFIX,
     REMOVE_CALLBACK_PREFIX,
+    child_points_keyboard,
+    decode_uuid,
 )
 from app.telegram_identity import activate_telegram_identity
 
@@ -227,11 +229,72 @@ def test_older_pagination_shows_older_history_for_a_child(real: RealData) -> Non
     ]
     assert any("Older" in label for label in labels)
     assert len(older_buttons) == 1
-    cursor = uuid.UUID(older_buttons[0].callback_data.rsplit(":", 1)[1])  # type: ignore[union-attr]
+    encoded_cursor = older_buttons[0].callback_data.rsplit(":", 1)[1]  # type: ignore[union-attr]
+    cursor = decode_uuid(encoded_cursor)
+    assert cursor is not None
 
     second_page_text, _ = _child_points_view(telegram_id, str(child.id), cursor)
 
     assert first_page_text != second_page_text
+
+
+def test_older_callback_data_fits_within_telegrams_64_byte_limit() -> None:
+    """Regression for the `Button_data_invalid` bug: `child_points_keyboard()`
+    used to embed both the Child's UUID and the pagination cursor's UUID in
+    their full 36-char hyphenated form, so the `Older` button's callback_data
+    exceeded Telegram's 64-byte `callback_data` limit and Telegram rejected
+    the whole keyboard on `edit_message_text()`. Must check *encoded bytes*,
+    not `len(str)` -- the limit is byte-based and the payload is UTF-8.
+    """
+    child_id = uuid.uuid4()
+    view = PointsView(balance=10, transactions=[], next_cursor=uuid.uuid4())
+
+    keyboard = child_points_keyboard(child_id, view)
+
+    for row in keyboard.inline_keyboard:
+        for button in row:
+            assert button.callback_data is not None
+            assert len(button.callback_data.encode("utf-8")) <= 64
+
+
+def test_older_callback_data_round_trips_to_the_correct_child_and_cursor() -> None:
+    child_id = uuid.uuid4()
+    cursor = uuid.uuid4()
+    view = PointsView(balance=10, transactions=[], next_cursor=cursor)
+
+    keyboard = child_points_keyboard(child_id, view)
+
+    older_button = next(
+        button for row in keyboard.inline_keyboard for button in row if button.text == "Older"
+    )
+    assert older_button.callback_data is not None
+    payload = older_button.callback_data.removeprefix(OLDER_CALLBACK_PREFIX)
+    raw_child_token, _, raw_cursor_token = payload.partition(":")
+
+    assert decode_uuid(raw_child_token) == child_id
+    assert decode_uuid(raw_cursor_token) == cursor
+
+
+def test_decode_uuid_rejects_malformed_or_empty_input() -> None:
+    assert decode_uuid("") is None
+    assert decode_uuid("not-a-valid-token") is None
+
+
+def test_older_pagination_with_undecodable_child_token_shows_child_not_found(
+    real: RealData,
+) -> None:
+    """Mirrors handle_older_child_points falling back to an empty child
+    segment when a crafted/corrupted callback's child token fails to decode
+    -- the Adult must land on a safe "Child not found" screen, never a crash.
+    """
+    adult = real.make_user(ADULT)
+    telegram_id = _next_telegram_id()
+    real.connect_via_activation(adult, telegram_id)
+
+    text, keyboard = _child_points_view(telegram_id, "", None)
+
+    assert text == _CHILD_NOT_FOUND_TEXT
+    assert keyboard is not None
 
 
 def test_crafted_callback_cannot_open_an_adults_points_via_the_child_details_screen(

@@ -1,3 +1,5 @@
+import base64
+import binascii
 import uuid
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -12,6 +14,32 @@ OLDER_CALLBACK_PREFIX = "adultpoints:older:"
 ADJUST_CALLBACK_PREFIX = "adultpoints:adjust:"
 ADD_CALLBACK_PREFIX = "adultpoints:add:"
 REMOVE_CALLBACK_PREFIX = "adultpoints:remove:"
+
+
+def _encode_uuid(value: uuid.UUID) -> str:
+    """Packs a UUID's raw 16 bytes as unpadded urlsafe-base64 (22 chars)
+    instead of its 36-char hyphenated hex form. This is a lossless,
+    reversible re-encoding -- never a truncation -- so it carries no
+    collision risk; it exists purely so the `Older` button's two UUIDs
+    (child_id and cursor) both fit inside Telegram's 64-byte
+    `callback_data` limit (Issue: `Button_data_invalid` on Child Points).
+    """
+    return base64.urlsafe_b64encode(value.bytes).rstrip(b"=").decode("ascii")
+
+
+def decode_uuid(raw: str) -> uuid.UUID | None:
+    """Inverse of `_encode_uuid`. Returns None for anything malformed
+    (stale/crafted callback data) so callers can fall back gracefully
+    instead of raising.
+    """
+    padding = "=" * (-len(raw) % 4)
+    try:
+        decoded = base64.urlsafe_b64decode(raw + padding)
+    except (ValueError, binascii.Error):
+        return None
+    if len(decoded) != 16:
+        return None
+    return uuid.UUID(bytes=decoded)
 
 
 def points_children_keyboard(items: list[tuple[User, int]]) -> InlineKeyboardMarkup:
@@ -39,13 +67,12 @@ def child_points_keyboard(child_id: uuid.UUID, view: PointsView) -> InlineKeyboa
     """
     rows = []
     if view.next_cursor is not None:
+        # Both ids are packed via `_encode_uuid` (not the 36-char hyphenated
+        # form): unpacked, `child_id` + `:` + `next_cursor` alone would
+        # already exceed Telegram's 64-byte callback_data limit.
+        payload = f"{_encode_uuid(child_id)}:{_encode_uuid(view.next_cursor)}"
         rows.append(
-            [
-                InlineKeyboardButton(
-                    "Older",
-                    callback_data=f"{OLDER_CALLBACK_PREFIX}{child_id}:{view.next_cursor}",
-                )
-            ]
+            [InlineKeyboardButton("Older", callback_data=f"{OLDER_CALLBACK_PREFIX}{payload}")]
         )
     rows.append(
         [InlineKeyboardButton("Adjust points", callback_data=f"{ADJUST_CALLBACK_PREFIX}{child_id}")]
