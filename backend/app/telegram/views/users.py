@@ -1,10 +1,15 @@
-from app.models import User
+from app.models import User, UserRole
 
-NO_USERS_TEXT = "No users yet."
+NO_USERS_TEXT = "Пользователей пока нет."
+
+_ROLE_LABELS = {
+    UserRole.ADULT: "Взрослый",
+    UserRole.CHILD: "Ребёнок",
+}
 
 
 def _connection_label(connected: bool) -> str:
-    return "Connected" if connected else "Not connected"
+    return "Подключён" if connected else "Не подключён"
 
 
 def render_users_list(items: list[tuple[User, bool]]) -> str:
@@ -15,28 +20,26 @@ def render_users_list(items: list[tuple[User, bool]]) -> str:
     (render_user_details below), a selected-entity screen.
     """
     if not items:
-        return f"Users\n\n{NO_USERS_TEXT}"
-    return "Users"
+        return f"Пользователи\n\n{NO_USERS_TEXT}"
+    return "Пользователи"
 
 
 def render_user_details(user: User, connected: bool) -> str:
-    return (
-        f"{user.name}\n\n{user.role.value.capitalize()}\nTelegram: {_connection_label(connected)}"
-    )
+    return f"{user.name}\n\n{_ROLE_LABELS[user.role]}\nTelegram: {_connection_label(connected)}"
 
 
 def render_add_child_prompt() -> str:
-    return "What's the Child's name?"
+    return "Как зовут ребёнка?"
 
 
 def render_child_created(name: str, link: str) -> str:
     return (
-        f"{name} was created.\n\n"
-        f"Send this activation link to {name}:\n\n"
+        f"Профиль «{name}» создан.\n\n"
+        f"Отправьте {name} эту ссылку для активации:\n\n"
         f"{link}\n\n"
-        "The link expires in 72 hours."
+        "Ссылка действительна 72 часа."
     )
 
 
 def render_activation_link(link: str) -> str:
-    return f"Activation link:\n\n{link}\n\nThe link expires in 72 hours."
+    return f"Ссылка для активации:\n\n{link}\n\nСсылка действительна 72 часа."

@@ -1,13 +1,13 @@
 from app.models import Task, TaskExecution, TaskExecutionStatus, User
 
 ALL_TASKS_HEADING = "Все задачи"
-NO_TASKS_TEXT = "No tasks yet."
-NO_ELIGIBLE_CHILDREN_TEXT = "No eligible children right now."
+NO_TASKS_TEXT = "Задач пока нет."
+NO_ELIGIBLE_CHILDREN_TEXT = "Сейчас нет подходящих детей."
 
 _EXECUTION_STATE_LABELS = {
-    TaskExecutionStatus.ASSIGNED: "assigned",
-    TaskExecutionStatus.IN_PROGRESS: "in progress",
-    TaskExecutionStatus.AWAITING_CONFIRMATION: "waiting for confirmation",
+    TaskExecutionStatus.ASSIGNED: "назначена",
+    TaskExecutionStatus.IN_PROGRESS: "выполняется",
+    TaskExecutionStatus.AWAITING_CONFIRMATION: "ожидает подтверждения",
 }
 
 
@@ -39,34 +39,37 @@ def render_task_details(task: Task, execution: TaskExecution | None, child: User
     or reactivated Task can be Available with one open), so it would be
     misleading to hide it whenever an execution happens to exist.
     """
-    header = f"{task.title}\n\nReward: {task.reward_points} points"
-    status = "Available" if task.is_active else "Not available"
+    header = f"{task.title}\n\nНаграда: {task.reward_points} баллов"
+    status = "Доступна" if task.is_active else "Недоступна"
     if execution is not None and child is not None:
         return (
-            f"{header}\nStatus: {status}\n\n{_execution_summary(execution, child)}\n\n"
-            "Cannot edit the name or reward while this execution is open."
+            f"{header}\nСтатус: {status}\n\n{_execution_summary(execution, child)}\n\n"
+            "Нельзя изменить название или награду, пока это выполнение открыто."
         )
-    return f"{header}\nStatus: {status}"
+    return f"{header}\nСтатус: {status}"
 
 
 def render_create_prompt_title() -> str:
-    return "What's the task called?"
+    return "Как называется задача?"
 
 
 def render_create_prompt_reward() -> str:
-    return "How many points is it worth?"
+    return "Сколько баллов она стоит?"
 
 
 def render_edit_menu(task: Task) -> str:
-    return f"Edit task\n\nCurrent name:\n{task.title}\n\nCurrent reward:\n{task.reward_points}"
+    return (
+        f"Редактирование задачи\n\nТекущее название:\n{task.title}\n\n"
+        f"Текущая награда:\n{task.reward_points}"
+    )
 
 
 def render_edit_prompt_title(task: Task) -> str:
-    return f"Current name:\n{task.title}\n\nSend the new name."
+    return f"Текущее название:\n{task.title}\n\nОтправьте новое название."
 
 
 def render_edit_prompt_reward(task: Task) -> str:
-    return f"Current reward:\n{task.reward_points}\n\nSend the new reward, in points."
+    return f"Текущая награда:\n{task.reward_points}\n\nОтправьте новую награду в баллах."
 
 
 def render_assign_children(task: Task, children: list[User]) -> str:
@@ -74,11 +77,11 @@ def render_assign_children(task: Task, children: list[User]) -> str:
     Details' Assign action -- makes the reason for an empty list clear
     rather than showing a bare empty screen.
     """
-    header = f"Assign · {task.title}"
+    header = f"Назначить · {task.title}"
     if not children:
         return f"{header}\n\n{NO_ELIGIBLE_CHILDREN_TEXT}"
-    return f"{header}\n\nChoose a child:"
+    return f"{header}\n\nВыберите ребёнка:"
 
 
 def render_task_assigned(task: Task, child: User) -> str:
-    return f"{task.title} assigned to {child.name}."
+    return f"«{task.title}» назначена {child.name}."

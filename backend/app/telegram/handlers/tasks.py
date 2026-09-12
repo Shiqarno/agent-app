@@ -31,12 +31,12 @@ from app.telegram.views.tasks import (
 from app.telegram_identity import resolve_user_by_telegram_id
 
 _NOT_CONNECTED_TEXT = (
-    "Your Telegram account isn't connected yet. Ask the adult who manages "
-    "your account for an activation link."
+    "Ваш Telegram-аккаунт ещё не подключён. Попросите у взрослого, который "
+    "управляет вашим аккаунтом, ссылку для активации."
 )
-_NOT_A_CHILD_TEXT = "This isn't available for your account."
-_TASK_UNAVAILABLE_TEXT = "This task is no longer available."
-_EXECUTION_UNACTIONABLE_TEXT = "This task is no longer available for this action."
+_NOT_A_CHILD_TEXT = "Это недоступно для вашего аккаунта."
+_TASK_UNAVAILABLE_TEXT = "Эта задача больше не доступна."
+_EXECUTION_UNACTIONABLE_TEXT = "Это действие для задачи больше не доступно."
 
 
 def _tasks_view(telegram_user_id: int) -> tuple[str, InlineKeyboardMarkup | None]:

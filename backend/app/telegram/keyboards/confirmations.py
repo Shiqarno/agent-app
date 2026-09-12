@@ -59,13 +59,13 @@ def confirmation_detail_keyboard(execution: TaskExecution) -> InlineKeyboardMark
         [
             [
                 InlineKeyboardButton(
-                    "Confirm", callback_data=f"{CONFIRM_CALLBACK_PREFIX}{execution.id}"
+                    "Подтвердить", callback_data=f"{CONFIRM_CALLBACK_PREFIX}{execution.id}"
                 ),
                 InlineKeyboardButton(
-                    "Return", callback_data=f"{RETURN_CALLBACK_PREFIX}{execution.id}"
+                    "Отклонить", callback_data=f"{RETURN_CALLBACK_PREFIX}{execution.id}"
                 ),
             ],
-            [InlineKeyboardButton("← Back", callback_data=VIEW_ALL_CALLBACK_DATA)],
+            [InlineKeyboardButton("← Назад", callback_data=VIEW_ALL_CALLBACK_DATA)],
         ]
     )
 
@@ -79,12 +79,12 @@ def reward_confirmation_detail_keyboard(redemption: RewardRedemption) -> InlineK
         [
             [
                 InlineKeyboardButton(
-                    "Confirm", callback_data=f"{CONFIRM_REWARD_CALLBACK_PREFIX}{redemption.id}"
+                    "Подтвердить", callback_data=f"{CONFIRM_REWARD_CALLBACK_PREFIX}{redemption.id}"
                 ),
                 InlineKeyboardButton(
-                    "Return", callback_data=f"{RETURN_REWARD_CALLBACK_PREFIX}{redemption.id}"
+                    "Отклонить", callback_data=f"{RETURN_REWARD_CALLBACK_PREFIX}{redemption.id}"
                 ),
             ],
-            [InlineKeyboardButton("← Back", callback_data=VIEW_ALL_CALLBACK_DATA)],
+            [InlineKeyboardButton("← Назад", callback_data=VIEW_ALL_CALLBACK_DATA)],
         ]
     )

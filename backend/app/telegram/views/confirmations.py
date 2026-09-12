@@ -4,7 +4,7 @@ from datetime import datetime
 from app.models import Reward, RewardRedemption, Task, TaskExecution, User
 
 CONFIRMATIONS_HEADING = "Подтверждения"
-NO_CONFIRMATIONS_TEXT = "Nothing waiting for confirmation."
+NO_CONFIRMATIONS_TEXT = "Нет заявок, ожидающих подтверждения."
 
 
 @dataclass(frozen=True)
@@ -62,11 +62,11 @@ def render_confirmation_detail(execution: TaskExecution, task: Task, child: User
 
 
 def render_execution_confirmed(task: Task, child: User, execution: TaskExecution) -> str:
-    return f"{task.title} confirmed -- {child.name} earned 💰 {execution.reward_points}."
+    return f"«{task.title}» подтверждена. Начислено {child.name}: 💰 {execution.reward_points}."
 
 
 def render_execution_returned(task: Task, child: User) -> str:
-    return f"{task.title} returned to {child.name}."
+    return f"«{task.title}» возвращена {child.name} на доработку."
 
 
 def render_reward_confirmation_detail(
@@ -76,14 +76,14 @@ def render_reward_confirmation_detail(
     (Issue #39) -- the selected request's Reward name, Child, and frozen
     cost snapshot.
     """
-    return f"{reward.name}\n{child.name}\n\n{redemption.cost_points} points"
+    return f"{reward.name}\n{child.name}\n\n{redemption.cost_points} баллов"
 
 
 def render_reward_redemption_confirmed(
     redemption: RewardRedemption, reward: Reward, child: User
 ) -> str:
-    return f"{reward.name} confirmed -- {child.name} redeemed {redemption.cost_points} points."
+    return f"«{reward.name}» подтверждена. Списано у {child.name}: {redemption.cost_points} баллов."
 
 
 def render_reward_redemption_rejected(reward: Reward, child: User) -> str:
-    return f"{reward.name} request declined for {child.name}."
+    return f"Запрос на «{reward.name}» отклонён для {child.name}."

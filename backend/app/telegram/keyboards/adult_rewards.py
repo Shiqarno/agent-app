@@ -25,8 +25,8 @@ def rewards_list_keyboard(rewards: list[Reward]) -> InlineKeyboardMarkup:
         ]
         for reward in rewards
     ]
-    rows.append([InlineKeyboardButton("+ Add Reward", callback_data=ADD_CALLBACK_DATA)])
-    rows.append([InlineKeyboardButton("← Home", callback_data=HOME_CALLBACK_DATA)])
+    rows.append([InlineKeyboardButton("+ Добавить награду", callback_data=ADD_CALLBACK_DATA)])
+    rows.append([InlineKeyboardButton("← Домой", callback_data=HOME_CALLBACK_DATA)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -36,8 +36,12 @@ def reward_details_keyboard(reward: Reward) -> InlineKeyboardMarkup:
     """
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("Edit", callback_data=f"{EDIT_CALLBACK_PREFIX}{reward.id}")],
-            [InlineKeyboardButton("← Back", callback_data=LIST_CALLBACK_DATA)],
+            [
+                InlineKeyboardButton(
+                    "Изменить", callback_data=f"{EDIT_CALLBACK_PREFIX}{reward.id}"
+                )
+            ],
+            [InlineKeyboardButton("← Назад", callback_data=LIST_CALLBACK_DATA)],
         ]
     )
 
@@ -47,5 +51,5 @@ def back_to_rewards_keyboard() -> InlineKeyboardMarkup:
     found, or input was invalid) -- the Adult must never be stranded.
     """
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("← Back", callback_data=LIST_CALLBACK_DATA)]]
+        [[InlineKeyboardButton("← Назад", callback_data=LIST_CALLBACK_DATA)]]
     )

@@ -43,11 +43,11 @@ from app.telegram_identity import resolve_user_by_telegram_id
 from app.user_operations import get_users
 
 _NOT_CONNECTED_TEXT = (
-    "Your Telegram account isn't connected yet. Ask the adult who manages "
-    "your account for an activation link."
+    "Ваш Telegram-аккаунт ещё не подключён. Попросите у взрослого, который "
+    "управляет вашим аккаунтом, ссылку для активации."
 )
-_NOT_AN_ADULT_TEXT = "This isn't available for your account."
-_CHILD_NOT_FOUND_TEXT = "Child not found."
+_NOT_AN_ADULT_TEXT = "Это недоступно для вашего аккаунта."
+_CHILD_NOT_FOUND_TEXT = "Ребёнок не найден."
 
 # Per-chat, in-memory only (pattern established by Issues #29/#30): tracks
 # which step of the Adjust Points flow this Adult is currently on. Never
@@ -194,9 +194,9 @@ def _parse_magnitude(text: str) -> tuple[int | None, str | None]:
     try:
         value = int(text.strip())
     except ValueError:
-        return None, "Please enter a whole number of points."
+        return None, "Пожалуйста, введите целое число баллов."
     if value <= 0:
-        return None, "Amount must be greater than 0."
+        return None, "Количество должно быть больше 0."
     return value, None
 
 
@@ -349,14 +349,14 @@ def _route_flow_text(
     if step == "amount":
         magnitude, error = _parse_magnitude(text)
         if error is not None or magnitude is None:
-            return error or "Please enter a whole number of points.", None, False
+            return error or "Пожалуйста, введите целое число баллов.", None, False
         flow["magnitude"] = magnitude
         flow["step"] = "description"
         return render_description_prompt(direction), None, False
 
     if step == "description":
         if not text:
-            return "Please enter a description.", None, False
+            return "Пожалуйста, введите описание.", None, False
         result_text, keyboard = _finish_adjust(
             telegram_user_id, flow["child_id"], direction, flow["magnitude"], text
         )

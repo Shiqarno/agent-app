@@ -106,12 +106,12 @@ def test_adult_can_open_users(real: RealData) -> None:
 
     # Issue #37: the heading is the ENTIRE message text -- each User is
     # represented only by their button, never duplicated as text above it.
-    assert text == "Users"
+    assert text == "Пользователи"
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
     assert any(label == "Alex" for label in labels)
-    assert any("Add Child" in label for label in labels)
-    assert any("Home" in label for label in labels)
+    assert any("Добавить ребёнка" in label for label in labels)
+    assert any("Домой" in label for label in labels)
 
 
 def test_child_cannot_access_users(real: RealData) -> None:
@@ -138,8 +138,8 @@ def test_users_list_does_not_render_connection_status(real: RealData) -> None:
 
     text, keyboard = _users_list_view(telegram_id)
 
-    assert text == "Users"
-    assert "Connected" not in text
+    assert text == "Пользователи"
+    assert "Подключён" not in text
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
     assert any(label == "Connected Kid" for label in labels)
@@ -167,10 +167,10 @@ def test_unconnected_child_exposes_activation_action(real: RealData) -> None:
     text, keyboard = _user_details_view(telegram_id, str(child.id))
 
     assert "Alex" in text
-    assert "Not connected" in text
+    assert "Не подключён" in text
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert any("Get activation link" in label for label in labels)
+    assert any("Получить ссылку для активации" in label for label in labels)
 
 
 def test_connected_child_does_not_expose_activation_action(real: RealData) -> None:
@@ -182,10 +182,10 @@ def test_connected_child_does_not_expose_activation_action(real: RealData) -> No
 
     text, keyboard = _user_details_view(telegram_id, str(child.id))
 
-    assert "Connected" in text
+    assert "Подключён" in text
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert not any("Get activation link" in label for label in labels)
+    assert not any("Получить ссылку для активации" in label for label in labels)
 
 
 def test_open_nonexistent_user_does_not_strand_the_adult(real: RealData) -> None:
@@ -224,7 +224,7 @@ def test_start_add_child_prompts_for_a_name(real: RealData) -> None:
     text, should_start = _start_add_child(telegram_id)
 
     assert should_start is True
-    assert "name" in text.lower()
+    assert "зовут" in text.lower()
 
 
 def test_child_cannot_start_add_child(real: RealData) -> None:
@@ -247,9 +247,9 @@ def test_add_child_flow_end_to_end_displays_the_activation_link(real: RealData) 
     text, keyboard, finished = _route_flow_text(telegram_id, flow, "Alex", _BOT_USERNAME)
 
     assert finished is True
-    assert "Alex was created." in text
+    assert "Профиль «Alex» создан." in text
     assert f"https://t.me/{_BOT_USERNAME}?start=" in text
-    assert "72 hours" in text
+    assert "72 часа" in text
     assert keyboard is not None
 
     created = real.session.query(User).filter_by(name="Alex").one()
@@ -280,7 +280,7 @@ def test_add_child_rejects_a_blank_name(real: RealData) -> None:
     text, _keyboard, finished = _route_flow_text(telegram_id, flow, "   ", _BOT_USERNAME)
 
     assert finished is False
-    assert "name" in text.lower()
+    assert "имя" in text.lower()
 
 
 def test_add_child_via_crafted_flow_state_rejects_a_child_actor(real: RealData) -> None:
@@ -311,7 +311,7 @@ def test_generate_activation_link_for_an_unconnected_child(real: RealData) -> No
     text, keyboard = _finish_get_link(telegram_id, str(child.id), _BOT_USERNAME)
 
     assert f"https://t.me/{_BOT_USERNAME}?start=" in text
-    assert "72 hours" in text
+    assert "72 часа" in text
     assert keyboard is not None
 
 
@@ -324,7 +324,7 @@ def test_generate_activation_link_rejects_a_connected_child(real: RealData) -> N
 
     text, keyboard = _finish_get_link(telegram_id, str(child.id), _BOT_USERNAME)
 
-    assert "already connected" in text.lower()
+    assert "уже подключён" in text.lower()
     assert keyboard is not None
 
 

@@ -1,6 +1,6 @@
 from app.models import Reward
 
-NO_REWARDS_TEXT = "No rewards yet."
+NO_REWARDS_TEXT = "Наград пока нет."
 
 
 def render_rewards_list(rewards: list[Reward]) -> str:
@@ -10,49 +10,49 @@ def render_rewards_list(rewards: list[Reward]) -> str:
     text above it.
     """
     if not rewards:
-        return f"🎁 Rewards\n\n{NO_REWARDS_TEXT}"
-    return "🎁 Rewards"
+        return f"🎁 Награды\n\n{NO_REWARDS_TEXT}"
+    return "🎁 Награды"
 
 
 def render_reward_details(reward: Reward) -> str:
     """Issue #30 "Reward details": name, cost, description -- no Delete, no
     activation/deactivation (Reward has no is_active concept at all).
     """
-    description = reward.description if reward.description else "(none)"
-    return f"🎁 {reward.name}\n\nCost: {reward.cost_points} points\n\nDescription:\n{description}"
+    description = reward.description if reward.description else "(нет)"
+    return f"🎁 {reward.name}\n\nСтоимость: {reward.cost_points} баллов\n\nОписание:\n{description}"
 
 
 def render_create_prompt_name() -> str:
-    return "What's the reward called?"
+    return "Как называется награда?"
 
 
 def render_create_prompt_cost() -> str:
-    return "How many points does it cost?"
+    return "Сколько баллов она стоит?"
 
 
 def render_create_prompt_description() -> str:
-    return 'Send a description, or send "skip" to leave it blank.'
+    return "Отправьте описание или напишите «пропустить», чтобы оставить пустым."
 
 
 def render_edit_prompt_name(reward: Reward) -> str:
-    return f"Current name:\n{reward.name}\n\nSend the new name."
+    return f"Текущее название:\n{reward.name}\n\nОтправьте новое название."
 
 
 def render_edit_prompt_cost(reward: Reward) -> str:
-    return f"Current cost:\n{reward.cost_points} points\n\nSend the new cost, in points."
+    return f"Текущая стоимость:\n{reward.cost_points} баллов\n\nОтправьте новую стоимость в баллах."
 
 
 def render_edit_prompt_description(reward: Reward) -> str:
-    current = reward.description if reward.description else "(none)"
+    current = reward.description if reward.description else "(нет)"
     return (
-        f"Current description:\n{current}\n\n"
-        'Send the new description, or send "skip" to keep it unchanged.'
+        f"Текущее описание:\n{current}\n\n"
+        "Отправьте новое описание или напишите «пропустить», чтобы оставить без изменений."
     )
 
 
 def render_reward_created(reward: Reward) -> str:
-    return f"{reward.name} was created."
+    return f"«{reward.name}» создана."
 
 
 def render_reward_updated(reward: Reward) -> str:
-    return f"{reward.name} was updated."
+    return f"«{reward.name}» обновлена."

@@ -12,10 +12,10 @@ from app.telegram.views.points import render_points
 from app.telegram_identity import resolve_user_by_telegram_id
 
 _NOT_CONNECTED_TEXT = (
-    "Your Telegram account isn't connected yet. Ask the adult who manages "
-    "your account for an activation link."
+    "Ваш Telegram-аккаунт ещё не подключён. Попросите у взрослого, который "
+    "управляет вашим аккаунтом, ссылку для активации."
 )
-_NOT_A_CHILD_TEXT = "This isn't available for your account."
+_NOT_A_CHILD_TEXT = "Это недоступно для вашего аккаунта."
 
 
 def _points_view(

@@ -17,7 +17,7 @@ def points_keyboard(view: PointsView) -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton(
-                    "Older", callback_data=f"{OLDER_CALLBACK_PREFIX}{view.next_cursor}"
+                    "Ранее", callback_data=f"{OLDER_CALLBACK_PREFIX}{view.next_cursor}"
                 )
             ]
         ]

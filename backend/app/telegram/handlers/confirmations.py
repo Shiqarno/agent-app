@@ -45,15 +45,16 @@ from app.telegram.views.confirmations import (
 from app.telegram_identity import resolve_user_by_telegram_id
 
 _NOT_CONNECTED_TEXT = (
-    "Your Telegram account isn't connected yet. Ask the adult who manages "
-    "your account for an activation link."
+    "Ваш Telegram-аккаунт ещё не подключён. Попросите у взрослого, который "
+    "управляет вашим аккаунтом, ссылку для активации."
 )
-_NOT_AN_ADULT_TEXT = "This isn't available for your account."
-_EXECUTION_UNCONFIRMABLE_TEXT = "This task is no longer waiting for confirmation."
-_REWARD_REQUEST_UNACTIONABLE_TEXT = "This reward request is no longer waiting for confirmation."
+_NOT_AN_ADULT_TEXT = "Это недоступно для вашего аккаунта."
+_EXECUTION_UNCONFIRMABLE_TEXT = "Эта задача больше не ожидает подтверждения."
+_REWARD_REQUEST_UNACTIONABLE_TEXT = "Этот запрос на награду больше не ожидает подтверждения."
 _REWARD_REQUEST_INSUFFICIENT_BALANCE_TEXT = (
-    "This can't be confirmed right now -- the child's balance is too low. "
-    "The request is still pending; try again once their balance recovers, or Return it."
+    "Сейчас это нельзя подтвердить — у ребёнка недостаточно баллов. "
+    "Запрос остаётся в ожидании; попробуйте снова, когда баланс восстановится, "
+    "либо отклоните запрос."
 )
 
 

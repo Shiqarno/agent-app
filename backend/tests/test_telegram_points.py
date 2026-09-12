@@ -181,7 +181,7 @@ def test_child_can_render_points(real: RealData) -> None:
 
     text, keyboard = _points_view(telegram_id, None)
 
-    assert "Balance" in text
+    assert "Баланс" in text
     assert "💰 100" in text
     assert "Clean room" in text
     assert keyboard is not None
@@ -275,7 +275,7 @@ def test_older_button_present_when_more_history_exists(real: RealData) -> None:
 
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 1
-    assert keyboard.inline_keyboard[0][0].text == "Older"
+    assert keyboard.inline_keyboard[0][0].text == "Ранее"
 
 
 def test_older_loads_the_next_page(real: RealData) -> None:

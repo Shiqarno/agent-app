@@ -57,7 +57,7 @@ def points_children_keyboard(items: list[tuple[User, int]]) -> InlineKeyboardMar
         ]
         for child, balance in items
     ]
-    rows.append([InlineKeyboardButton("← Home", callback_data=HOME_CALLBACK_DATA)])
+    rows.append([InlineKeyboardButton("← Домой", callback_data=HOME_CALLBACK_DATA)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -72,12 +72,16 @@ def child_points_keyboard(child_id: uuid.UUID, view: PointsView) -> InlineKeyboa
         # already exceed Telegram's 64-byte callback_data limit.
         payload = f"{_encode_uuid(child_id)}:{_encode_uuid(view.next_cursor)}"
         rows.append(
-            [InlineKeyboardButton("Older", callback_data=f"{OLDER_CALLBACK_PREFIX}{payload}")]
+            [InlineKeyboardButton("Ранее", callback_data=f"{OLDER_CALLBACK_PREFIX}{payload}")]
         )
     rows.append(
-        [InlineKeyboardButton("Adjust points", callback_data=f"{ADJUST_CALLBACK_PREFIX}{child_id}")]
+        [
+            InlineKeyboardButton(
+                "Изменить баллы", callback_data=f"{ADJUST_CALLBACK_PREFIX}{child_id}"
+            )
+        ]
     )
-    rows.append([InlineKeyboardButton("← Back", callback_data=LIST_CALLBACK_DATA)])
+    rows.append([InlineKeyboardButton("← Назад", callback_data=LIST_CALLBACK_DATA)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -91,15 +95,15 @@ def adjust_menu_keyboard(child_id: uuid.UUID) -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton(
-                    "+ Add points", callback_data=f"{ADD_CALLBACK_PREFIX}{child_id}"
+                    "+ Начислить баллы", callback_data=f"{ADD_CALLBACK_PREFIX}{child_id}"
                 )
             ],
             [
                 InlineKeyboardButton(
-                    "- Remove points", callback_data=f"{REMOVE_CALLBACK_PREFIX}{child_id}"
+                    "- Списать баллы", callback_data=f"{REMOVE_CALLBACK_PREFIX}{child_id}"
                 )
             ],
-            [InlineKeyboardButton("← Back", callback_data=f"{OPEN_CALLBACK_PREFIX}{child_id}")],
+            [InlineKeyboardButton("← Назад", callback_data=f"{OPEN_CALLBACK_PREFIX}{child_id}")],
         ]
     )
 
@@ -109,5 +113,5 @@ def back_to_children_keyboard() -> InlineKeyboardMarkup:
     found, or input was invalid) -- the Adult must never be stranded.
     """
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("← Back", callback_data=LIST_CALLBACK_DATA)]]
+        [[InlineKeyboardButton("← Назад", callback_data=LIST_CALLBACK_DATA)]]
     )

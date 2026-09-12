@@ -34,12 +34,12 @@ from app.user_operations import (
 )
 
 _NOT_CONNECTED_TEXT = (
-    "Your Telegram account isn't connected yet. Ask the adult who manages "
-    "your account for an activation link."
+    "Ваш Telegram-аккаунт ещё не подключён. Попросите у взрослого, который "
+    "управляет вашим аккаунтом, ссылку для активации."
 )
-_NOT_AN_ADULT_TEXT = "This isn't available for your account."
-_USER_NOT_FOUND_TEXT = "User not found."
-_ALREADY_CONNECTED_TEXT = "This user is already connected to Telegram."
+_NOT_AN_ADULT_TEXT = "Это недоступно для вашего аккаунта."
+_USER_NOT_FOUND_TEXT = "Пользователь не найден."
+_ALREADY_CONNECTED_TEXT = "Этот пользователь уже подключён к Telegram."
 
 # Per-chat, in-memory only (Issue #29 section on short-lived Telegram input
 # state): tracks that the next text message from this Adult is the new
@@ -249,7 +249,7 @@ def _route_flow_text(
     text = text.strip()
     if flow.get("action") == "add_child":
         if not text:
-            return "Please enter a name.", None, False
+            return "Пожалуйста, введите имя.", None, False
         result_text, keyboard = _finish_add_child(telegram_user_id, text, bot_username)
         return result_text, keyboard, True
 

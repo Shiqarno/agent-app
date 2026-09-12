@@ -50,8 +50,8 @@ def tasks_list_keyboard(
         ]
         for task, _execution, _child in items
     ]
-    rows.append([InlineKeyboardButton("+ Add task", callback_data=ADD_CALLBACK_DATA)])
-    rows.append([InlineKeyboardButton("← Home", callback_data=HOME_CALLBACK_DATA)])
+    rows.append([InlineKeyboardButton("+ Добавить задачу", callback_data=ADD_CALLBACK_DATA)])
+    rows.append([InlineKeyboardButton("← Домой", callback_data=HOME_CALLBACK_DATA)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -69,24 +69,28 @@ def task_details_keyboard(task: Task, has_current_execution: bool) -> InlineKeyb
     rows = []
     if not has_current_execution:
         rows.append(
-            [InlineKeyboardButton("Edit", callback_data=f"{EDIT_CALLBACK_PREFIX}{task.id}")]
+            [InlineKeyboardButton("Изменить", callback_data=f"{EDIT_CALLBACK_PREFIX}{task.id}")]
         )
     if task.is_active:
         rows.append(
             [
                 InlineKeyboardButton(
-                    "Deactivate", callback_data=f"{DEACTIVATE_CALLBACK_PREFIX}{task.id}"
+                    "Деактивировать", callback_data=f"{DEACTIVATE_CALLBACK_PREFIX}{task.id}"
                 )
             ]
         )
     else:
         rows.append(
-            [InlineKeyboardButton("Activate", callback_data=f"{ACTIVATE_CALLBACK_PREFIX}{task.id}")]
+            [
+                InlineKeyboardButton(
+                    "Активировать", callback_data=f"{ACTIVATE_CALLBACK_PREFIX}{task.id}"
+                )
+            ]
         )
     rows.append(
-        [InlineKeyboardButton("Assign", callback_data=f"{ASSIGN_CALLBACK_PREFIX}{task.id}")]
+        [InlineKeyboardButton("Назначить", callback_data=f"{ASSIGN_CALLBACK_PREFIX}{task.id}")]
     )
-    rows.append([InlineKeyboardButton("← Tasks", callback_data=LIST_CALLBACK_DATA)])
+    rows.append([InlineKeyboardButton("← Задачи", callback_data=LIST_CALLBACK_DATA)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -103,7 +107,7 @@ def assign_children_keyboard(task_id: uuid.UUID, children: list[User]) -> Inline
         ]
         for child in children
     ]
-    rows.append([InlineKeyboardButton("← Back", callback_data=f"{OPEN_CALLBACK_PREFIX}{task_id}")])
+    rows.append([InlineKeyboardButton("← Назад", callback_data=f"{OPEN_CALLBACK_PREFIX}{task_id}")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -112,15 +116,15 @@ def edit_menu_keyboard(task: Task) -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton(
-                    "Change name", callback_data=f"{EDIT_NAME_CALLBACK_PREFIX}{task.id}"
+                    "Изменить название", callback_data=f"{EDIT_NAME_CALLBACK_PREFIX}{task.id}"
                 )
             ],
             [
                 InlineKeyboardButton(
-                    "Change reward", callback_data=f"{EDIT_REWARD_CALLBACK_PREFIX}{task.id}"
+                    "Изменить награду", callback_data=f"{EDIT_REWARD_CALLBACK_PREFIX}{task.id}"
                 )
             ],
-            [InlineKeyboardButton("← Tasks", callback_data=LIST_CALLBACK_DATA)],
+            [InlineKeyboardButton("← Задачи", callback_data=LIST_CALLBACK_DATA)],
         ]
     )
 
@@ -131,5 +135,5 @@ def back_to_tasks_keyboard() -> InlineKeyboardMarkup:
     (Issue #28 section 17).
     """
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("← Tasks", callback_data=LIST_CALLBACK_DATA)]]
+        [[InlineKeyboardButton("← Задачи", callback_data=LIST_CALLBACK_DATA)]]
     )

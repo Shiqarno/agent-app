@@ -39,11 +39,11 @@ from app.telegram.views.adult_rewards import (
 from app.telegram_identity import resolve_user_by_telegram_id
 
 _NOT_CONNECTED_TEXT = (
-    "Your Telegram account isn't connected yet. Ask the adult who manages "
-    "your account for an activation link."
+    "Ваш Telegram-аккаунт ещё не подключён. Попросите у взрослого, который "
+    "управляет вашим аккаунтом, ссылку для активации."
 )
-_NOT_AN_ADULT_TEXT = "This isn't available for your account."
-_REWARD_NOT_FOUND_TEXT = "Reward not found."
+_NOT_AN_ADULT_TEXT = "Это недоступно для вашего аккаунта."
+_REWARD_NOT_FOUND_TEXT = "Награда не найдена."
 
 # Per-chat, in-memory only (pattern established by Issue #29): tracks which
 # step of the Add/Edit Reward flow this Adult is currently on. Never
@@ -51,7 +51,7 @@ _REWARD_NOT_FOUND_TEXT = "Reward not found."
 # no business state depends on this.
 _FLOW_KEY = "adult_reward_flow"
 
-_SKIP_KEYWORD = "skip"
+_SKIP_KEYWORD = "пропустить"
 
 
 def _user_data(context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any]:
@@ -192,9 +192,9 @@ def _parse_cost(text: str) -> tuple[int | None, str | None]:
     try:
         value = int(text.strip())
     except ValueError:
-        return None, "Please enter a whole number of points."
+        return None, "Пожалуйста, введите целое число баллов."
     if value <= 0:
-        return None, "Cost must be greater than 0."
+        return None, "Стоимость должна быть больше 0."
     return value, None
 
 
@@ -315,7 +315,7 @@ def _route_flow_text(
 
     if step == "name":
         if not text:
-            return "Please enter a name.", None, False
+            return "Пожалуйста, введите название.", None, False
         flow["name"] = text
         flow["step"] = "cost"
         prompt = (
@@ -328,7 +328,7 @@ def _route_flow_text(
     if step == "cost":
         cost_points, error = _parse_cost(text)
         if error is not None or cost_points is None:
-            return error or "Please enter a whole number of points.", None, False
+            return error or "Пожалуйста, введите целое число баллов.", None, False
         flow["cost_points"] = cost_points
         flow["step"] = "description"
         prompt = (

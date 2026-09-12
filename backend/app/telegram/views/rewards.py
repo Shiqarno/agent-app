@@ -17,12 +17,12 @@ def render_rewards(rewards: list[Reward], available_balance: int) -> str:
     affordability here -- not the raw ledger balance -- so the banner
     never contradicts which buttons are actually shown below it.
     """
-    header = f"{AVAILABLE_REWARDS_HEADING}\nYou have {available_balance} points"
+    header = f"{AVAILABLE_REWARDS_HEADING}\nУ тебя {available_balance} баллов"
     if not rewards:
         return f"{header}\n\n{NO_REWARDS_TEXT_PREFIX}"
 
     unaffordable_blocks = [
-        f"{reward.name} · 💰 {reward.cost_points}\nNot enough points"
+        f"{reward.name} · 💰 {reward.cost_points}\nНедостаточно баллов"
         for reward in rewards
         if available_balance < reward.cost_points
     ]
@@ -39,7 +39,8 @@ def render_reward_requested(reward: Reward, available_balance: int) -> str:
     app/telegram/views/confirmations.py for that side).
     """
     return (
-        f"Reward requested!\n\n{reward.name} · {reward.cost_points} points\n"
-        f"Sent to an adult for approval -- {reward.cost_points} points reserved.\n"
-        f"Available balance: {available_balance} points."
+        f"Награда запрошена!\n\n{reward.name} · {reward.cost_points} баллов\n"
+        f"Запрос отправлен взрослому на подтверждение — "
+        f"зарезервировано {reward.cost_points} баллов.\n"
+        f"Доступно баллов: {available_balance}."
     )

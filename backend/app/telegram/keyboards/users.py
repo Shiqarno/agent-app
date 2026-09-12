@@ -21,8 +21,8 @@ def users_list_keyboard(items: list[tuple[User, bool]]) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(user.name, callback_data=f"{OPEN_CALLBACK_PREFIX}{user.id}")]
         for user, _connected in items
     ]
-    rows.append([InlineKeyboardButton("+ Add Child", callback_data=ADD_CHILD_CALLBACK_DATA)])
-    rows.append([InlineKeyboardButton("← Home", callback_data=HOME_CALLBACK_DATA)])
+    rows.append([InlineKeyboardButton("+ Добавить ребёнка", callback_data=ADD_CHILD_CALLBACK_DATA)])
+    rows.append([InlineKeyboardButton("← Домой", callback_data=HOME_CALLBACK_DATA)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -37,11 +37,12 @@ def user_details_keyboard(user: User, connected: bool) -> InlineKeyboardMarkup:
         rows.append(
             [
                 InlineKeyboardButton(
-                    "Get activation link", callback_data=f"{GET_LINK_CALLBACK_PREFIX}{user.id}"
+                    "Получить ссылку для активации",
+                    callback_data=f"{GET_LINK_CALLBACK_PREFIX}{user.id}",
                 )
             ]
         )
-    rows.append([InlineKeyboardButton("← Users", callback_data=LIST_CALLBACK_DATA)])
+    rows.append([InlineKeyboardButton("← Пользователи", callback_data=LIST_CALLBACK_DATA)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -50,5 +51,5 @@ def back_to_users_keyboard() -> InlineKeyboardMarkup:
     found, or input was invalid) -- the Adult must never be stranded.
     """
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("← Users", callback_data=LIST_CALLBACK_DATA)]]
+        [[InlineKeyboardButton("← Пользователи", callback_data=LIST_CALLBACK_DATA)]]
     )

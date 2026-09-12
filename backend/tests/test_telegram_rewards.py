@@ -157,7 +157,7 @@ def test_child_can_render_rewards(real: RealData) -> None:
 
     # Issue #36: an affordable Reward is fully represented by its button --
     # its name never appears as separate text.
-    assert text == f"{AVAILABLE_REWARDS_HEADING}\nYou have 320 points"
+    assert text == f"{AVAILABLE_REWARDS_HEADING}\nУ тебя 320 баллов"
     assert "Ice cream" not in text
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 1
@@ -175,7 +175,7 @@ def test_unaffordable_reward_gets_no_button(real: RealData) -> None:
     text, keyboard = _rewards_view(telegram_id)
 
     assert "New game" in text
-    assert "Not enough points" in text
+    assert "Недостаточно баллов" in text
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 0
 
@@ -197,10 +197,10 @@ def test_a_pending_request_reduces_available_balance_and_affordability(real: Rea
 
     # Available = 100 - 70 = 30, so neither Reward A (already requested,
     # still costs 70) nor Reward B (40) is affordable any more.
-    assert text.startswith(f"{AVAILABLE_REWARDS_HEADING}\nYou have 30 points")
+    assert text.startswith(f"{AVAILABLE_REWARDS_HEADING}\nУ тебя 30 баллов")
     assert "Reward A" in text
     assert "Reward B" in text
-    assert text.count("Not enough points") == 2
+    assert text.count("Недостаточно баллов") == 2
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 0
 
@@ -256,7 +256,7 @@ def test_request_creates_a_pending_request_not_an_immediate_redemption(real: Rea
 
     assert success is True
     assert "Ice cream" in toast
-    assert "requested" in toast.lower()
+    assert "запрошена" in toast.lower()
     assert "220" in toast
     real.session.expire_all()
     redemption = (

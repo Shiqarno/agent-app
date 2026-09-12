@@ -17,12 +17,12 @@ from app.telegram.views.rewards import render_reward_requested, render_rewards
 from app.telegram_identity import resolve_user_by_telegram_id
 
 _NOT_CONNECTED_TEXT = (
-    "Your Telegram account isn't connected yet. Ask the adult who manages "
-    "your account for an activation link."
+    "Ваш Telegram-аккаунт ещё не подключён. Попросите у взрослого, который "
+    "управляет вашим аккаунтом, ссылку для активации."
 )
-_NOT_A_CHILD_TEXT = "This isn't available for your account."
-_REWARD_UNAVAILABLE_TEXT = "This reward is no longer available."
-_INSUFFICIENT_POINTS_TEXT = "Not enough points."
+_NOT_A_CHILD_TEXT = "Это недоступно для вашего аккаунта."
+_REWARD_UNAVAILABLE_TEXT = "Эта награда больше не доступна."
+_INSUFFICIENT_POINTS_TEXT = "Недостаточно баллов."
 
 
 def _rewards_view(telegram_user_id: int) -> tuple[str, InlineKeyboardMarkup | None]:

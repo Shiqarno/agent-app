@@ -154,7 +154,7 @@ def test_adult_can_open_points_list_with_child_balances(real: RealData) -> None:
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
     assert any("Alex" in label for label in labels)
-    assert any("Home" in label for label in labels)
+    assert any("Домой" in label for label in labels)
 
 
 def test_adult_users_do_not_appear_in_the_points_list(real: RealData) -> None:
@@ -208,9 +208,9 @@ def test_adult_can_open_a_childs_points_details(real: RealData) -> None:
     assert "Clean room" in text
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert any("Adjust points" in label for label in labels)
-    assert any("Back" in label for label in labels)
-    assert not any("Older" in label for label in labels)
+    assert any("Изменить баллы" in label for label in labels)
+    assert any("Назад" in label for label in labels)
+    assert not any("Ранее" in label for label in labels)
 
 
 def test_older_pagination_shows_older_history_for_a_child(real: RealData) -> None:
@@ -225,9 +225,9 @@ def test_older_pagination_shows_older_history_for_a_child(real: RealData) -> Non
     assert first_keyboard is not None
     labels = [button.text for row in first_keyboard.inline_keyboard for button in row]
     older_buttons = [
-        button for row in first_keyboard.inline_keyboard for button in row if button.text == "Older"
+        button for row in first_keyboard.inline_keyboard for button in row if button.text == "Ранее"
     ]
-    assert any("Older" in label for label in labels)
+    assert any("Ранее" in label for label in labels)
     assert len(older_buttons) == 1
     encoded_cursor = older_buttons[0].callback_data.rsplit(":", 1)[1]  # type: ignore[union-attr]
     cursor = decode_uuid(encoded_cursor)
@@ -265,7 +265,7 @@ def test_older_callback_data_round_trips_to_the_correct_child_and_cursor() -> No
     keyboard = child_points_keyboard(child_id, view)
 
     older_button = next(
-        button for row in keyboard.inline_keyboard for button in row if button.text == "Older"
+        button for row in keyboard.inline_keyboard for button in row if button.text == "Ранее"
     )
     assert older_button.callback_data is not None
     payload = older_button.callback_data.removeprefix(OLDER_CALLBACK_PREFIX)
@@ -340,8 +340,8 @@ def test_adjust_menu_shows_the_current_balance(real: RealData) -> None:
     assert "75" in text
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert any("Add points" in label for label in labels)
-    assert any("Remove points" in label for label in labels)
+    assert any("Начислить баллы" in label for label in labels)
+    assert any("Списать баллы" in label for label in labels)
 
 
 # =========================================================================================
@@ -479,7 +479,7 @@ def test_insufficient_balance_is_rejected_during_remove(real: RealData) -> None:
 
     text, keyboard = _finish_adjust(telegram_id, str(child.id), "remove", 100, "Too much")
 
-    assert "cannot remove" in text.lower()
+    assert "нельзя списать" in text.lower()
     assert keyboard is not None
     session = SessionLocal()
     try:
@@ -584,7 +584,7 @@ def test_child_points_command_still_shows_the_child_self_service_view(real: Real
 
     text, keyboard = _points_command_view(telegram_id)
 
-    assert "Balance" in text
+    assert "Баланс" in text
     assert "30" in text
     assert "Clean room" in text
 

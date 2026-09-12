@@ -14,8 +14,9 @@ presentation only.
 
 A Telegram account is connected to exactly one `User` via an activation
 token (`/start <token>`), the same mechanism as Web activation. An
-unconnected account gets a short "ask the adult who manages your account"
-message from every screen. Reconnecting a Telegram account to a different
+unconnected account gets a short "Попросите у взрослого, который управляет
+вашим аккаунтом, ссылку для активации" message from every screen.
+Reconnecting a Telegram account to a different
 User replaces the link; a Telegram account already linked to a different
 User is refused, never silently reassigned.
 
@@ -66,7 +67,7 @@ Points amounts use two conventions, depending on the kind of screen:
   wording.
 - **Explanatory/detail text** (e.g. a Task's or Reward's own reward/cost
   line on its detail screen, the Child Rewards balance banner, a
-  redemption confirmation) may spell the amount out as "N points"
+  redemption confirmation) may spell the amount out as "N баллов"
   instead — this is pre-existing, narrative wording, distinct from the
   retired "pts" abbreviation, and is not required to switch to 💰.
 
@@ -100,7 +101,7 @@ done — neither button says "Start" or "Done", since tapping either is
 self-evidently the action, and neither Task's name appears anywhere but
 its own button. An `AWAITING_CONFIRMATION` item has no button at all (no
 action is possible on it), so it's shown as text instead — name, reward,
-and "waiting for confirmation". Every reward shown (💰 notation) is
+and "ожидает подтверждения". Every reward shown (💰 notation) is
 always the amount actually snapshotted onto *that* execution when it
 began, never a Task's reward if it was edited since. Completed/cancelled
 executions never appear here or suppress a Task's future availability.
@@ -119,14 +120,14 @@ confirms.
 ### Rewards
 
 Headed "Доступные награды", followed by the Child's current *available*
-balance ("You have N points" — this particular banner is explanatory text
-and uses the spelled-out word, unlike the Points screens' 💰 balance). The
+balance ("У тебя N баллов" — this particular banner is explanatory text
+and spells out the word "баллов", unlike the Points screens' 💰 balance). The
 global reward catalog (not scoped by who created it): an affordable
 Reward is fully represented by its own button (name + cost, 💰 notation,
 no verb) — tapping it **requests** the Reward at its *current* cost, never
 a cost cached from when the screen was rendered. A Reward the Child can't
 currently afford gets no button (nothing to tap), so it's shown as text
-instead — name, cost, and "Not enough points" — the only case a Reward's
+instead — name, cost, and "Недостаточно баллов" — the only case a Reward's
 name appears anywhere but a button.
 
 Tapping a Reward does not hand it out immediately: it creates a pending
@@ -149,9 +150,9 @@ freeze was released with nothing deducted (declined).
 ### Points
 
 Current balance plus transaction history, newest first, paginated
-("Older" loads more). Each entry shows a human-readable source (the Task
-title for a completion, the Reward name for a redemption) and a signed
-amount — never the internal ledger reason code.
+("Ранее" loads more). Each entry shows a human-readable source
+(the Task title for a completion, the Reward name for a redemption) and a
+signed amount — never the internal ledger reason code.
 
 ## Adult navigation
 
@@ -232,7 +233,7 @@ decides the button's whole shape, not just a word on it:
 A Task can have more than one open execution at once for different
 Children (one self-claimed, others directly assigned, or several
 self-claimed across a deactivate/reactivate cycle) — that detail, and
-which Child currently has it and its state (e.g. "Alex — in progress"),
+which Child currently has it and its state (e.g. "Alex — выполняется"),
 lives one tap further in, on Task Details; terminal (completed/cancelled)
 executions never affect availability and are never shown there either —
 this is not a history view.
@@ -313,20 +314,20 @@ Adult can simply try again. Creating a Child immediately produces an
 activation link to send them:
 
 ```
-Alex was created.
+Профиль «Alex» создан.
 
-Send this activation link to Alex:
+Отправьте Alex эту ссылку для активации:
 
 https://t.me/<bot>?start=<token>
 
-The link expires in 72 hours.
+Ссылка действительна 72 часа.
 ```
 
 Generating a fresh link for an existing unconnected Child (because the
 first one was lost or expired) shows the same kind of message, without the
-"was created" line, and immediately invalidates whatever link existed
-before it — only one activation link is ever valid for a given User at a
-time.
+"Профиль ... создан" opening line, and immediately invalidates whatever
+link existed before it — only one activation link is ever valid for a
+given User at a time.
 
 ### Rewards (Adult)
 
@@ -373,7 +374,7 @@ notation) — Adults never appear here, since there is nothing to manage
 about an Adult's own Points from this screen.
 
 Opening a Child shows their balance and recent transaction history,
-newest first, paginated ("Older" loads more) — the same shape as the
+newest first, paginated ("Ранее" loads more) — the same shape as the
 Child's own Points screen, just for someone else's ledger. Each entry
 shows a human-readable source and a signed amount, exactly like the
 Child's own view; a manual adjustment shows the description the Adult

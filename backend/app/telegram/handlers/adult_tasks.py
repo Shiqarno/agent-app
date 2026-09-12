@@ -54,16 +54,16 @@ from app.telegram.views.adult_tasks import (
 from app.telegram_identity import resolve_user_by_telegram_id
 
 _NOT_CONNECTED_TEXT = (
-    "Your Telegram account isn't connected yet. Ask the adult who manages "
-    "your account for an activation link."
+    "Ваш Telegram-аккаунт ещё не подключён. Попросите у взрослого, который "
+    "управляет вашим аккаунтом, ссылку для активации."
 )
-_NOT_AN_ADULT_TEXT = "This isn't available for your account."
-_TASK_NOT_FOUND_TEXT = "Task not found."
+_NOT_AN_ADULT_TEXT = "Это недоступно для вашего аккаунта."
+_TASK_NOT_FOUND_TEXT = "Задача не найдена."
 _TASK_NOT_EDITABLE_TEXT = (
-    "This task cannot be edited while it is being worked on. Please open Tasks again."
+    "Эту задачу нельзя редактировать, пока она выполняется. Откройте задачи ещё раз."
 )
-_CHILD_NOT_FOUND_TEXT = "Child not found."
-_ALREADY_OPEN_TEXT = "This child already has an open execution of this task."
+_CHILD_NOT_FOUND_TEXT = "Ребёнок не найден."
+_ALREADY_OPEN_TEXT = "У этого ребёнка уже есть незавершённое выполнение этой задачи."
 
 # Per-chat, in-memory only (Issue #28 section 14): tracks which single text
 # prompt, if any, is currently open for this Adult ("what's the next text
@@ -298,7 +298,9 @@ def _toggle_active(
             task = (
                 activate_task(db, user, task_id) if activate else deactivate_task(db, user, task_id)
             )
-            toast = f"{task.title} activated." if activate else f"{task.title} deactivated."
+            toast = (
+                f"«{task.title}» активирована." if activate else f"«{task.title}» деактивирована."
+            )
         except NotAnAdultError:
             return _NOT_AN_ADULT_TEXT, _NOT_AN_ADULT_TEXT, None
         except TaskNotFoundError:
@@ -380,9 +382,9 @@ def _parse_reward_points(text: str) -> tuple[int | None, str | None]:
     try:
         value = int(text.strip())
     except ValueError:
-        return None, "Please enter a whole number of points."
+        return None, "Пожалуйста, введите целое число баллов."
     if value <= 0:
-        return None, "Points must be greater than 0."
+        return None, "Количество баллов должно быть больше 0."
     return value, None
 
 
@@ -551,7 +553,7 @@ def _route_flow_text(
 
     if action == "create" and flow.get("step") == "title":
         if not text:
-            return "Please enter a task name.", None, False
+            return "Пожалуйста, введите название задачи.", None, False
         flow["title"] = text
         flow["step"] = "reward"
         return render_create_prompt_reward(), None, False
@@ -559,20 +561,20 @@ def _route_flow_text(
     if action == "create" and flow.get("step") == "reward":
         reward_points, error = _parse_reward_points(text)
         if error is not None or reward_points is None:
-            return error or "Please enter a whole number of points.", None, False
+            return error or "Пожалуйста, введите целое число баллов.", None, False
         result_text, keyboard = _finish_create(telegram_user_id, flow["title"], reward_points)
         return result_text, keyboard, True
 
     if action == "edit_title":
         if not text:
-            return "Please enter a task name.", None, False
+            return "Пожалуйста, введите название задачи.", None, False
         result_text, keyboard = _finish_edit_title(telegram_user_id, flow["task_id"], text)
         return result_text, keyboard, True
 
     if action == "edit_reward":
         reward_points, error = _parse_reward_points(text)
         if error is not None or reward_points is None:
-            return error or "Please enter a whole number of points.", None, False
+            return error or "Пожалуйста, введите целое число баллов.", None, False
         result_text, keyboard = _finish_edit_reward(
             telegram_user_id, flow["task_id"], reward_points
         )

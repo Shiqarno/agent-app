@@ -16,13 +16,14 @@ from app.telegram_identity import (
 )
 
 _NOT_CONNECTED_TEXT = (
-    "Your Telegram account isn't connected yet. Ask the adult who manages "
-    "your account for an activation link."
+    "Ваш Telegram-аккаунт ещё не подключён. Попросите у взрослого, который "
+    "управляет вашим аккаунтом, ссылку для активации."
 )
 _INVALID_ACTIVATION_TEXT = (
-    "This activation link is no longer valid. Ask the adult who manages your account for a new one."
+    "Эта ссылка для активации больше не действительна. Попросите у взрослого, "
+    "который управляет вашим аккаунтом, новую ссылку."
 )
-_ALREADY_LINKED_TEXT = "This Telegram account is already connected to a different profile."
+_ALREADY_LINKED_TEXT = "Этот Telegram-аккаунт уже подключён к другому профилю."
 
 
 def _activate(raw_token: str, telegram_user_id: int) -> tuple[str, UserRole | None]:
@@ -39,7 +40,7 @@ def _activate(raw_token: str, telegram_user_id: int) -> tuple[str, UserRole | No
     db = SessionLocal()
     try:
         user = activate_telegram_identity(db, raw_token, telegram_user_id)
-        return f"You're connected, {user.name}! You can now use this bot.", user.role
+        return f"Вы подключены, {user.name}! Теперь вы можете пользоваться ботом.", user.role
     except TelegramActivationInvalidError:
         return _INVALID_ACTIVATION_TEXT, None
     except TelegramAccountAlreadyLinkedError:
@@ -68,9 +69,9 @@ def _resolve_home(
     if role == UserRole.CHILD:
         text = (
             f"Твои баллы: 💰 {balance}\n\n"
-            f"Welcome back, {name}! Use /tasks to see available tasks, "
-            "/mytasks to see what you're working on, /rewards to spend your points, "
-            "or /points to see your balance and history."
+            f"С возвращением, {name}! Команда /tasks покажет доступные задачи, "
+            "/mytasks — чем ты сейчас занимаешься, /rewards — на что потратить баллы, "
+            "а /points — твой баланс и историю."
         )
         return text, None, role
 

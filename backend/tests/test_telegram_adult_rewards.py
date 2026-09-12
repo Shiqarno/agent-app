@@ -118,7 +118,7 @@ def test_adult_can_open_rewards(real: RealData) -> None:
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
     assert any(label == "Pizza · 💰 500" for label in labels)
-    assert any("Add Reward" in label for label in labels)
+    assert any("Добавить награду" in label for label in labels)
 
 
 def test_child_rewards_command_still_opens_child_redemption_screen(real: RealData) -> None:
@@ -132,9 +132,9 @@ def test_child_rewards_command_still_opens_child_redemption_screen(real: RealDat
 
     text, keyboard = _rewards_command_view(telegram_id)
 
-    # The Child redemption view ("Доступные награды\nYou have N points...")
-    # is distinct from the Adult catalog-management view ("🎁 Rewards...").
-    assert text.startswith("Доступные награды\nYou have")
+    # The Child redemption view ("Доступные награды\nУ тебя N баллов...")
+    # is distinct from the Adult catalog-management view ("🎁 Награды...").
+    assert text.startswith("Доступные награды\nУ тебя")
     assert "Pizza" in text
     assert keyboard is not None
 
@@ -177,9 +177,9 @@ def test_adult_can_open_reward_details(real: RealData) -> None:
     assert "Pizza of your choice." in text
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert "Edit" in labels
+    assert "Изменить" in labels
     assert not any("Delete" in label for label in labels)
-    assert not any("Deactivate" in label or "Activate" in label for label in labels)
+    assert not any("Деактивировать" in label or "Активировать" in label for label in labels)
 
 
 def test_open_nonexistent_reward_does_not_strand_the_adult(real: RealData) -> None:
@@ -219,7 +219,7 @@ def test_start_create_prompts_for_name(real: RealData) -> None:
     text, should_start = _start_create(telegram_id)
 
     assert should_start is True
-    assert "called" in text.lower()
+    assert "называется" in text.lower()
 
 
 def test_child_cannot_start_add_reward(real: RealData) -> None:
@@ -243,16 +243,16 @@ def test_add_reward_flow_collects_name_then_cost_then_description(real: RealData
     text, _keyboard, finished = _route_flow_text(telegram_id, flow, "Pizza")
     assert finished is False
     assert flow["step"] == "cost"
-    assert "points" in text.lower() or "cost" in text.lower()
+    assert "баллов" in text.lower() or "стоит" in text.lower()
 
     text, _keyboard, finished = _route_flow_text(telegram_id, flow, "500")
     assert finished is False
     assert flow["step"] == "description"
-    assert "description" in text.lower()
+    assert "описание" in text.lower()
 
     text, keyboard, finished = _route_flow_text(telegram_id, flow, "Pizza of your choice.")
     assert finished is True
-    assert "Pizza was created." in text
+    assert "«Pizza» создана." in text
     assert keyboard is not None
 
     created = real.session.query(Reward).filter_by(name="Pizza").one()
@@ -268,7 +268,7 @@ def test_add_reward_accepts_an_empty_description_via_skip(real: RealData) -> Non
 
     text, _keyboard = _finish_create(telegram_id, "Movie night", 300, None)
 
-    assert "Movie night was created." in text
+    assert "«Movie night» создана." in text
     created = real.session.query(Reward).filter_by(name="Movie night").one()
     real.reward_ids.append(created.id)
     assert created.description is None
@@ -283,7 +283,7 @@ def test_add_reward_invalid_cost_does_not_create_a_reward(real: RealData) -> Non
     text, _keyboard, finished = _route_flow_text(telegram_id, flow, "not a number")
 
     assert finished is False
-    assert "whole number" in text.lower()
+    assert "целое число" in text.lower()
     assert real.session.query(Reward).filter_by(name="Pizza").count() == 0
 
 
@@ -326,7 +326,7 @@ def test_edit_reward_end_to_end_updates_name_cost_and_description(real: RealData
         telegram_id, str(reward.id), "Deluxe Pizza", 600, "New description"
     )
 
-    assert "Deluxe Pizza was updated." in text
+    assert "«Deluxe Pizza» обновлена." in text
     assert keyboard is not None
     real.session.refresh(reward)
     assert reward.name == "Deluxe Pizza"
@@ -347,10 +347,10 @@ def test_edit_reward_skip_on_description_keeps_it_unchanged(real: RealData) -> N
         "name": "Pizza",
         "cost_points": 500,
     }
-    text, _keyboard, finished = _route_flow_text(telegram_id, flow, "skip")
+    text, _keyboard, finished = _route_flow_text(telegram_id, flow, "пропустить")
 
     assert finished is True
-    assert "was updated" in text
+    assert "обновлена" in text
     real.session.refresh(reward)
     assert reward.description == "Original description"
 

@@ -320,8 +320,8 @@ def test_opening_a_confirmation_shows_its_task_name_and_actions(real: RealData) 
     assert "20" in text
     assert keyboard is not None
     buttons = [button for row in keyboard.inline_keyboard for button in row]
-    confirm = next(b for b in buttons if b.text == "Confirm")
-    ret = next(b for b in buttons if b.text == "Return")
+    confirm = next(b for b in buttons if b.text == "Подтвердить")
+    ret = next(b for b in buttons if b.text == "Отклонить")
     assert confirm.callback_data == f"{CONFIRM_CALLBACK_PREFIX}{execution.id}"
     assert ret.callback_data == f"{RETURN_CALLBACK_PREFIX}{execution.id}"
 
@@ -488,7 +488,7 @@ def test_confirm_routes_to_confirm_execution_and_removes_it_from_the_queue(
 
     toast, text, keyboard = _confirm(telegram_id, str(execution.id))
 
-    assert toast == "Clean room confirmed -- Vova earned 💰 20."
+    assert toast == "«Clean room» подтверждена. Начислено Vova: 💰 20."
     real.session.expire_all()
     refreshed = real.session.get(TaskExecution, execution.id)
     assert refreshed is not None
@@ -562,7 +562,7 @@ def test_return_routes_to_return_execution_to_work_and_removes_it_from_the_queue
 
     toast, text, keyboard = _return_to_work(telegram_id, str(execution.id))
 
-    assert toast == "Clean room returned to Vova."
+    assert toast == "«Clean room» возвращена Vova на доработку."
     real.session.expire_all()
     refreshed = real.session.get(TaskExecution, execution.id)
     assert refreshed is not None
@@ -654,8 +654,8 @@ def test_opening_a_reward_request_shows_its_detail_and_actions(real: RealData) -
     assert "30" in text
     assert keyboard is not None
     buttons = [button for row in keyboard.inline_keyboard for button in row]
-    confirm = next(b for b in buttons if b.text == "Confirm")
-    ret = next(b for b in buttons if b.text == "Return")
+    confirm = next(b for b in buttons if b.text == "Подтвердить")
+    ret = next(b for b in buttons if b.text == "Отклонить")
     assert confirm.callback_data == f"{CONFIRM_REWARD_CALLBACK_PREFIX}{redemption.id}"
     assert ret.callback_data == f"{RETURN_REWARD_CALLBACK_PREFIX}{redemption.id}"
     callback_datas = [button.callback_data for row in keyboard.inline_keyboard for button in row]
@@ -698,7 +698,7 @@ def test_confirm_reward_routes_to_confirm_reward_redemption_and_removes_it_from_
     toast, text, keyboard = _confirm_reward(telegram_id, str(redemption.id))
 
     assert "Ice cream" in toast
-    assert "confirmed" in toast.lower()
+    assert "подтверждена" in toast.lower()
     real.session.expire_all()
     refreshed = real.session.get(RewardRedemption, redemption.id)
     assert refreshed is not None

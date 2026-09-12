@@ -213,7 +213,7 @@ def test_my_tasks_view_renders_in_progress_with_done_button(real: RealData) -> N
     # button -- its name never appears as separate text.
     assert text == MY_TASKS_HEADING
     assert "Clean room" not in text
-    assert "Waiting for confirmation" not in text
+    assert "Ожидает подтверждения" not in text
     assert keyboard is not None
     assert keyboard.inline_keyboard[0][0].callback_data == (
         f"{EXECUTION_DONE_CALLBACK_PREFIX}{execution.id}"
@@ -231,7 +231,7 @@ def test_my_tasks_view_awaiting_confirmation_has_no_cta(real: RealData) -> None:
 
     text, keyboard = _my_tasks_view(telegram_id)
 
-    assert "Waiting for confirmation" in text
+    assert "Ожидает подтверждения" in text
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 0
 
@@ -260,7 +260,7 @@ def test_take_routes_to_claim_task_and_creates_in_progress_execution(real: RealD
 
     toast, text, keyboard = _take_task(telegram_id, str(task.id))
 
-    assert toast == "Clean room started."
+    assert toast == "«Clean room» начата."
     real.session.expire_all()
     execution = real.session.query(TaskExecution).filter_by(task_id=task.id, user_id=child.id).one()
     assert execution.status == TaskExecutionStatus.IN_PROGRESS
@@ -321,12 +321,12 @@ def test_done_routes_to_mark_execution_ready(real: RealData) -> None:
 
     toast, text, keyboard = _mark_ready(telegram_id, str(execution.id))
 
-    assert toast == "Clean room marked as done and sent for confirmation."
+    assert toast == "«Clean room» отмечена как выполненная и отправлена на подтверждение."
     real.session.expire_all()
     refreshed = real.session.get(TaskExecution, execution.id)
     assert refreshed is not None
     assert refreshed.status == TaskExecutionStatus.AWAITING_CONFIRMATION
-    assert "Waiting for confirmation" in text
+    assert "Ожидает подтверждения" in text
     assert keyboard is not None
     assert len(keyboard.inline_keyboard) == 0
 
@@ -403,7 +403,7 @@ def test_start_routes_to_start_execution(real: RealData) -> None:
 
     toast, text, keyboard = _start_execution(telegram_id, str(execution.id))
 
-    assert toast == "Clean room started."
+    assert toast == "«Clean room» начата."
     real.session.expire_all()
     refreshed = real.session.get(TaskExecution, execution.id)
     assert refreshed is not None
@@ -459,7 +459,7 @@ def test_handlers_do_not_bypass_the_application_layer(real: RealData) -> None:
     task = real.make_task(adult, title="Adult task")
 
     toast, _, _ = _take_task(telegram_id, str(task.id))
-    assert toast == "This isn't available for your account."
+    assert toast == "Это недоступно для вашего аккаунта."
 
     real.session.expire_all()
     assert real.session.query(TaskExecution).filter_by(task_id=task.id).count() == 0

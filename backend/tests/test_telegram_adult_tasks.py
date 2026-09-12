@@ -153,8 +153,8 @@ def test_adult_tasks_command_opens_adult_tasks_list(real: RealData) -> None:
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
     assert any("Clean room" in label for label in labels)
-    assert any("Add task" in label for label in labels)
-    assert any("Home" in label for label in labels)
+    assert any("Добавить задачу" in label for label in labels)
+    assert any("Домой" in label for label in labels)
     assert keyboard.inline_keyboard[0][0].callback_data == f"{OPEN_CALLBACK_PREFIX}{task.id}"
     # No "Available"/"Unavailable" word on the button -- an active Task's
     # name is shown plain.
@@ -279,7 +279,7 @@ def test_unavailable_task_shows_current_execution_on_details_not_the_list(
 
     assert "Take out trash" in details_text
     assert "Alex" in details_text
-    assert "in progress" in details_text
+    assert "выполняется" in details_text
 
 
 def test_completed_execution_does_not_suppress_availability_in_list(real: RealData) -> None:
@@ -331,13 +331,13 @@ def test_adult_can_open_task_details(real: RealData) -> None:
     text, keyboard = _task_details_view(telegram_id, str(task.id))
 
     assert "Clean room" in text
-    assert "20 points" in text
-    assert "Available" in text
+    assert "20 баллов" in text
+    assert "Доступна" in text
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert "Edit" in labels
-    assert "Deactivate" in labels
-    assert any("Tasks" in label for label in labels)
+    assert "Изменить" in labels
+    assert "Деактивировать" in labels
+    assert any("Задачи" in label for label in labels)
 
 
 def test_task_details_with_current_execution_hides_edit_but_not_activate_deactivate(
@@ -357,14 +357,14 @@ def test_task_details_with_current_execution_hides_edit_but_not_activate_deactiv
     text, keyboard = _task_details_view(telegram_id, str(task.id))
 
     assert "Alex" in text
-    assert "waiting for confirmation" in text
-    assert "Not available" in text
-    assert "Cannot edit the name or reward while this execution is open." in text
+    assert "ожидает подтверждения" in text
+    assert "Недоступна" in text
+    assert "Нельзя изменить название или награду, пока это выполнение открыто." in text
     assert keyboard is not None
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
-    assert "Edit" not in labels
-    assert "Activate" in labels
-    assert "Deactivate" not in labels
+    assert "Изменить" not in labels
+    assert "Активировать" in labels
+    assert "Деактивировать" not in labels
 
 
 def test_open_nonexistent_task_does_not_strand_the_user(real: RealData) -> None:
@@ -405,7 +405,7 @@ def test_adult_can_start_create_task(real: RealData) -> None:
     text, should_start = _start_create(telegram_id)
 
     assert should_start is True
-    assert "called" in text.lower()
+    assert "называется" in text.lower()
 
 
 def test_child_cannot_start_create_task(real: RealData) -> None:
@@ -432,7 +432,7 @@ def test_valid_creation_succeeds_end_to_end(real: RealData) -> None:
     text, keyboard, finished = _route_flow_text(telegram_id, flow, "20")
     assert finished is True
     assert "Clean room" in text
-    assert "20 points" in text
+    assert "20 баллов" in text
     assert keyboard is not None
 
     created = real.session.query(Task).filter_by(title="Clean room", created_by=adult.id).one()
@@ -462,7 +462,7 @@ def test_non_numeric_reward_is_rejected_and_stays_on_the_same_step(real: RealDat
     text, _keyboard, finished = _route_flow_text(telegram_id, flow, "not a number")
 
     assert finished is False
-    assert "whole number" in text.lower()
+    assert "целое число" in text.lower()
 
 
 def test_non_positive_reward_is_rejected(real: RealData) -> None:
@@ -474,7 +474,7 @@ def test_non_positive_reward_is_rejected(real: RealData) -> None:
     text, _keyboard, finished = _route_flow_text(telegram_id, flow, "0")
 
     assert finished is False
-    assert "greater than 0" in text
+    assert "больше 0" in text
 
 
 def test_create_rejects_a_child_via_crafted_flow_state(real: RealData) -> None:
@@ -519,7 +519,7 @@ def test_adult_can_edit_task_reward(real: RealData) -> None:
 
     text, keyboard = _finish_edit_reward(telegram_id, str(task.id), 30)
 
-    assert "30 points" in text
+    assert "30 баллов" in text
     real.session.refresh(task)
     assert task.reward_points == 30
 
@@ -581,8 +581,8 @@ def test_adult_can_deactivate_a_task(real: RealData) -> None:
 
     toast, text, keyboard = _toggle_active(telegram_id, str(task.id), activate=False)
 
-    assert "deactivated" in toast
-    assert "Not available" in text
+    assert "деактивирована" in toast
+    assert "Недоступна" in text
     assert keyboard is not None
     real.session.refresh(task)
     assert task.is_active is False
@@ -596,8 +596,8 @@ def test_adult_can_activate_a_task(real: RealData) -> None:
 
     toast, text, keyboard = _toggle_active(telegram_id, str(task.id), activate=True)
 
-    assert "activated" in toast
-    assert "Available" in text
+    assert "активирована" in toast
+    assert "Доступна" in text
     real.session.refresh(task)
     assert task.is_active is True
 
@@ -618,8 +618,8 @@ def test_deactivate_succeeds_while_a_current_execution_exists(
 
     toast, text, keyboard = _toggle_active(telegram_id, str(task.id), activate=False)
 
-    assert "deactivated" in toast
-    assert "Not available" in text
+    assert "деактивирована" in toast
+    assert "Недоступна" in text
     assert keyboard is not None
     real.session.refresh(task)
     assert task.is_active is False
@@ -705,7 +705,7 @@ def test_assign_menu_shows_a_message_when_no_children_are_eligible(real: RealDat
 
     text, keyboard = _assign_menu_view(telegram_id, str(task.id))
 
-    assert "No eligible children" in text
+    assert "нет подходящих детей" in text
 
 
 def test_child_cannot_open_the_assign_menu(real: RealData) -> None:

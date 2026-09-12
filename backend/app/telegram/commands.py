@@ -6,23 +6,23 @@ from app.models import UserRole
 # both `bot.py` (default/global registration at startup) and
 # `handlers/start.py` (per-chat, role-scoped registration once identity is
 # resolved) import from here rather than each defining their own list.
-_HOME_COMMAND = BotCommand("start", "Home")
+_HOME_COMMAND = BotCommand("start", "Главная")
 
 CHILD_COMMANDS: list[BotCommand] = [
     _HOME_COMMAND,
-    BotCommand("tasks", "Available tasks"),
-    BotCommand("mytasks", "Your tasks"),
-    BotCommand("rewards", "Available rewards"),
-    BotCommand("points", "Your points"),
+    BotCommand("tasks", "Доступные задачи"),
+    BotCommand("mytasks", "Твои задачи"),
+    BotCommand("rewards", "Доступные награды"),
+    BotCommand("points", "Твои баллы"),
 ]
 
 ADULT_COMMANDS: list[BotCommand] = [
     _HOME_COMMAND,
-    BotCommand("users", "Users"),
-    BotCommand("tasks", "All tasks"),
-    BotCommand("confirmations", "Confirmations"),
-    BotCommand("rewards", "Rewards"),
-    BotCommand("points", "Points"),
+    BotCommand("users", "Пользователи"),
+    BotCommand("tasks", "Все задачи"),
+    BotCommand("confirmations", "Подтверждения"),
+    BotCommand("rewards", "Награды"),
+    BotCommand("points", "Баллы"),
 ]
 
 # Shown to a Telegram account before it's connected to any User -- the only

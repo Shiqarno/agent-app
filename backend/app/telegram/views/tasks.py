@@ -28,7 +28,7 @@ def render_my_tasks(items: list[tuple[TaskExecution, Task]]) -> str:
         return f"{MY_TASKS_HEADING}\n\n{NO_TASKS_IN_PROGRESS_TEXT}"
 
     waiting_blocks = [
-        f"{task.title} · 💰 {execution.reward_points}\nWaiting for confirmation"
+        f"{task.title} · 💰 {execution.reward_points}\nОжидает подтверждения"
         for execution, task in items
         if execution.status == TaskExecutionStatus.AWAITING_CONFIRMATION
     ]
@@ -38,8 +38,8 @@ def render_my_tasks(items: list[tuple[TaskExecution, Task]]) -> str:
 
 
 def render_task_taken(task: Task) -> str:
-    return f"{task.title} started."
+    return f"«{task.title}» начата."
 
 
 def render_execution_marked_ready(task: Task) -> str:
-    return f"{task.title} marked as done and sent for confirmation."
+    return f"«{task.title}» отмечена как выполненная и отправлена на подтверждение."
