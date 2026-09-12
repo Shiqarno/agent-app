@@ -25,6 +25,7 @@ from app.task_operations import (
 )
 from app.telegram.handlers.start import _resolve_home
 from app.telegram.handlers.tasks import _tasks_view
+from app.telegram.keyboards.adult_points import decode_uuid
 from app.telegram.keyboards.adult_tasks import (
     ACTIVATE_CALLBACK_PREFIX,
     ASSIGN_CALLBACK_PREFIX,
@@ -529,7 +530,15 @@ async def handle_assign_to_child(update: Update, context: ContextTypes.DEFAULT_T
     if query is None or update.effective_user is None or query.data is None:
         return
     raw = query.data.removeprefix(ASSIGN_TO_CALLBACK_PREFIX)
-    raw_task_id, _, raw_child_id = raw.partition(":")
+    raw_task_token, _, raw_child_token = raw.partition(":")
+    # Both ids arrive base64-packed (see assign_children_keyboard) so the
+    # combined payload fits Telegram's 64-byte callback_data limit; decoding
+    # here is defense-in-depth only -- authorization and scoping are still
+    # fully re-checked below by assign_task, never trusted from the callback.
+    task_id = decode_uuid(raw_task_token)
+    child_id = decode_uuid(raw_child_token)
+    raw_task_id = str(task_id) if task_id is not None else ""
+    raw_child_id = str(child_id) if child_id is not None else ""
     text, keyboard = await asyncio.to_thread(
         _finish_assign, update.effective_user.id, raw_task_id, raw_child_id
     )

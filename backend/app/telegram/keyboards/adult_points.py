@@ -16,19 +16,22 @@ ADD_CALLBACK_PREFIX = "adultpoints:add:"
 REMOVE_CALLBACK_PREFIX = "adultpoints:remove:"
 
 
-def _encode_uuid(value: uuid.UUID) -> str:
+def encode_uuid(value: uuid.UUID) -> str:
     """Packs a UUID's raw 16 bytes as unpadded urlsafe-base64 (22 chars)
     instead of its 36-char hyphenated hex form. This is a lossless,
     reversible re-encoding -- never a truncation -- so it carries no
-    collision risk; it exists purely so the `Older` button's two UUIDs
-    (child_id and cursor) both fit inside Telegram's 64-byte
-    `callback_data` limit (Issue: `Button_data_invalid` on Child Points).
+    collision risk; it exists purely so a callback carrying more than one
+    UUID (e.g. the `Older` button's child_id + cursor here, or Adult Tasks'
+    Assign-to-Child's task_id + child_id) can still fit inside Telegram's
+    64-byte `callback_data` limit (Issue: `Button_data_invalid`). Public --
+    reused by other Telegram keyboards modules with the same problem rather
+    than each reimplementing it.
     """
     return base64.urlsafe_b64encode(value.bytes).rstrip(b"=").decode("ascii")
 
 
 def decode_uuid(raw: str) -> uuid.UUID | None:
-    """Inverse of `_encode_uuid`. Returns None for anything malformed
+    """Inverse of `encode_uuid`. Returns None for anything malformed
     (stale/crafted callback data) so callers can fall back gracefully
     instead of raising.
     """
@@ -67,10 +70,10 @@ def child_points_keyboard(child_id: uuid.UUID, view: PointsView) -> InlineKeyboa
     """
     rows = []
     if view.next_cursor is not None:
-        # Both ids are packed via `_encode_uuid` (not the 36-char hyphenated
+        # Both ids are packed via `encode_uuid` (not the 36-char hyphenated
         # form): unpacked, `child_id` + `:` + `next_cursor` alone would
         # already exceed Telegram's 64-byte callback_data limit.
-        payload = f"{_encode_uuid(child_id)}:{_encode_uuid(view.next_cursor)}"
+        payload = f"{encode_uuid(child_id)}:{encode_uuid(view.next_cursor)}"
         rows.append(
             [InlineKeyboardButton("Ранее", callback_data=f"{OLDER_CALLBACK_PREFIX}{payload}")]
         )

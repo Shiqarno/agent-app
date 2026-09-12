@@ -36,6 +36,7 @@ from app.telegram.handlers.adult_tasks import (
     _tasks_command_view,
     _toggle_active,
 )
+from app.telegram.keyboards.adult_points import decode_uuid
 from app.telegram.keyboards.adult_tasks import (
     ACTIVATE_CALLBACK_PREFIX,
     ASSIGN_CALLBACK_PREFIX,
@@ -44,6 +45,7 @@ from app.telegram.keyboards.adult_tasks import (
     EDIT_CALLBACK_PREFIX,
     LIST_CALLBACK_DATA,
     OPEN_CALLBACK_PREFIX,
+    assign_children_keyboard,
 )
 from app.telegram_identity import activate_telegram_identity
 
@@ -670,8 +672,8 @@ def test_open_and_edit_callback_prefixes_do_not_collide() -> None:
     assert not "adulttask:activate:123".startswith(DEACTIVATE_CALLBACK_PREFIX)
 
 
-def test_assign_and_assignchild_prefixes_do_not_collide() -> None:
-    assert not "adulttask:assignchild:123:456".startswith(ASSIGN_CALLBACK_PREFIX)
+def test_assign_and_assignto_prefixes_do_not_collide() -> None:
+    assert not "adulttask:assignto:123:456".startswith(ASSIGN_CALLBACK_PREFIX)
     assert not "adulttask:assign:123".startswith(ASSIGN_TO_CALLBACK_PREFIX)
 
 
@@ -695,6 +697,41 @@ def test_assign_menu_lists_eligible_children(real: RealData) -> None:
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
     assert any(free_child.name in label for label in labels)
     assert not any(busy_child.name in label for label in labels)
+
+
+def test_assign_children_keyboard_callback_data_fits_within_telegrams_64_byte_limit() -> None:
+    """Regression for the `Button_data_invalid` bug: `assign_children_keyboard()`
+    used to embed both the Task's UUID and each Child's UUID in their full
+    36-char hyphenated form, so a Child button's callback_data exceeded
+    Telegram's 64-byte `callback_data` limit and Telegram rejected the
+    whole keyboard on `edit_message_text()`. Must check *encoded bytes*,
+    not `len(str)` -- the limit is byte-based and the payload is UTF-8.
+    """
+    task_id = uuid.uuid4()
+    children = [User(name="Alex", role=UserRole.CHILD, id=uuid.uuid4())]
+
+    keyboard = assign_children_keyboard(task_id, children)
+
+    for row in keyboard.inline_keyboard:
+        for button in row:
+            assert button.callback_data is not None
+            assert len(button.callback_data.encode("utf-8")) <= 64
+
+
+def test_assign_children_keyboard_callback_data_round_trips_to_the_correct_task_and_child() -> None:
+    task_id = uuid.uuid4()
+    child_id = uuid.uuid4()
+    children = [User(name="Alex", role=UserRole.CHILD, id=child_id)]
+
+    keyboard = assign_children_keyboard(task_id, children)
+
+    button = keyboard.inline_keyboard[0][0]
+    assert button.callback_data is not None
+    payload = button.callback_data.removeprefix(ASSIGN_TO_CALLBACK_PREFIX)
+    raw_task_token, _, raw_child_token = payload.partition(":")
+
+    assert decode_uuid(raw_task_token) == task_id
+    assert decode_uuid(raw_child_token) == child_id
 
 
 def test_assign_menu_shows_a_message_when_no_children_are_eligible(real: RealData) -> None:

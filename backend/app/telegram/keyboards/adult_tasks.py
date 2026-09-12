@@ -3,6 +3,7 @@ import uuid
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.models import Task, TaskExecution, User
+from app.telegram.keyboards.adult_points import encode_uuid
 
 OPEN_CALLBACK_PREFIX = "adulttask:open:"
 ADD_CALLBACK_DATA = "adulttask:add"
@@ -14,7 +15,11 @@ EDIT_REWARD_CALLBACK_PREFIX = "adulttask:editreward:"
 ACTIVATE_CALLBACK_PREFIX = "adulttask:activate:"
 DEACTIVATE_CALLBACK_PREFIX = "adulttask:deactivate:"
 ASSIGN_CALLBACK_PREFIX = "adulttask:assign:"
-ASSIGN_TO_CALLBACK_PREFIX = "adulttask:assignchild:"
+# Shortened from the more descriptive `assignchild` (Issue:
+# `Button_data_invalid`): with two packed UUIDs in the payload (see
+# assign_children_keyboard below), the longer prefix pushed the total
+# callback_data past Telegram's 64-byte limit.
+ASSIGN_TO_CALLBACK_PREFIX = "adulttask:assignto:"
 
 
 def _task_button_label(task: Task) -> str:
@@ -98,11 +103,19 @@ def assign_children_keyboard(task_id: uuid.UUID, children: list[User]) -> Inline
     """One row per eligible Child (Issue #32 "Adult UX") -- the callback
     payload only identifies the Task and Child for routing; the
     Application layer re-verifies eligibility on every call.
+
+    Both ids are packed via `encode_uuid` (not the 36-char hyphenated form,
+    reused from the Adult Points pagination fix): unpacked, `task_id` +
+    `:` + `child.id` alone would already exceed Telegram's 64-byte
+    callback_data limit (Issue: `Button_data_invalid` on Task Assign).
     """
+    encoded_task_id = encode_uuid(task_id)
     rows = [
         [
             InlineKeyboardButton(
-                child.name, callback_data=f"{ASSIGN_TO_CALLBACK_PREFIX}{task_id}:{child.id}"
+                child.name,
+                callback_data=f"{ASSIGN_TO_CALLBACK_PREFIX}{encoded_task_id}:"
+                f"{encode_uuid(child.id)}",
             )
         ]
         for child in children
