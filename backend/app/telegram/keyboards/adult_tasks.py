@@ -26,28 +26,28 @@ CANCEL_CONFIRM_CALLBACK_PREFIX = "adulttask:cancelconfirm:"
 
 
 def _task_button_label(task: Task, execution: TaskExecution | None) -> str:
-    """An active Task shows its name and current reward (Issue #35); an
-    inactive one shows its plain name prefixed with `❌`, no reward at all
-    (Issue #37/#38) -- the button represents an unavailable self-claim
-    offer, not a reward-bearing action, so showing a reward on it would be
-    misleading. Driven by `is_active` alone, never by whether a current
-    execution exists, matching this Task's own established, execution-
-    independent meaning (Issue #32).
+    """Issue: Show ⏳ for Tasks with an active TaskExecution -- the open-
+    execution check takes priority over `is_active`, checked first: an
+    open `execution` (ASSIGNED/IN_PROGRESS/AWAITING_CONFIRMATION, as
+    already resolved by task_operations.get_tasks -- reusing that
+    existing open/terminal distinction rather than redefining it here)
+    means `⏳ {name} · 💰 {reward}` *regardless* of `is_active`. This
+    matters because claim_task() sets `is_active = False` the moment a
+    Child claims a Task, at the same time as creating the IN_PROGRESS
+    execution -- checking `is_active` first would misrender a claimed,
+    actively-worked-on Task as `❌`, as if it were simply deactivated with
+    nothing happening on it, which is the bug this ordering prevents.
 
-    An *active* Task additionally gets a `⏳` prefix when `execution` is
-    not None (Issue: active execution indicator) -- `execution` is the
-    Task's current open (ASSIGNED/IN_PROGRESS/AWAITING_CONFIRMATION)
-    execution as already resolved by task_operations.get_tasks, so this
-    reuses that existing open/terminal distinction rather than redefining
-    it here. Never shown on an inactive Task, regardless of its execution
-    history: `❌` already communicates "not currently actionable" on its
-    own, and is-active/has-open-execution are independent facts about a
-    Task, matching this function's own existing `is_active`-only rule for
-    the base label.
+    Only once there is no open execution does `is_active` decide the
+    plain-name-with-reward vs. `❌`-plain-name-no-reward shape (Issue
+    #35/#37/#38) -- the button represents an unavailable self-claim
+    offer, not a reward-bearing action, so showing a reward on it would be
+    misleading.
     """
+    if execution is not None:
+        return f"⏳ {task.title} · 💰 {task.reward_points}"
     if task.is_active:
-        label = f"{task.title} · 💰 {task.reward_points}"
-        return f"⏳ {label}" if execution is not None else label
+        return f"{task.title} · 💰 {task.reward_points}"
     return f"❌ {task.title}"
 
 

@@ -267,13 +267,14 @@ def test_child_tasks_command_still_opens_child_tasks(real: RealData) -> None:
     assert not any(label.startswith("Take") for label in labels)
 
 
-def test_unavailable_task_shows_current_execution_on_details_not_the_list(
+def test_task_with_current_execution_shows_details_beyond_the_list_indicator(
     real: RealData,
 ) -> None:
-    """Issue #36: the list itself carries no per-task execution context any
-    more (only the button's `❌` marker reflects `is_active`) -- that
-    detail now lives one tap further in, on Task Details, the "selected
-    entity" screen where showing it isn't duplication.
+    """Issue #36's "who/what state" detail (Child name, "выполняется")
+    still lives one tap further in, on Task Details, not on the list --
+    the list button itself now also reflects the open execution (Issue:
+    Show ⏳ for Tasks with an active TaskExecution), but only via the
+    binary `⏳` marker, never the Child name or per-execution state.
     """
     adult = real.make_user(ADULT)
     child = real.make_user(CHILD, "Alex")
@@ -286,7 +287,9 @@ def test_unavailable_task_shows_current_execution_on_details_not_the_list(
 
     assert list_text == "Все задачи"
     assert list_keyboard is not None
-    assert list_keyboard.inline_keyboard[0][0].text == "❌ Take out trash"
+    label = list_keyboard.inline_keyboard[0][0].text
+    assert label == f"⏳ Take out trash · 💰 {task.reward_points}"
+    assert "Alex" not in label
 
     details_text, _ = _task_details_view(telegram_id, str(task.id))
 
@@ -313,22 +316,36 @@ def test_completed_execution_does_not_suppress_availability_in_list(real: RealDa
 
 
 # =========================================================================================
-# Active execution indicator (⏳) -- Issue: active execution indicator
+# Active execution indicator (⏳) -- Issue: Show ⏳ for Tasks with an
+# active TaskExecution
 # =========================================================================================
 
 
-def test_task_with_no_execution_has_no_indicator(real: RealData) -> None:
+@pytest.mark.parametrize(
+    ("is_active", "expected"),
+    [
+        (True, "Clean room · 💰 20"),
+        (False, "❌ Clean room"),
+    ],
+)
+def test_task_with_no_execution_follows_is_active(
+    real: RealData, is_active: bool, expected: str
+) -> None:
+    """Cases 1 and 5 of the issue's matrix: with no open execution at all,
+    `is_active` alone decides the button shape, unchanged from before.
+    """
     adult = real.make_user(ADULT)
     telegram_id = _next_telegram_id()
     real.connect(adult, telegram_id)
-    real.make_task(adult, title="Clean room", reward_points=20)
+    real.make_task(adult, title="Clean room", reward_points=20, is_active=is_active)
 
     _text, keyboard = _adult_tasks_list_view(telegram_id)
 
     assert keyboard is not None
-    assert keyboard.inline_keyboard[0][0].text == "Clean room · 💰 20"
+    assert keyboard.inline_keyboard[0][0].text == expected
 
 
+@pytest.mark.parametrize("is_active", [True, False])
 @pytest.mark.parametrize(
     "status",
     [
@@ -337,14 +354,22 @@ def test_task_with_no_execution_has_no_indicator(real: RealData) -> None:
         TaskExecutionStatus.AWAITING_CONFIRMATION,
     ],
 )
-def test_task_with_an_open_execution_gets_the_indicator(
-    real: RealData, status: TaskExecutionStatus
+def test_open_execution_shows_the_indicator_regardless_of_is_active(
+    real: RealData, status: TaskExecutionStatus, is_active: bool
 ) -> None:
+    """Cases 2/3/4 (is_active=True) and 6/7/8 (is_active=False) of the
+    issue's matrix. is_active=False with an open execution is the critical
+    regression case: claim_task() sets is_active=False at the very moment
+    it creates the open execution, so checking is_active before the
+    execution used to misrender a claimed, actively-worked-on Task as
+    `❌`, as if nothing were happening on it. The open-execution check must
+    win regardless of is_active.
+    """
     adult = real.make_user(ADULT)
     child = real.make_user(CHILD, "Alex")
     telegram_id = _next_telegram_id()
     real.connect(adult, telegram_id)
-    task = real.make_task(adult, title="Clean room", reward_points=20)
+    task = real.make_task(adult, title="Clean room", reward_points=20, is_active=is_active)
     real.make_execution(task, child, status)
 
     _text, keyboard = _adult_tasks_list_view(telegram_id)
@@ -353,23 +378,29 @@ def test_task_with_an_open_execution_gets_the_indicator(
     assert keyboard.inline_keyboard[0][0].text == "⏳ Clean room · 💰 20"
 
 
+@pytest.mark.parametrize("is_active", [True, False])
 @pytest.mark.parametrize(
     "status", [TaskExecutionStatus.COMPLETED, TaskExecutionStatus.CANCELLED]
 )
 def test_task_with_only_terminal_executions_has_no_indicator(
-    real: RealData, status: TaskExecutionStatus
+    real: RealData, status: TaskExecutionStatus, is_active: bool
 ) -> None:
+    """Cases 9 and 10 of the issue's matrix: a terminal execution is never
+    "open", so it must never trigger the indicator -- regardless of
+    `is_active`, the base is_active-only shape is restored.
+    """
     adult = real.make_user(ADULT)
     child = real.make_user(CHILD, "Alex")
     telegram_id = _next_telegram_id()
     real.connect(adult, telegram_id)
-    task = real.make_task(adult, title="Clean room", reward_points=20)
+    task = real.make_task(adult, title="Clean room", reward_points=20, is_active=is_active)
     real.make_execution(task, child, status)
 
     _text, keyboard = _adult_tasks_list_view(telegram_id)
 
     assert keyboard is not None
-    assert keyboard.inline_keyboard[0][0].text == "Clean room · 💰 20"
+    expected = "Clean room · 💰 20" if is_active else "❌ Clean room"
+    assert keyboard.inline_keyboard[0][0].text == expected
 
 
 def test_task_with_both_active_and_terminal_executions_gets_the_indicator(
@@ -417,9 +448,14 @@ def test_multiple_active_executions_still_produce_only_one_indicator(
     assert "3" not in label
 
 
-def test_inactive_task_never_gets_the_indicator_regardless_of_execution_history(
+def test_inactive_task_with_an_open_execution_shows_the_indicator_not_the_cross(
     real: RealData,
 ) -> None:
+    """Case 6 of the issue's matrix -- the critical regression this issue
+    fixes. Before this fix, `_task_button_label` checked `Task.is_active`
+    before checking for an open execution, so a claimed (therefore
+    inactive) Task rendered as `❌` instead of `⏳`.
+    """
     adult = real.make_user(ADULT)
     child = real.make_user(CHILD, "Alex")
     telegram_id = _next_telegram_id()
@@ -431,8 +467,39 @@ def test_inactive_task_never_gets_the_indicator_regardless_of_execution_history(
 
     assert keyboard is not None
     label = keyboard.inline_keyboard[0][0].text
-    assert label == "❌ Clean room"
-    assert "⏳" not in label
+    assert label == "⏳ Clean room · 💰 20"
+    assert "❌" not in label
+
+
+def test_lifecycle_regression_claiming_a_task_shows_the_indicator_on_the_adult_list(
+    real: RealData,
+) -> None:
+    """Issue: Show ⏳ for Tasks with an active TaskExecution -- reproduces
+    the actual reported bug end-to-end through the real `claim_task()`
+    application operation, rather than manually constructing the final
+    (is_active=False, IN_PROGRESS) state, so this protects against the
+    real integration bug, not just `_task_button_label()` in isolation.
+    """
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD, "Alex")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult, title="Clean room", reward_points=20, is_active=True)
+
+    session = SessionLocal()
+    try:
+        refreshed_child = session.get(User, child.id)
+        assert refreshed_child is not None
+        execution, claimed_task = claim_task(session, refreshed_child, task.id)
+        assert claimed_task.is_active is False
+        assert execution.status == TaskExecutionStatus.IN_PROGRESS
+    finally:
+        session.close()
+
+    _text, keyboard = _adult_tasks_list_view(telegram_id)
+
+    assert keyboard is not None
+    assert keyboard.inline_keyboard[0][0].text == "⏳ Clean room · 💰 20"
 
 
 def test_cancelling_the_last_active_execution_removes_the_indicator_on_reload(
