@@ -1,4 +1,4 @@
-from app.models import Reward
+from app.models import Reward, RewardRedemption
 
 AVAILABLE_REWARDS_HEADING = "Доступные награды"
 NO_REWARDS_TEXT_PREFIX = "Нет доступных наград."
@@ -43,4 +43,15 @@ def render_reward_requested(reward: Reward, available_balance: int) -> str:
         f"Запрос отправлен взрослому на подтверждение — "
         f"зарезервировано {reward.cost_points} баллов.\n"
         f"Доступно баллов: {available_balance}."
+    )
+
+
+def render_reward_confirmed_notification(redemption: RewardRedemption, reward: Reward) -> str:
+    """Child-facing outbound notification sent once an Adult confirms this
+    request (Issue: Telegram notifications) -- cost comes from the
+    redemption's own frozen snapshot, never the Reward's current cost,
+    matching render_reward_confirmation_detail's existing convention.
+    """
+    return (
+        f"Награда подтверждена:\n\n{reward.name}\n\nПотрачено 💰 {redemption.cost_points} баллов."
     )

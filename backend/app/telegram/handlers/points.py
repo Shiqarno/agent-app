@@ -55,3 +55,17 @@ async def handle_older_points(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     if query.message is not None:
         await query.edit_message_text(text, reply_markup=keyboard)
+
+
+async def handle_points_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Reopens the existing /points flow at its first page (Issue: Telegram
+    notifications) -- the "Мои баллы" button on the Child "Task confirmed"
+    notification calls this, via keyboards.points.LIST_CALLBACK_DATA.
+    """
+    query = update.callback_query
+    if query is None or update.effective_user is None:
+        return
+    text, keyboard = await asyncio.to_thread(_points_view, update.effective_user.id, None)
+    await query.answer()
+    if query.message is not None:
+        await query.edit_message_text(text, reply_markup=keyboard)

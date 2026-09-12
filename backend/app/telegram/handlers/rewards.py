@@ -12,6 +12,7 @@ from app.reward_operations import (
     get_rewards,
     request_reward_redemption,
 )
+from app.telegram import notifications
 from app.telegram.keyboards.rewards import REQUEST_CALLBACK_PREFIX, rewards_keyboard
 from app.telegram.views.rewards import render_reward_requested, render_rewards
 from app.telegram_identity import resolve_user_by_telegram_id
@@ -71,7 +72,8 @@ def _request(
         success = False
         try:
             reward_id = uuid.UUID(raw_reward_id)
-            _, reward, available_balance = request_reward_redemption(db, user, reward_id)
+            redemption, reward, available_balance = request_reward_redemption(db, user, reward_id)
+            notifications.notify_reward_awaiting_confirmation(db, redemption, reward, user)
             toast = render_reward_requested(reward, available_balance)
             success = True
         except (ValueError, RewardNotFoundError):
@@ -99,5 +101,19 @@ async def handle_request_reward(update: Update, context: ContextTypes.DEFAULT_TY
         _request, update.effective_user.id, raw_reward_id
     )
     await query.answer(text=toast, show_alert=success)
+    if query.message is not None:
+        await query.edit_message_text(text, reply_markup=keyboard)
+
+
+async def handle_rewards_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Reopens the existing /rewards flow (Issue: Telegram notifications)
+    -- the "Награды" button on the Child "Reward confirmed" notification
+    calls this, via keyboards.rewards.LIST_CALLBACK_DATA.
+    """
+    query = update.callback_query
+    if query is None or update.effective_user is None:
+        return
+    text, keyboard = await asyncio.to_thread(_rewards_view, update.effective_user.id)
+    await query.answer()
     if query.message is not None:
         await query.edit_message_text(text, reply_markup=keyboard)

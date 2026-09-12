@@ -77,14 +77,16 @@ from app.telegram.handlers.confirmations import (
     handle_return_reward,
     handle_view_all_confirmations,
 )
-from app.telegram.handlers.points import handle_older_points
-from app.telegram.handlers.rewards import handle_request_reward
+from app.telegram.handlers.points import handle_older_points, handle_points_list
+from app.telegram.handlers.rewards import handle_request_reward, handle_rewards_list
 from app.telegram.handlers.start import handle_start
 from app.telegram.handlers.tasks import (
     handle_mark_ready,
     handle_my_tasks_command,
+    handle_my_tasks_list,
     handle_start_execution,
     handle_take_task,
+    handle_tasks_list,
 )
 from app.telegram.keyboards.adult_points import (
     ADD_CALLBACK_PREFIX as ADULT_POINTS_ADD_CALLBACK_PREFIX,
@@ -152,13 +154,17 @@ from app.telegram.keyboards.confirmations import (
 from app.telegram.keyboards.confirmations import (
     OPEN_REWARD_CALLBACK_PREFIX as CONFIRMATION_OPEN_REWARD_CALLBACK_PREFIX,
 )
+from app.telegram.keyboards.points import LIST_CALLBACK_DATA as CHILD_POINTS_LIST_CALLBACK_DATA
 from app.telegram.keyboards.points import OLDER_CALLBACK_PREFIX
+from app.telegram.keyboards.rewards import LIST_CALLBACK_DATA as CHILD_REWARDS_LIST_CALLBACK_DATA
 from app.telegram.keyboards.rewards import REQUEST_CALLBACK_PREFIX as REWARD_REQUEST_CALLBACK_PREFIX
 from app.telegram.keyboards.tasks import (
     EXECUTION_DONE_CALLBACK_PREFIX,
     EXECUTION_START_CALLBACK_PREFIX,
     TASKS_CALLBACK_PREFIX,
 )
+from app.telegram.keyboards.tasks import LIST_CALLBACK_DATA as CHILD_TASKS_LIST_CALLBACK_DATA
+from app.telegram.keyboards.tasks import MY_TASKS_CALLBACK_DATA as CHILD_MY_TASKS_CALLBACK_DATA
 from app.telegram.keyboards.users import (
     ADD_CHILD_CALLBACK_DATA,
     GET_LINK_CALLBACK_PREFIX,
@@ -251,6 +257,12 @@ def build_application() -> BotApplication:
     application.add_handler(
         CallbackQueryHandler(handle_start_execution, pattern=f"^{EXECUTION_START_CALLBACK_PREFIX}")
     )
+    application.add_handler(
+        CallbackQueryHandler(handle_tasks_list, pattern=f"^{CHILD_TASKS_LIST_CALLBACK_DATA}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_my_tasks_list, pattern=f"^{CHILD_MY_TASKS_CALLBACK_DATA}$")
+    )
     application.add_handler(CommandHandler("confirmations", handle_confirmations_command))
     application.add_handler(
         CallbackQueryHandler(handle_confirm_execution, pattern=f"^{CONFIRM_CALLBACK_PREFIX}")
@@ -281,9 +293,15 @@ def build_application() -> BotApplication:
     application.add_handler(
         CallbackQueryHandler(handle_request_reward, pattern=f"^{REWARD_REQUEST_CALLBACK_PREFIX}")
     )
+    application.add_handler(
+        CallbackQueryHandler(handle_rewards_list, pattern=f"^{CHILD_REWARDS_LIST_CALLBACK_DATA}$")
+    )
     application.add_handler(CommandHandler("points", handle_points_command_dispatch))
     application.add_handler(
         CallbackQueryHandler(handle_older_points, pattern=f"^{OLDER_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_points_list, pattern=f"^{CHILD_POINTS_LIST_CALLBACK_DATA}$")
     )
     application.add_handler(
         CallbackQueryHandler(

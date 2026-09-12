@@ -43,3 +43,33 @@ def render_task_taken(task: Task) -> str:
 
 def render_execution_marked_ready(task: Task) -> str:
     return f"«{task.title}» отмечена как выполненная и отправлена на подтверждение."
+
+
+def render_task_available_notification(task: Task) -> str:
+    """Child-facing outbound notification (Issue: Telegram notifications):
+    sent when a Task becomes newly available for self-claim (created
+    active, or reactivated) -- the reward shown is the Task's own current
+    value, since no TaskExecution (and therefore no snapshot) exists yet.
+    """
+    return f"Появилась новая доступная задача:\n\n{task.title}\n💰 {task.reward_points}"
+
+
+def render_task_assigned_notification(task: Task, execution: TaskExecution) -> str:
+    """Child-facing outbound notification for direct assignment (Issue:
+    Telegram notifications) -- distinct from adult_tasks.render_task_assigned,
+    which is the Adult's own confirmation text after tapping a Child in the
+    Assign flow. Uses the new execution's own reward snapshot, matching
+    every other reward amount shown to a Child about their own execution.
+    """
+    return f"Тебе назначена новая задача:\n\n{task.title}\n💰 {execution.reward_points}"
+
+
+def render_task_confirmed_notification(task: Task, execution: TaskExecution) -> str:
+    """Child-facing outbound notification sent once an Adult confirms this
+    execution (Issue: Telegram notifications) -- the reward shown is the
+    execution's own immutable snapshot, never the Task's current reward,
+    matching every other confirmed-amount display in the app.
+    """
+    return (
+        f"Задача подтверждена:\n\n{task.title}\n\nТы получил 💰 {execution.reward_points} баллов."
+    )

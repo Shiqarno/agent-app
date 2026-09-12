@@ -28,7 +28,7 @@ from app.telegram.handlers.rewards import (
     _request,
     _rewards_view,
 )
-from app.telegram.keyboards.rewards import REQUEST_CALLBACK_PREFIX
+from app.telegram.keyboards.rewards import LIST_CALLBACK_DATA, REQUEST_CALLBACK_PREFIX
 from app.telegram.views.rewards import AVAILABLE_REWARDS_HEADING, NO_REWARDS_TEXT_PREFIX
 from app.telegram_identity import activate_telegram_identity
 
@@ -372,3 +372,11 @@ def test_request_uses_the_current_reward_cost_not_a_stale_one(real: RealData) ->
 
     assert success is False
     assert toast == _INSUFFICIENT_POINTS_TEXT
+
+
+def test_notification_list_callback_does_not_collide_with_request_prefix() -> None:
+    """LIST_CALLBACK_DATA (Issue: Telegram notifications) is a new
+    exact-match callback and must never be a prefix of a request one.
+    """
+    assert not LIST_CALLBACK_DATA.startswith(REQUEST_CALLBACK_PREFIX)
+    assert not REQUEST_CALLBACK_PREFIX.startswith(LIST_CALLBACK_DATA)

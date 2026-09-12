@@ -413,6 +413,125 @@ history.
 - Reconnecting/replacing a Telegram account already linked to a User, or
   disconnecting one — the existing activation mechanism's reconnect rules
   apply, but there is no Telegram UI for triggering them.
-- Notifications, reminders, comments/reasons, attachments.
+- Reminders, comments/reasons, attachments (see Notifications, below, for
+  what *is* built).
 - Any Adult↔Child ownership or family-grouping concept — deliberately not
   part of this product's model.
+
+## Notifications
+
+Telegram proactively messages a User when one of six specific business
+events happens — never merely because a screen was opened (opening
+`/tasks`, `/mytasks`, `/rewards`, `/confirmations`, or `/points` never
+itself sends anything). A notification is sent only once its triggering
+action has already fully succeeded, never before, and never if that
+action was rejected or failed; delivery itself is best-effort and never
+required for the action to succeed — an unconnected recipient, a blocked
+bot, or any other delivery problem leaves the underlying Task/Reward
+action completely unaffected, and is not retried.
+
+Every notification carries exactly one button, which reopens an existing
+screen exactly as its slash command would — never a notification-specific
+screen or action of its own. The notification's own text is the only new
+surface; the reopened screen is what actually reflects current state.
+
+### Adult notifications
+
+**Task awaiting confirmation** — sent to every currently-connected Adult
+when a Child's `TaskExecution` reaches `AWAITING_CONFIRMATION` (i.e. Done,
+above):
+
+```
+Есть задача, ожидающая подтверждения.
+
+Задача: Помыть посуду
+Ребёнок: Иван
+```
+
+with a **Подтверждения** button that opens the same Confirmation queue
+`/confirmations` itself shows.
+
+**Reward awaiting confirmation** — sent to every currently-connected Adult
+when a Child's Reward request reaches `PENDING_CONFIRMATION` (i.e.
+requesting a Reward, above):
+
+```
+Есть награда, ожидающая подтверждения.
+
+Награда: Мороженое
+Ребёнок: Иван
+Стоимость: 💰 30
+```
+
+with the same **Подтверждения** button.
+
+Both go to *every* connected Adult, not a single one — matching
+Confirmation's existing "no Adult↔Child ownership" rule: whichever Adult
+opens the queue first can act on it, and the queue itself (not the
+notification) is what decides whether the item is still actionable by
+the time they do.
+
+### Child notifications
+
+**Task available** — sent to every connected Child for whom a Task newly
+becomes self-claimable: when an Adult creates a new active Task, or
+reactivates an inactive one. Uses the same self-claim availability rule a
+Child's own `/tasks` already applies, so a Child who already holds an open
+execution of a reactivated Task is correctly not notified for it.
+Cancelling an execution is deliberately never itself a trigger — only a
+Task actually becoming active is.
+
+```
+Появилась новая доступная задача:
+
+Помыть посуду
+💰 20
+```
+
+with a **Задачи** button that opens `/tasks`.
+
+**Task assigned** — sent to the Child when an Adult assigns a Task
+directly to them (a new `ASSIGNED` execution, see Assign, above):
+
+```
+Тебе назначена новая задача:
+
+Вынести мусор
+💰 25
+```
+
+with a **Мои задачи** button that opens `/mytasks`.
+
+**Task confirmed** — sent to the Child when an Adult confirms their
+completed execution (`AWAITING_CONFIRMATION → COMPLETED`). The amount
+shown is the execution's own reward snapshot, never the Task's current
+reward:
+
+```
+Задача подтверждена:
+
+Помыть посуду
+
+Ты получил 💰 20 баллов.
+```
+
+with a **Мои баллы** button that opens `/points`.
+
+**Reward confirmed** — sent to the Child when an Adult confirms their
+pending Reward request (`PENDING_CONFIRMATION → CONFIRMED`). The amount
+shown is the redemption's own frozen cost snapshot, never the Reward's
+current cost:
+
+```
+Награда подтверждена:
+
+Мороженое
+
+Потрачено 💰 30 баллов.
+```
+
+with a **Награды** button that opens `/rewards`.
+
+None of these four ever notify the Adult who caused them, and none carry
+a confirmation/undo action of their own; the reopened screen is always
+the single source of truth for what actually happened.

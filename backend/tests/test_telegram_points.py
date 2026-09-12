@@ -22,7 +22,7 @@ from app.models import (
 )
 from app.points_operations import PAGE_SIZE
 from app.telegram.handlers.points import _NOT_A_CHILD_TEXT, _NOT_CONNECTED_TEXT, _points_view
-from app.telegram.keyboards.points import OLDER_CALLBACK_PREFIX
+from app.telegram.keyboards.points import LIST_CALLBACK_DATA, OLDER_CALLBACK_PREFIX
 from app.telegram.views.points import NO_TRANSACTIONS_TEXT
 from app.telegram_identity import activate_telegram_identity
 
@@ -330,3 +330,11 @@ def test_stale_or_invalid_cursor_falls_back_to_the_first_page(real: RealData) ->
     text, _ = _points_view(telegram_id, uuid.uuid4())
 
     assert "Clean room" in text
+
+
+def test_notification_list_callback_does_not_collide_with_older_prefix() -> None:
+    """LIST_CALLBACK_DATA (Issue: Telegram notifications) is a new
+    exact-match callback and must never be a prefix of an older-page one.
+    """
+    assert not LIST_CALLBACK_DATA.startswith(OLDER_CALLBACK_PREFIX)
+    assert not OLDER_CALLBACK_PREFIX.startswith(LIST_CALLBACK_DATA)

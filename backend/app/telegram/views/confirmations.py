@@ -87,3 +87,25 @@ def render_reward_redemption_confirmed(
 
 def render_reward_redemption_rejected(reward: Reward, child: User) -> str:
     return f"Запрос на «{reward.name}» отклонён для {child.name}."
+
+
+def render_task_awaiting_confirmation_notification(task: Task, child: User) -> str:
+    """Adult-facing outbound notification (Issue: Telegram notifications):
+    sent proactively when a Child's execution reaches
+    AWAITING_CONFIRMATION, not shown on any existing screen -- the actual
+    confirmation UI stays exactly render_confirmation_detail above.
+    """
+    return f"Есть задача, ожидающая подтверждения.\n\nЗадача: {task.title}\nРебёнок: {child.name}"
+
+
+def render_reward_awaiting_confirmation_notification(
+    redemption: RewardRedemption, reward: Reward, child: User
+) -> str:
+    """The Reward analogue of render_task_awaiting_confirmation_notification
+    above -- cost comes from the redemption's own frozen snapshot, matching
+    render_reward_confirmation_detail's existing convention.
+    """
+    return (
+        f"Есть награда, ожидающая подтверждения.\n\n"
+        f"Награда: {reward.name}\nРебёнок: {child.name}\nСтоимость: 💰 {redemption.cost_points}"
+    )

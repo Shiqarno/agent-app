@@ -26,6 +26,7 @@ from app.task_operations import (
     get_tasks,
     update_task,
 )
+from app.telegram import notifications
 from app.telegram.handlers.start import _resolve_home
 from app.telegram.handlers.tasks import _tasks_view
 from app.telegram.keyboards.adult_points import decode_uuid
@@ -226,6 +227,7 @@ def _finish_create(
             return _NOT_CONNECTED_TEXT, None
         try:
             task = create_task(db, user, title=title, reward_points=reward_points)
+            notifications.notify_task_available(db, task)
         except NotAnAdultError:
             return _NOT_AN_ADULT_TEXT, None
         except InvalidTaskInputError as exc:
@@ -306,6 +308,8 @@ def _toggle_active(
             task = (
                 activate_task(db, user, task_id) if activate else deactivate_task(db, user, task_id)
             )
+            if activate:
+                notifications.notify_task_available(db, task)
             toast = (
                 f"«{task.title}» активирована." if activate else f"«{task.title}» деактивирована."
             )
@@ -370,7 +374,8 @@ def _finish_assign(
             return _CHILD_NOT_FOUND_TEXT, back_to_tasks_keyboard()
 
         try:
-            _execution, task = assign_task(db, user, task_id, child)
+            new_execution, task = assign_task(db, user, task_id, child)
+            notifications.notify_task_assigned(db, task, child, new_execution)
         except NotAnAdultError:
             return _NOT_AN_ADULT_TEXT, None
         except TaskNotFoundError:

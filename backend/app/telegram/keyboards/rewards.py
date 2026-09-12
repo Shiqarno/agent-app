@@ -3,6 +3,10 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from app.models import Reward
 
 REQUEST_CALLBACK_PREFIX = "reward:request:"
+# Child-side "reopen this screen" callback (Issue: Telegram notifications) --
+# /rewards previously had no callback route back into itself, only its slash
+# command. A notification's button needs one to reopen the existing flow.
+LIST_CALLBACK_DATA = "rewards:list"
 
 
 def rewards_keyboard(rewards: list[Reward], available_balance: int) -> InlineKeyboardMarkup:
@@ -32,3 +36,13 @@ def rewards_keyboard(rewards: list[Reward], available_balance: int) -> InlineKey
         if available_balance >= reward.cost_points
     ]
     return InlineKeyboardMarkup(rows)
+
+
+def rewards_notification_keyboard() -> InlineKeyboardMarkup:
+    """Attached to the Child "Reward confirmed" notification (Issue:
+    Telegram notifications) -- opens the existing /rewards flow via
+    LIST_CALLBACK_DATA (handled by handle_rewards_list).
+    """
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("Награды", callback_data=LIST_CALLBACK_DATA)]]
+    )

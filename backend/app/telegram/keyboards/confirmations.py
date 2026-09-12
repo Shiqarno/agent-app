@@ -88,3 +88,15 @@ def reward_confirmation_detail_keyboard(redemption: RewardRedemption) -> InlineK
             [InlineKeyboardButton("← Назад", callback_data=VIEW_ALL_CALLBACK_DATA)],
         ]
     )
+
+
+def confirmations_notification_keyboard() -> InlineKeyboardMarkup:
+    """Attached to an outbound Adult notification (Issue: Telegram
+    notifications) -- reuses the existing `VIEW_ALL_CALLBACK_DATA` list
+    callback (handled by handle_view_all_confirmations) rather than a new
+    notification-specific screen, so tapping it opens exactly the same
+    /confirmations list an Adult would reach normally.
+    """
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("Подтверждения", callback_data=VIEW_ALL_CALLBACK_DATA)]]
+    )

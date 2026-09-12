@@ -5,6 +5,13 @@ from app.models import Task, TaskExecution, TaskExecutionStatus
 TASKS_CALLBACK_PREFIX = "task:take:"
 EXECUTION_DONE_CALLBACK_PREFIX = "execution:done:"
 EXECUTION_START_CALLBACK_PREFIX = "execution:start:"
+# Child-side "reopen this screen" callbacks (Issue: Telegram notifications):
+# unlike the Adult screens, Child /tasks and /mytasks previously had no
+# callback route back into themselves -- they were reachable only via their
+# slash command. A notification's button needs one to reopen the existing
+# flow rather than a new notification-specific screen.
+LIST_CALLBACK_DATA = "tasks:list"
+MY_TASKS_CALLBACK_DATA = "mytasks:list"
 
 
 def available_tasks_keyboard(tasks: list[Task]) -> InlineKeyboardMarkup:
@@ -61,3 +68,23 @@ def my_tasks_keyboard(items: list[tuple[TaskExecution, Task]]) -> InlineKeyboard
                 ]
             )
     return InlineKeyboardMarkup(rows)
+
+
+def tasks_notification_keyboard() -> InlineKeyboardMarkup:
+    """Attached to the Child "Task available" notification (Issue:
+    Telegram notifications) -- opens the existing /tasks flow via
+    LIST_CALLBACK_DATA (handled by handle_tasks_list), never a new screen.
+    """
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("Задачи", callback_data=LIST_CALLBACK_DATA)]]
+    )
+
+
+def my_tasks_notification_keyboard() -> InlineKeyboardMarkup:
+    """Attached to the Child "Task assigned" notification (Issue: Telegram
+    notifications) -- opens the existing /mytasks flow via
+    MY_TASKS_CALLBACK_DATA (handled by handle_my_tasks_list).
+    """
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("Мои задачи", callback_data=MY_TASKS_CALLBACK_DATA)]]
+    )

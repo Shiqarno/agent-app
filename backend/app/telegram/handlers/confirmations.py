@@ -19,6 +19,7 @@ from app.task_operations import (
     get_pending_confirmations,
     return_execution_to_work,
 )
+from app.telegram import notifications
 from app.telegram.keyboards.confirmations import (
     CONFIRM_CALLBACK_PREFIX,
     CONFIRM_REWARD_CALLBACK_PREFIX,
@@ -191,6 +192,7 @@ def _confirm(
         try:
             execution_id = uuid.UUID(raw_execution_id)
             execution, task, child = confirm_execution(db, user, execution_id)
+            notifications.notify_task_confirmed(db, task, child, execution)
             toast = render_execution_confirmed(task, child, execution)
         except (ValueError, TaskExecutionNotConfirmableError):
             toast = _EXECUTION_UNCONFIRMABLE_TEXT
@@ -254,6 +256,7 @@ def _confirm_reward(
         try:
             redemption_id = uuid.UUID(raw_redemption_id)
             redemption, reward, child = confirm_reward_redemption_op(db, user, redemption_id)
+            notifications.notify_reward_confirmed(db, redemption, reward, child)
             toast = render_reward_redemption_confirmed(redemption, reward, child)
         except (ValueError, RewardRedemptionNotActionableError):
             toast = _REWARD_REQUEST_UNACTIONABLE_TEXT

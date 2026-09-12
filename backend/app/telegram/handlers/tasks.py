@@ -15,6 +15,7 @@ from app.task_operations import (
     mark_execution_ready,
     start_execution,
 )
+from app.telegram import notifications
 from app.telegram.keyboards.tasks import (
     EXECUTION_DONE_CALLBACK_PREFIX,
     EXECUTION_START_CALLBACK_PREFIX,
@@ -115,6 +116,7 @@ def _mark_ready(
         try:
             execution_id = uuid.UUID(raw_execution_id)
             execution, task = mark_execution_ready(db, user, execution_id)
+            notifications.notify_task_awaiting_confirmation(db, task, user)
             toast = render_execution_marked_ready(task)
         except (ValueError, TaskExecutionNotActionableError):
             toast = _EXECUTION_UNACTIONABLE_TEXT
@@ -203,5 +205,33 @@ async def handle_start_execution(update: Update, context: ContextTypes.DEFAULT_T
         _start_execution, update.effective_user.id, raw_execution_id
     )
     await query.answer(text=toast)
+    if query.message is not None:
+        await query.edit_message_text(text, reply_markup=keyboard)
+
+
+async def handle_tasks_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Reopens the existing /tasks flow (Issue: Telegram notifications) --
+    the "Задачи" button on the Child "Task available" notification calls
+    this, via LIST_CALLBACK_DATA, rather than any new screen.
+    """
+    query = update.callback_query
+    if query is None or update.effective_user is None:
+        return
+    text, keyboard = await asyncio.to_thread(_tasks_view, update.effective_user.id)
+    await query.answer()
+    if query.message is not None:
+        await query.edit_message_text(text, reply_markup=keyboard)
+
+
+async def handle_my_tasks_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Reopens the existing /mytasks flow (Issue: Telegram notifications)
+    -- the "Мои задачи" button on the Child "Task assigned" notification
+    calls this, via MY_TASKS_CALLBACK_DATA.
+    """
+    query = update.callback_query
+    if query is None or update.effective_user is None:
+        return
+    text, keyboard = await asyncio.to_thread(_my_tasks_view, update.effective_user.id)
+    await query.answer()
     if query.message is not None:
         await query.edit_message_text(text, reply_markup=keyboard)

@@ -28,6 +28,8 @@ from app.telegram.handlers.tasks import (
 from app.telegram.keyboards.tasks import (
     EXECUTION_DONE_CALLBACK_PREFIX,
     EXECUTION_START_CALLBACK_PREFIX,
+    LIST_CALLBACK_DATA,
+    MY_TASKS_CALLBACK_DATA,
     TASKS_CALLBACK_PREFIX,
 )
 from app.telegram.views.tasks import (
@@ -445,6 +447,19 @@ def test_start_on_a_stale_execution_is_a_friendly_error(real: RealData) -> None:
 def test_start_and_done_prefixes_do_not_collide() -> None:
     assert not "execution:start:123".startswith(EXECUTION_DONE_CALLBACK_PREFIX)
     assert not "execution:done:123".startswith(EXECUTION_START_CALLBACK_PREFIX)
+
+
+def test_notification_list_callbacks_do_not_collide_with_take_or_execution_prefixes() -> None:
+    """LIST_CALLBACK_DATA/MY_TASKS_CALLBACK_DATA (Issue: Telegram
+    notifications) are exact-match callbacks, not prefixes, but must still
+    never be a prefix of -- or share a prefix with -- an existing
+    task/execution callback.
+    """
+    assert not LIST_CALLBACK_DATA.startswith(TASKS_CALLBACK_PREFIX)
+    assert not MY_TASKS_CALLBACK_DATA.startswith(TASKS_CALLBACK_PREFIX)
+    assert not LIST_CALLBACK_DATA.startswith(EXECUTION_DONE_CALLBACK_PREFIX)
+    assert not LIST_CALLBACK_DATA.startswith(EXECUTION_START_CALLBACK_PREFIX)
+    assert LIST_CALLBACK_DATA != MY_TASKS_CALLBACK_DATA
 
 
 def test_handlers_do_not_bypass_the_application_layer(real: RealData) -> None:

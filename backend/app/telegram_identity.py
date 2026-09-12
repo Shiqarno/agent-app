@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -38,6 +40,18 @@ def resolve_user_by_telegram_id(db: Session, telegram_user_id: int) -> User | No
     if identity is None:
         return None
     return db.get(User, identity.user_id)
+
+
+def get_telegram_user_id(db: Session, user_id: uuid.UUID) -> int | None:
+    """user_id -> telegram_user_id, or None if this User has no Telegram
+    account connected -- the inverse of resolve_user_by_telegram_id, used
+    by outbound notification delivery (Issue: Telegram notifications),
+    never by callback/command handling, which always resolves the other
+    direction.
+    """
+    return db.scalar(
+        select(TelegramIdentity.telegram_user_id).where(TelegramIdentity.user_id == user_id)
+    )
 
 
 def activate_telegram_identity(db: Session, raw_token: str, telegram_user_id: int) -> User:
