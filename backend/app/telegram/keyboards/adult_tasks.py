@@ -25,7 +25,7 @@ CANCEL_CALLBACK_PREFIX = "adulttask:cancel:"
 CANCEL_CONFIRM_CALLBACK_PREFIX = "adulttask:cancelconfirm:"
 
 
-def _task_button_label(task: Task) -> str:
+def _task_button_label(task: Task, execution: TaskExecution | None) -> str:
     """An active Task shows its name and current reward (Issue #35); an
     inactive one shows its plain name prefixed with `❌`, no reward at all
     (Issue #37/#38) -- the button represents an unavailable self-claim
@@ -33,9 +33,21 @@ def _task_button_label(task: Task) -> str:
     misleading. Driven by `is_active` alone, never by whether a current
     execution exists, matching this Task's own established, execution-
     independent meaning (Issue #32).
+
+    An *active* Task additionally gets a `⏳` prefix when `execution` is
+    not None (Issue: active execution indicator) -- `execution` is the
+    Task's current open (ASSIGNED/IN_PROGRESS/AWAITING_CONFIRMATION)
+    execution as already resolved by task_operations.get_tasks, so this
+    reuses that existing open/terminal distinction rather than redefining
+    it here. Never shown on an inactive Task, regardless of its execution
+    history: `❌` already communicates "not currently actionable" on its
+    own, and is-active/has-open-execution are independent facts about a
+    Task, matching this function's own existing `is_active`-only rule for
+    the base label.
     """
     if task.is_active:
-        return f"{task.title} · 💰 {task.reward_points}"
+        label = f"{task.title} · 💰 {task.reward_points}"
+        return f"⏳ {label}" if execution is not None else label
     return f"❌ {task.title}"
 
 
@@ -53,10 +65,11 @@ def tasks_list_keyboard(
     rows = [
         [
             InlineKeyboardButton(
-                _task_button_label(task), callback_data=f"{OPEN_CALLBACK_PREFIX}{task.id}"
+                _task_button_label(task, execution),
+                callback_data=f"{OPEN_CALLBACK_PREFIX}{task.id}",
             )
         ]
-        for task, _execution, _child in items
+        for task, execution, _child in items
     ]
     rows.append([InlineKeyboardButton("+ Добавить задачу", callback_data=ADD_CALLBACK_DATA)])
     rows.append([InlineKeyboardButton("← Домой", callback_data=HOME_CALLBACK_DATA)])

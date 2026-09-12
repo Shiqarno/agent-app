@@ -179,11 +179,13 @@ def test_adult_tasks_command_opens_adult_tasks_list(real: RealData) -> None:
 def test_adult_tasks_list_button_is_not_struck_through_for_an_active_task_with_an_open_execution(
     real: RealData,
 ) -> None:
-    """Issue #36: the button's visual state is driven by `Task.is_active`
-    alone, never by whether a current execution exists -- a directly-
-    assigned Task (Issue #32) can be active with an open execution, and
-    must still show plain (no strikethrough), matching `is_active`'s own
-    established, execution-independent meaning.
+    """Issue #36: the button's active-vs-inactive shape (plain vs. `❌`) is
+    driven by `Task.is_active` alone, never by whether a current execution
+    exists -- a directly-assigned Task (Issue #32) can be active with an
+    open execution, and must still show the plain, non-`❌` shape, matching
+    `is_active`'s own established, execution-independent meaning. It does
+    additionally get the `⏳` indicator (Issue: active execution
+    indicator), since that marker is deliberately execution-driven.
     """
     adult = real.make_user(ADULT)
     child = real.make_user(CHILD, "Alex")
@@ -195,7 +197,7 @@ def test_adult_tasks_list_button_is_not_struck_through_for_an_active_task_with_a
     _text, keyboard = _tasks_command_view(telegram_id)
 
     assert keyboard is not None
-    assert keyboard.inline_keyboard[0][0].text == "Clean room · 💰 20"
+    assert keyboard.inline_keyboard[0][0].text == "⏳ Clean room · 💰 20"
 
 
 def test_adult_tasks_list_button_marks_an_inactive_tasks_name_with_a_cross(
@@ -308,6 +310,151 @@ def test_completed_execution_does_not_suppress_availability_in_list(real: RealDa
     # remains active.
     assert keyboard is not None
     assert keyboard.inline_keyboard[0][0].text == "Clean room · 💰 20"
+
+
+# =========================================================================================
+# Active execution indicator (⏳) -- Issue: active execution indicator
+# =========================================================================================
+
+
+def test_task_with_no_execution_has_no_indicator(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    real.make_task(adult, title="Clean room", reward_points=20)
+
+    _text, keyboard = _adult_tasks_list_view(telegram_id)
+
+    assert keyboard is not None
+    assert keyboard.inline_keyboard[0][0].text == "Clean room · 💰 20"
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        TaskExecutionStatus.ASSIGNED,
+        TaskExecutionStatus.IN_PROGRESS,
+        TaskExecutionStatus.AWAITING_CONFIRMATION,
+    ],
+)
+def test_task_with_an_open_execution_gets_the_indicator(
+    real: RealData, status: TaskExecutionStatus
+) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD, "Alex")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult, title="Clean room", reward_points=20)
+    real.make_execution(task, child, status)
+
+    _text, keyboard = _adult_tasks_list_view(telegram_id)
+
+    assert keyboard is not None
+    assert keyboard.inline_keyboard[0][0].text == "⏳ Clean room · 💰 20"
+
+
+@pytest.mark.parametrize(
+    "status", [TaskExecutionStatus.COMPLETED, TaskExecutionStatus.CANCELLED]
+)
+def test_task_with_only_terminal_executions_has_no_indicator(
+    real: RealData, status: TaskExecutionStatus
+) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD, "Alex")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult, title="Clean room", reward_points=20)
+    real.make_execution(task, child, status)
+
+    _text, keyboard = _adult_tasks_list_view(telegram_id)
+
+    assert keyboard is not None
+    assert keyboard.inline_keyboard[0][0].text == "Clean room · 💰 20"
+
+
+def test_task_with_both_active_and_terminal_executions_gets_the_indicator(
+    real: RealData,
+) -> None:
+    adult = real.make_user(ADULT)
+    child_a = real.make_user(CHILD, "Alex")
+    child_b = real.make_user(CHILD, "Blair")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult, title="Clean room", reward_points=20)
+    real.make_execution(task, child_a, TaskExecutionStatus.COMPLETED)
+    real.make_execution(task, child_b, TaskExecutionStatus.IN_PROGRESS)
+
+    _text, keyboard = _adult_tasks_list_view(telegram_id)
+
+    assert keyboard is not None
+    assert keyboard.inline_keyboard[0][0].text == "⏳ Clean room · 💰 20"
+
+
+def test_multiple_active_executions_still_produce_only_one_indicator(
+    real: RealData,
+) -> None:
+    """The indicator is binary (Issue: active execution indicator) -- it
+    must never show a count, even with several Children's executions open
+    on the same Task at once.
+    """
+    adult = real.make_user(ADULT)
+    child_a = real.make_user(CHILD, "Alex")
+    child_b = real.make_user(CHILD, "Blair")
+    child_c = real.make_user(CHILD, "Casey")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult, title="Clean room", reward_points=20)
+    real.make_execution(task, child_a, TaskExecutionStatus.ASSIGNED)
+    real.make_execution(task, child_b, TaskExecutionStatus.IN_PROGRESS)
+    real.make_execution(task, child_c, TaskExecutionStatus.AWAITING_CONFIRMATION)
+
+    _text, keyboard = _adult_tasks_list_view(telegram_id)
+
+    assert keyboard is not None
+    label = keyboard.inline_keyboard[0][0].text
+    assert label == "⏳ Clean room · 💰 20"
+    assert label.count("⏳") == 1
+    assert "3" not in label
+
+
+def test_inactive_task_never_gets_the_indicator_regardless_of_execution_history(
+    real: RealData,
+) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD, "Alex")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult, title="Clean room", reward_points=20, is_active=False)
+    real.make_execution(task, child, TaskExecutionStatus.IN_PROGRESS)
+
+    _text, keyboard = _adult_tasks_list_view(telegram_id)
+
+    assert keyboard is not None
+    label = keyboard.inline_keyboard[0][0].text
+    assert label == "❌ Clean room"
+    assert "⏳" not in label
+
+
+def test_cancelling_the_last_active_execution_removes_the_indicator_on_reload(
+    real: RealData,
+) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD, "Alex")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult, title="Clean room", reward_points=20)
+    execution = real.make_execution(task, child, TaskExecutionStatus.ASSIGNED)
+
+    _before_text, before_keyboard = _adult_tasks_list_view(telegram_id)
+    assert before_keyboard is not None
+    assert before_keyboard.inline_keyboard[0][0].text == "⏳ Clean room · 💰 20"
+
+    cancel_text, _cancel_keyboard = _finish_cancel(telegram_id, str(execution.id))
+    assert cancel_text == "Выполнение задачи отменено."
+
+    _after_text, after_keyboard = _adult_tasks_list_view(telegram_id)
+    assert after_keyboard is not None
+    assert after_keyboard.inline_keyboard[0][0].text == "Clean room · 💰 20"
 
 
 def test_child_cannot_access_adult_tasks_management(real: RealData) -> None:
