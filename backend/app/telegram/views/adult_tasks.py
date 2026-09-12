@@ -85,3 +85,16 @@ def render_assign_children(task: Task, children: list[User]) -> str:
 
 def render_task_assigned(task: Task, child: User) -> str:
     return f"«{task.title}» назначена {child.name}."
+
+
+def render_cancel_confirmation(task: Task, child: User) -> str:
+    """The cancellation confirmation step (Issue: Adult execution
+    cancellation) -- Task and Child only, matching the existing Task/
+    Reward confirmation detail screens' shape (name + who), never the
+    internal execution status.
+    """
+    return f"Отменить выполнение задачи?\n\nЗадача: {task.title}\nРебёнок: {child.name}"
+
+
+def render_execution_cancelled() -> str:
+    return "Выполнение задачи отменено."

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.activation import create_activation as insert_activation
 from app.db import SessionLocal
 from app.models import (
+    PointTransaction,
     Task,
     TaskExecution,
     TaskExecutionStatus,
@@ -15,16 +16,20 @@ from app.models import (
     UserActivation,
     UserRole,
 )
+from app.task_operations import claim_task
 from app.telegram.handlers.adult_tasks import (
     _ALREADY_OPEN_TEXT,
     _CHILD_NOT_FOUND_TEXT,
+    _EXECUTION_NOT_CANCELLABLE_TEXT,
     _NOT_AN_ADULT_TEXT,
     _NOT_CONNECTED_TEXT,
     _TASK_NOT_EDITABLE_TEXT,
     _TASK_NOT_FOUND_TEXT,
     _adult_tasks_list_view,
     _assign_menu_view,
+    _cancel_menu_view,
     _finish_assign,
+    _finish_cancel,
     _finish_create,
     _finish_edit_reward,
     _finish_edit_title,
@@ -36,16 +41,20 @@ from app.telegram.handlers.adult_tasks import (
     _tasks_command_view,
     _toggle_active,
 )
+from app.telegram.handlers.tasks import _my_tasks_view
 from app.telegram.keyboards.adult_points import decode_uuid
 from app.telegram.keyboards.adult_tasks import (
     ACTIVATE_CALLBACK_PREFIX,
     ASSIGN_CALLBACK_PREFIX,
     ASSIGN_TO_CALLBACK_PREFIX,
+    CANCEL_CALLBACK_PREFIX,
+    CANCEL_CONFIRM_CALLBACK_PREFIX,
     DEACTIVATE_CALLBACK_PREFIX,
     EDIT_CALLBACK_PREFIX,
     LIST_CALLBACK_DATA,
     OPEN_CALLBACK_PREFIX,
     assign_children_keyboard,
+    task_details_keyboard,
 )
 from app.telegram_identity import activate_telegram_identity
 
@@ -367,6 +376,9 @@ def test_task_details_with_current_execution_hides_edit_but_not_activate_deactiv
     assert "Изменить" not in labels
     assert "Активировать" in labels
     assert "Деактивировать" not in labels
+    # Issue: Adult execution cancellation -- AWAITING_CONFIRMATION is
+    # resolved via the separate Confirm/Return workflow, never Cancel.
+    assert "Отменить" not in labels
 
 
 def test_open_nonexistent_task_does_not_strand_the_user(real: RealData) -> None:
@@ -849,3 +861,279 @@ def test_child_cannot_assign_a_task_even_with_a_crafted_call(real: RealData) -> 
         assert count == 0
     finally:
         session.close()
+
+
+# =========================================================================================
+# Issue: Adult execution cancellation
+# =========================================================================================
+
+
+def _unpersisted_task() -> Task:
+    """A Task built purely in-memory, never added to a session -- these
+    keyboard-builder tests only read its `id`/`title`/`reward_points`/
+    `is_active`, so no database round-trip is needed.
+    """
+    return Task(
+        id=uuid.uuid4(),
+        title="Clean room",
+        reward_points=20,
+        is_active=True,
+        created_by=uuid.uuid4(),
+    )
+
+
+@pytest.mark.parametrize(
+    "status",
+    [TaskExecutionStatus.ASSIGNED, TaskExecutionStatus.IN_PROGRESS],
+)
+def test_task_details_keyboard_shows_cancel_for_a_cancellable_execution(
+    status: TaskExecutionStatus,
+) -> None:
+    task = _unpersisted_task()
+    execution = TaskExecution(
+        id=uuid.uuid4(), task_id=task.id, user_id=uuid.uuid4(), status=status, reward_points=20
+    )
+
+    keyboard = task_details_keyboard(task, execution)
+
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+    assert "Отменить" in labels
+    button = next(b for row in keyboard.inline_keyboard for b in row if b.text == "Отменить")
+    assert button.callback_data == f"{CANCEL_CALLBACK_PREFIX}{execution.id}"
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        TaskExecutionStatus.AWAITING_CONFIRMATION,
+        TaskExecutionStatus.COMPLETED,
+        TaskExecutionStatus.CANCELLED,
+    ],
+)
+def test_task_details_keyboard_hides_cancel_for_a_non_cancellable_execution(
+    status: TaskExecutionStatus,
+) -> None:
+    task = _unpersisted_task()
+    execution = TaskExecution(
+        id=uuid.uuid4(), task_id=task.id, user_id=uuid.uuid4(), status=status, reward_points=20
+    )
+
+    keyboard = task_details_keyboard(task, execution)
+
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+    assert "Отменить" not in labels
+
+
+def test_task_details_keyboard_hides_cancel_when_there_is_no_current_execution() -> None:
+    keyboard = task_details_keyboard(_unpersisted_task(), None)
+
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+    assert "Отменить" not in labels
+
+
+def test_cancel_menu_shows_the_confirmation_prompt(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD, "Иван")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult, title="Помыть посуду")
+    execution = real.make_execution(task, child, TaskExecutionStatus.ASSIGNED)
+
+    text, keyboard = _cancel_menu_view(telegram_id, str(execution.id))
+
+    assert "Отменить выполнение задачи?" in text
+    assert "Помыть посуду" in text
+    assert "Иван" in text
+    assert keyboard is not None
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+    assert "Отменить" in labels
+    assert "Назад" in labels
+
+    session = SessionLocal()
+    try:
+        refreshed = session.get(TaskExecution, execution.id)
+        assert refreshed is not None
+        assert refreshed.status == TaskExecutionStatus.ASSIGNED
+    finally:
+        session.close()
+
+
+def test_cancel_menu_back_button_returns_to_task_details(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult)
+    execution = real.make_execution(task, child, TaskExecutionStatus.ASSIGNED)
+
+    _text, keyboard = _cancel_menu_view(telegram_id, str(execution.id))
+
+    assert keyboard is not None
+    back_button = next(b for row in keyboard.inline_keyboard for b in row if b.text == "Назад")
+    assert back_button.callback_data == f"{OPEN_CALLBACK_PREFIX}{task.id}"
+
+
+def test_cancel_menu_for_awaiting_confirmation_execution_is_rejected(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult)
+    execution = real.make_execution(task, child, TaskExecutionStatus.AWAITING_CONFIRMATION)
+
+    text, keyboard = _cancel_menu_view(telegram_id, str(execution.id))
+
+    assert text == _EXECUTION_NOT_CANCELLABLE_TEXT
+    assert keyboard is not None
+
+
+def test_child_cannot_open_the_cancel_menu(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(child, telegram_id)
+    task = real.make_task(adult)
+    execution = real.make_execution(task, child, TaskExecutionStatus.ASSIGNED)
+
+    text, keyboard = _cancel_menu_view(telegram_id, str(execution.id))
+
+    assert text == _NOT_AN_ADULT_TEXT
+    assert keyboard is None
+
+
+def test_finish_cancel_transitions_the_execution_to_cancelled(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult, title="Clean room")
+    execution = real.make_execution(task, child, TaskExecutionStatus.IN_PROGRESS)
+
+    text, keyboard = _finish_cancel(telegram_id, str(execution.id))
+
+    assert text == "Выполнение задачи отменено."
+    assert keyboard is not None
+    session = SessionLocal()
+    try:
+        refreshed = session.get(TaskExecution, execution.id)
+        assert refreshed is not None
+        assert refreshed.status == TaskExecutionStatus.CANCELLED
+        assert (
+            session.query(PointTransaction).filter_by(task_execution_id=execution.id).count() == 0
+        )
+    finally:
+        session.close()
+
+
+def test_finish_cancel_does_not_modify_the_task(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult, title="Clean room", reward_points=20, is_active=True)
+    execution = real.make_execution(task, child, TaskExecutionStatus.ASSIGNED)
+
+    _finish_cancel(telegram_id, str(execution.id))
+
+    session = SessionLocal()
+    try:
+        refreshed_task = session.get(Task, task.id)
+        assert refreshed_task is not None
+        assert refreshed_task.title == "Clean room"
+        assert refreshed_task.reward_points == 20
+        assert refreshed_task.is_active is True
+    finally:
+        session.close()
+
+
+def test_child_can_claim_the_task_again_after_cancellation(real: RealData) -> None:
+    """Direct assignment never touches `Task.is_active` (see assign_task),
+    so once the Adult cancels the assigned execution, the still-active Task
+    is immediately self-claimable again.
+    """
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult, is_active=True)
+    execution = real.make_execution(task, child, TaskExecutionStatus.ASSIGNED)
+
+    _finish_cancel(telegram_id, str(execution.id))
+
+    session = SessionLocal()
+    try:
+        refreshed = session.get(User, child.id)
+        assert refreshed is not None
+        new_execution, _ = claim_task(session, refreshed, task.id)
+        assert new_execution.id != execution.id
+        assert new_execution.status == TaskExecutionStatus.IN_PROGRESS
+    finally:
+        session.close()
+
+
+def test_cancelled_execution_disappears_from_child_my_tasks(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    child_telegram_id = _next_telegram_id()
+    real.connect(child, child_telegram_id)
+    adult_telegram_id = _next_telegram_id()
+    real.connect(adult, adult_telegram_id)
+    task = real.make_task(adult, title="Clean room")
+    execution = real.make_execution(task, child, TaskExecutionStatus.IN_PROGRESS)
+
+    before_text, before_keyboard = _my_tasks_view(child_telegram_id)
+    assert before_keyboard is not None
+    assert len(before_keyboard.inline_keyboard) == 1
+
+    _finish_cancel(adult_telegram_id, str(execution.id))
+
+    after_text, after_keyboard = _my_tasks_view(child_telegram_id)
+    assert after_keyboard is not None
+    assert len(after_keyboard.inline_keyboard) == 0
+    assert "Clean room" not in after_text
+
+
+def test_cancelling_an_already_completed_execution_is_rejected(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    task = real.make_task(adult)
+    execution = real.make_execution(task, child, TaskExecutionStatus.COMPLETED)
+
+    text, keyboard = _finish_cancel(telegram_id, str(execution.id))
+
+    assert text == _EXECUTION_NOT_CANCELLABLE_TEXT
+    assert keyboard is not None
+    session = SessionLocal()
+    try:
+        refreshed = session.get(TaskExecution, execution.id)
+        assert refreshed is not None
+        assert refreshed.status == TaskExecutionStatus.COMPLETED
+    finally:
+        session.close()
+
+
+def test_child_cannot_cancel_via_a_crafted_callback(real: RealData) -> None:
+    adult = real.make_user(ADULT)
+    child = real.make_user(CHILD)
+    telegram_id = _next_telegram_id()
+    real.connect(child, telegram_id)
+    task = real.make_task(adult)
+    execution = real.make_execution(task, child, TaskExecutionStatus.ASSIGNED)
+
+    text, keyboard = _finish_cancel(telegram_id, str(execution.id))
+
+    assert text == _NOT_AN_ADULT_TEXT
+    session = SessionLocal()
+    try:
+        refreshed = session.get(TaskExecution, execution.id)
+        assert refreshed is not None
+        assert refreshed.status == TaskExecutionStatus.ASSIGNED
+    finally:
+        session.close()
+
+
+def test_cancel_and_cancelconfirm_prefixes_do_not_collide() -> None:
+    assert not "adulttask:cancelconfirm:123".startswith(CANCEL_CALLBACK_PREFIX)
+    assert not "adulttask:cancel:123".startswith(CANCEL_CONFIRM_CALLBACK_PREFIX)

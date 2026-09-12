@@ -6,16 +6,19 @@ from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from app.db import SessionLocal
-from app.models import User, UserRole
+from app.models import Task, TaskExecution, User, UserRole
 from app.task_operations import (
+    CANCELLABLE_EXECUTION_STATUSES,
     ChildNotFoundError,
     InvalidTaskInputError,
     NotAnAdultError,
     TaskAlreadyOpenForChildError,
+    TaskExecutionNotCancellableError,
     TaskNotEditableError,
     TaskNotFoundError,
     activate_task,
     assign_task,
+    cancel_execution,
     create_task,
     deactivate_task,
     get_assignable_children,
@@ -30,6 +33,8 @@ from app.telegram.keyboards.adult_tasks import (
     ACTIVATE_CALLBACK_PREFIX,
     ASSIGN_CALLBACK_PREFIX,
     ASSIGN_TO_CALLBACK_PREFIX,
+    CANCEL_CALLBACK_PREFIX,
+    CANCEL_CONFIRM_CALLBACK_PREFIX,
     DEACTIVATE_CALLBACK_PREFIX,
     EDIT_CALLBACK_PREFIX,
     EDIT_NAME_CALLBACK_PREFIX,
@@ -37,17 +42,20 @@ from app.telegram.keyboards.adult_tasks import (
     OPEN_CALLBACK_PREFIX,
     assign_children_keyboard,
     back_to_tasks_keyboard,
+    cancel_confirmation_keyboard,
     edit_menu_keyboard,
     task_details_keyboard,
     tasks_list_keyboard,
 )
 from app.telegram.views.adult_tasks import (
     render_assign_children,
+    render_cancel_confirmation,
     render_create_prompt_reward,
     render_create_prompt_title,
     render_edit_menu,
     render_edit_prompt_reward,
     render_edit_prompt_title,
+    render_execution_cancelled,
     render_task_assigned,
     render_task_details,
     render_tasks_list,
@@ -65,6 +73,7 @@ _TASK_NOT_EDITABLE_TEXT = (
 )
 _CHILD_NOT_FOUND_TEXT = "Ребёнок не найден."
 _ALREADY_OPEN_TEXT = "У этого ребёнка уже есть незавершённое выполнение этой задачи."
+_EXECUTION_NOT_CANCELLABLE_TEXT = "Это выполнение больше нельзя отменить."
 
 # Per-chat, in-memory only (Issue #28 section 14): tracks which single text
 # prompt, if any, is currently open for this Adult ("what's the next text
@@ -131,9 +140,7 @@ def _task_details_view(
             return _NOT_AN_ADULT_TEXT, None
         except TaskNotFoundError:
             return _TASK_NOT_FOUND_TEXT, back_to_tasks_keyboard()
-        return render_task_details(task, execution, child), task_details_keyboard(
-            task, execution is not None
-        )
+        return render_task_details(task, execution, child), task_details_keyboard(task, execution)
     finally:
         db.close()
 
@@ -223,7 +230,7 @@ def _finish_create(
             return _NOT_AN_ADULT_TEXT, None
         except InvalidTaskInputError as exc:
             return exc.message, None
-        return render_task_details(task, None, None), task_details_keyboard(task, False)
+        return render_task_details(task, None, None), task_details_keyboard(task, None)
     finally:
         db.close()
 
@@ -247,7 +254,7 @@ def _finish_edit_title(
             return _TASK_NOT_EDITABLE_TEXT, back_to_tasks_keyboard()
         except InvalidTaskInputError as exc:
             return exc.message, back_to_tasks_keyboard()
-        return render_task_details(task, None, None), task_details_keyboard(task, False)
+        return render_task_details(task, None, None), task_details_keyboard(task, None)
     finally:
         db.close()
 
@@ -271,7 +278,7 @@ def _finish_edit_reward(
             return _TASK_NOT_EDITABLE_TEXT, back_to_tasks_keyboard()
         except InvalidTaskInputError as exc:
             return exc.message, back_to_tasks_keyboard()
-        return render_task_details(task, None, None), task_details_keyboard(task, False)
+        return render_task_details(task, None, None), task_details_keyboard(task, None)
     finally:
         db.close()
 
@@ -314,7 +321,7 @@ def _toggle_active(
         return (
             toast,
             render_task_details(task, execution, child),
-            task_details_keyboard(task, execution is not None),
+            task_details_keyboard(task, execution),
         )
     finally:
         db.close()
@@ -374,7 +381,66 @@ def _finish_assign(
             return _ALREADY_OPEN_TEXT, back_to_tasks_keyboard()
 
         task, execution, _current_child = get_task(db, user, task.id)
-        return render_task_assigned(task, child), task_details_keyboard(task, execution is not None)
+        return render_task_assigned(task, child), task_details_keyboard(task, execution)
+    finally:
+        db.close()
+
+
+def _cancel_menu_view(
+    telegram_user_id: int, raw_execution_id: str
+) -> tuple[str, InlineKeyboardMarkup | None]:
+    """Step 1 of Cancel (Issue: Adult execution cancellation): resolves the
+    execution named by the callback directly (there is no Application-layer
+    "get one execution" read for an Adult outside the AWAITING_CONFIRMATION
+    queue, and this is a presentation-only lookup, not a state change) and
+    shows the confirmation prompt -- the actual cancellation only ever
+    happens through cancel_execution (see _finish_cancel below), which
+    re-verifies role and state itself regardless of what this screen showed.
+    """
+    db = SessionLocal()
+    try:
+        user = resolve_user_by_telegram_id(db, telegram_user_id)
+        if user is None:
+            return _NOT_CONNECTED_TEXT, None
+        if user.role != UserRole.ADULT:
+            return _NOT_AN_ADULT_TEXT, None
+        try:
+            execution_id = uuid.UUID(raw_execution_id)
+        except ValueError:
+            return _EXECUTION_NOT_CANCELLABLE_TEXT, back_to_tasks_keyboard()
+
+        execution = db.get(TaskExecution, execution_id)
+        if execution is None or execution.status not in CANCELLABLE_EXECUTION_STATUSES:
+            return _EXECUTION_NOT_CANCELLABLE_TEXT, back_to_tasks_keyboard()
+
+        task = db.get(Task, execution.task_id)
+        child = db.get(User, execution.user_id)
+        assert task is not None
+        assert child is not None
+        return render_cancel_confirmation(task, child), cancel_confirmation_keyboard(
+            execution.id, task.id
+        )
+    finally:
+        db.close()
+
+
+def _finish_cancel(
+    telegram_user_id: int, raw_execution_id: str
+) -> tuple[str, InlineKeyboardMarkup | None]:
+    db = SessionLocal()
+    try:
+        user = resolve_user_by_telegram_id(db, telegram_user_id)
+        if user is None:
+            return _NOT_CONNECTED_TEXT, None
+        try:
+            execution_id = uuid.UUID(raw_execution_id)
+            cancel_execution(db, user, execution_id)
+        except NotAnAdultError:
+            return _NOT_AN_ADULT_TEXT, None
+        except (ValueError, TaskExecutionNotCancellableError):
+            return _EXECUTION_NOT_CANCELLABLE_TEXT, back_to_tasks_keyboard()
+
+        return render_execution_cancelled(), back_to_tasks_keyboard()
     finally:
         db.close()
 
@@ -541,6 +607,32 @@ async def handle_assign_to_child(update: Update, context: ContextTypes.DEFAULT_T
     raw_child_id = str(child_id) if child_id is not None else ""
     text, keyboard = await asyncio.to_thread(
         _finish_assign, update.effective_user.id, raw_task_id, raw_child_id
+    )
+    await query.answer()
+    if query.message is not None:
+        await query.edit_message_text(text, reply_markup=keyboard)
+
+
+async def handle_cancel_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None or update.effective_user is None or query.data is None:
+        return
+    raw_execution_id = query.data.removeprefix(CANCEL_CALLBACK_PREFIX)
+    text, keyboard = await asyncio.to_thread(
+        _cancel_menu_view, update.effective_user.id, raw_execution_id
+    )
+    await query.answer()
+    if query.message is not None:
+        await query.edit_message_text(text, reply_markup=keyboard)
+
+
+async def handle_cancel_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None or update.effective_user is None or query.data is None:
+        return
+    raw_execution_id = query.data.removeprefix(CANCEL_CONFIRM_CALLBACK_PREFIX)
+    text, keyboard = await asyncio.to_thread(
+        _finish_cancel, update.effective_user.id, raw_execution_id
     )
     await query.answer()
     if query.message is not None:

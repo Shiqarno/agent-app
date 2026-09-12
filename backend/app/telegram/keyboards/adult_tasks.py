@@ -3,6 +3,7 @@ import uuid
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.models import Task, TaskExecution, User
+from app.task_operations import CANCELLABLE_EXECUTION_STATUSES
 from app.telegram.keyboards.adult_points import encode_uuid
 
 OPEN_CALLBACK_PREFIX = "adulttask:open:"
@@ -20,6 +21,8 @@ ASSIGN_CALLBACK_PREFIX = "adulttask:assign:"
 # assign_children_keyboard below), the longer prefix pushed the total
 # callback_data past Telegram's 64-byte limit.
 ASSIGN_TO_CALLBACK_PREFIX = "adulttask:assignto:"
+CANCEL_CALLBACK_PREFIX = "adulttask:cancel:"
+CANCEL_CONFIRM_CALLBACK_PREFIX = "adulttask:cancelconfirm:"
 
 
 def _task_button_label(task: Task) -> str:
@@ -60,7 +63,9 @@ def tasks_list_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
-def task_details_keyboard(task: Task, has_current_execution: bool) -> InlineKeyboardMarkup:
+def task_details_keyboard(
+    task: Task, execution: TaskExecution | None
+) -> InlineKeyboardMarkup:
     """`Edit` only when there is no current open execution (Issue #28
     section 5, unchanged) -- hiding the button is presentation only, the
     Application layer refuses the action regardless. `Activate`/
@@ -69,8 +74,12 @@ def task_details_keyboard(task: Task, has_current_execution: bool) -> InlineKeyb
     `Assign` (Issue #32) is likewise always available, current execution
     or not: direct assignment is independent of `Task.is_active` and of
     any other Child's open execution -- a Task may have any number of open
-    executions for different Children simultaneously.
+    executions for different Children simultaneously. `Отменить` (Issue:
+    Adult execution cancellation) only when the current execution is
+    ASSIGNED/IN_PROGRESS -- an AWAITING_CONFIRMATION one is resolved via
+    the separate Confirm/Return workflow instead, never Cancel.
     """
+    has_current_execution = execution is not None
     rows = []
     if not has_current_execution:
         rows.append(
@@ -95,6 +104,14 @@ def task_details_keyboard(task: Task, has_current_execution: bool) -> InlineKeyb
     rows.append(
         [InlineKeyboardButton("Назначить", callback_data=f"{ASSIGN_CALLBACK_PREFIX}{task.id}")]
     )
+    if execution is not None and execution.status in CANCELLABLE_EXECUTION_STATUSES:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "Отменить", callback_data=f"{CANCEL_CALLBACK_PREFIX}{execution.id}"
+                )
+            ]
+        )
     rows.append([InlineKeyboardButton("← Задачи", callback_data=LIST_CALLBACK_DATA)])
     return InlineKeyboardMarkup(rows)
 
@@ -138,6 +155,26 @@ def edit_menu_keyboard(task: Task) -> InlineKeyboardMarkup:
                 )
             ],
             [InlineKeyboardButton("← Задачи", callback_data=LIST_CALLBACK_DATA)],
+        ]
+    )
+
+
+def cancel_confirmation_keyboard(
+    execution_id: uuid.UUID, task_id: uuid.UUID
+) -> InlineKeyboardMarkup:
+    """`Отменить` (act) / `Назад` (abort, back to Task Details) for the
+    cancellation confirmation step -- a single UUID per callback (either
+    the execution or the task, never both), so no compact encoding is
+    needed here unlike assign_children_keyboard above.
+    """
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "Отменить", callback_data=f"{CANCEL_CONFIRM_CALLBACK_PREFIX}{execution_id}"
+                ),
+                InlineKeyboardButton("Назад", callback_data=f"{OPEN_CALLBACK_PREFIX}{task_id}"),
+            ]
         ]
     )
 

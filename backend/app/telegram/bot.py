@@ -48,6 +48,8 @@ from app.telegram.handlers.adult_tasks import (
     handle_add_task,
     handle_assign_menu,
     handle_assign_to_child,
+    handle_cancel_confirm,
+    handle_cancel_menu,
     handle_deactivate_task,
     handle_edit_menu,
     handle_edit_name,
@@ -125,6 +127,8 @@ from app.telegram.keyboards.adult_tasks import (
     ADD_CALLBACK_DATA,
     ASSIGN_CALLBACK_PREFIX,
     ASSIGN_TO_CALLBACK_PREFIX,
+    CANCEL_CALLBACK_PREFIX,
+    CANCEL_CONFIRM_CALLBACK_PREFIX,
     DEACTIVATE_CALLBACK_PREFIX,
     EDIT_CALLBACK_PREFIX,
     EDIT_NAME_CALLBACK_PREFIX,
@@ -334,6 +338,12 @@ def build_application() -> BotApplication:
     )
     application.add_handler(
         CallbackQueryHandler(handle_assign_menu, pattern=f"^{ASSIGN_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_cancel_confirm, pattern=f"^{CANCEL_CONFIRM_CALLBACK_PREFIX}")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_cancel_menu, pattern=f"^{CANCEL_CALLBACK_PREFIX}")
     )
     application.add_handler(CommandHandler("users", handle_users_command))
     application.add_handler(

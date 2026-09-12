@@ -29,6 +29,18 @@ OPEN_EXECUTION_STATUSES = frozenset(
     }
 )
 
+# The only statuses an Adult may cancel from (see cancel_execution below) --
+# a Child's own work-in-progress, not yet submitted for confirmation.
+# AWAITING_CONFIRMATION is deliberately excluded: that stage already has
+# its own Adult-facing resolution (Confirm/Return), and Cancel is not a
+# third way to resolve it.
+CANCELLABLE_EXECUTION_STATUSES = frozenset(
+    {
+        TaskExecutionStatus.ASSIGNED,
+        TaskExecutionStatus.IN_PROGRESS,
+    }
+)
+
 
 class TaskOperationError(Exception):
     """Base for every Task/TaskExecution Application-layer failure
@@ -113,6 +125,19 @@ class TaskAlreadyOpenForChildError(TaskOperationError):
     AWAITING_CONFIRMATION) execution of this Task (Issue #32) -- the same
     one-open-execution-per-(task,user) invariant claim_task protects,
     caught here via the same partial unique index.
+    """
+
+
+class TaskExecutionNotCancellableError(TaskOperationError):
+    """The TaskExecution doesn't exist, or isn't ASSIGNED/IN_PROGRESS. A
+    deliberately separate error from TaskExecutionNotConfirmableError above
+    (rather than reusing it): the two operations require different source
+    states -- Confirm/Return only ever act on AWAITING_CONFIRMATION,
+    Cancel only ever acts on ASSIGNED/IN_PROGRESS -- so collapsing them
+    would blur which transition was actually rejected. Same no-ownership
+    shape as TaskExecutionNotConfirmableError: any Adult may cancel any
+    cancellable execution, so this only ever means "doesn't exist" or
+    "wrong state", never "not yours".
     """
 
 
@@ -549,6 +574,53 @@ def return_execution_to_work(
         raise TaskExecutionNotConfirmableError()
 
     execution.status = TaskExecutionStatus.IN_PROGRESS
+    execution.updated_at = utcnow()
+    db.commit()
+    db.refresh(execution)
+
+    task = db.get(Task, execution.task_id)
+    assert task is not None
+    child = db.get(User, execution.user_id)
+    assert child is not None
+    return execution, task, child
+
+
+def cancel_execution(
+    db: Session, user: User, execution_id: uuid.UUID
+) -> tuple[TaskExecution, Task, User]:
+    """ASSIGNED/IN_PROGRESS -> CANCELLED (an Adult withdrawing a Child's
+    still-open execution), no PointTransaction -- mirrors
+    return_execution_to_work's shape exactly, just with a different source
+    state and destination.
+
+    Deliberately touches nothing else: the underlying Task (`is_active`,
+    reward, title) is never modified, so an already-active Task remains
+    self-claimable exactly as before, and a directly-assigned Task's
+    `is_active` is unaffected either way (assign_task never touched it to
+    begin with). The cancelled row itself is never deleted -- it simply
+    stops being "open" (CANCELLED is not in OPEN_EXECUTION_STATUSES), so
+    the Child's own `/mytasks`-equivalent (get_my_tasks) naturally stops
+    listing it, and the (task_id, user_id) open-execution uniqueness no
+    longer blocks a fresh claim/assignment for the same pair.
+
+    Concurrency: same row lock and same-transaction status check as
+    confirm_execution/return_execution_to_work, so this cannot race a
+    concurrent mark_execution_ready/confirm/return into cancelling an
+    execution that has already moved to AWAITING_CONFIRMATION or beyond --
+    whichever transaction's UPDATE commits first wins the row lock, and the
+    loser re-reads the now-changed status and is rejected before mutating
+    anything. No IntegrityError catch needed, same reasoning as
+    return_execution_to_work: nothing about this transition is
+    uniqueness-constrained.
+    """
+    if user.role != UserRole.ADULT:
+        raise NotAnAdultError()
+
+    execution = _get_execution_for_update(db, execution_id)
+    if execution is None or execution.status not in CANCELLABLE_EXECUTION_STATUSES:
+        raise TaskExecutionNotCancellableError()
+
+    execution.status = TaskExecutionStatus.CANCELLED
     execution.updated_at = utcnow()
     db.commit()
     db.refresh(execution)
