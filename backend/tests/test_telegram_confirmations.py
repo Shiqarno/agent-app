@@ -615,6 +615,38 @@ def test_pending_reward_request_appears_in_the_confirmation_list(real: RealData)
     )
 
 
+def test_multiple_reward_requests_from_different_children_show_the_correct_names(
+    real: RealData,
+) -> None:
+    """Issue: Show Child name on reward confirmation buttons -- mirrors
+    test_multiple_confirmations_produce_one_button_each_with_distinct_execution_ids
+    for the Reward side: each button's Child name must match the Child who
+    actually made that particular request, not just any connected Child.
+    """
+    adult = real.make_user(ADULT)
+    child_a = real.make_user(CHILD, "Alex")
+    child_b = real.make_user(CHILD, "Blair")
+    telegram_id = _next_telegram_id()
+    real.connect(adult, telegram_id)
+    real.grant_points(child_a, 100)
+    real.grant_points(child_b, 100)
+    reward_a = real.make_reward(adult, name="Ice cream", cost_points=30)
+    reward_b = real.make_reward(adult, name="Movie night", cost_points=50)
+    redemption_a = real.request_reward(child_a, reward_a)
+    redemption_b = real.request_reward(child_b, reward_b)
+
+    text, keyboard = _list_view(telegram_id)
+
+    assert text == CONFIRMATIONS_HEADING
+    assert keyboard is not None
+    assert len(keyboard.inline_keyboard) == 2
+    labels = {row[0].text for row in keyboard.inline_keyboard}
+    assert labels == {"Ice cream · Alex", "Movie night · Blair"}
+    by_label = {row[0].text: row[0].callback_data for row in keyboard.inline_keyboard}
+    assert by_label["Ice cream · Alex"] == f"{OPEN_REWARD_CALLBACK_PREFIX}{redemption_a.id}"
+    assert by_label["Movie night · Blair"] == f"{OPEN_REWARD_CALLBACK_PREFIX}{redemption_b.id}"
+
+
 def test_mixed_list_shows_both_task_and_reward_items(real: RealData) -> None:
     adult = real.make_user(ADULT)
     child = real.make_user(CHILD, "Vova")
